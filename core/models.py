@@ -4,28 +4,12 @@ from dataclasses import dataclass, field
 
 
 @dataclass(slots=True)
-class SourceSearchHit:
-    source: str
-    source_id: str
-    title: str
-    aliases: list[str] = field(default_factory=list)
-    year: int | None = None
-    external_ids: dict[str, str] = field(default_factory=dict)
-    score: float | None = None
-
-
-@dataclass(slots=True)
-class SourceSearchPage:
-    items: list[SourceSearchHit]
-    has_next: bool = False
-
-
-@dataclass(slots=True)
 class SearchCandidate:
+    """One result returned by the dedicated search provider."""
+
     title: str
     aliases: list[str] = field(default_factory=list)
     year: int | None = None
-    source_refs: dict[str, str] = field(default_factory=dict)
     external_ids: dict[str, str] = field(default_factory=dict)
     scores: dict[str, float] = field(default_factory=dict)
 
@@ -47,6 +31,8 @@ class PersonCredit:
 
 @dataclass(slots=True)
 class AnimeRecord:
+    """Normalized metadata returned by one source for a selected MAL ID."""
+
     source: str
     source_id: str
     titles: dict[str, str] = field(default_factory=dict)
@@ -80,7 +66,6 @@ class AggregatedAnime:
     titles: dict[str, str] = field(default_factory=dict)
     synonyms: list[str] = field(default_factory=list)
     external_ids: dict[str, str] = field(default_factory=dict)
-    source_refs: dict[str, str] = field(default_factory=dict)
     sources: list[str] = field(default_factory=list)
     kind: str | None = None
     status: str | None = None
