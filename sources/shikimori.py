@@ -1,18 +1,26 @@
+from __future__ import annotations
+
 import os
 from datetime import datetime
 from typing import Any
 
 import httpx
 
+from core.models import AnimeRecord, PersonCredit, SearchCandidate, SourceSearchHit, SourceSearchPage
+
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
 DEFAULT_SHIKIMORI_SITE_URL = "https://shikimori.io"
-DEFAULT_SEARCH_PAGE_SIZE = 10
 SHIKIMORI_MAX_PAGE_SIZE = 50
 
 SEARCH_FIELDS = """
     id
+    malId
     name
     russian
+    english
+    japanese
+    synonyms
+    score
     airedOn { year }
 """
 
@@ -107,9 +115,82 @@ def site_url() -> str:
     )
 
 
+def _clean_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return " ".join(str(value).replace("\r", " ").split())
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        value = _clean_text(value)
+        key = value.casefold()
+        if value and key not in seen:
+            seen.add(key)
+            result.append(value)
+    return result
+
+
+def _format_date(value: dict[str, Any] | None) -> str | None:
+    if not value:
+        return None
+    if value.get("date"):
+        return str(value["date"])
+
+    year, month, day = value.get("year"), value.get("month"), value.get("day")
+    if not year:
+        return None
+
+    result = f"{year:04d}"
+    if month:
+        result += f"-{month:02d}"
+    if day:
+        result += f"-{day:02d}"
+    return result
+
+
+def _format_datetime(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return dt.isoformat()
+    except ValueError:
+        return value
+
+
+def _person_name(person: dict[str, Any]) -> str:
+    russian = _clean_text(person.get("russian"))
+    name = _clean_text(person.get("name"))
+    japanese = _clean_text(person.get("japanese"))
+    preferred = russian or name or japanese or "Неизвестно"
+    extras = [
+        item
+        for item in _dedupe([name, japanese])
+        if item.casefold() != preferred.casefold()
+    ]
+    return f"{preferred} ({', '.join(extras)})" if extras else preferred
+
+
+def _best_poster_url(poster: dict[str, Any]) -> str | None:
+    for field in (
+        "originalUrl",
+        "main2xUrl",
+        "mainUrl",
+        "preview2xUrl",
+        "previewUrl",
+    ):
+        value = _clean_text(poster.get(field))
+        if value:
+            return value
+    return None
+
+
 async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
     headers = {
-        "User-Agent": "anime-db-bot/0.3 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": "anime-db-bot/0.4 (https://github.com/Winbil/anime-db-bot)",
         "Accept": "application/json",
     }
 
@@ -156,292 +237,180 @@ query SearchAnime($search: String!) {{
 """
 
 
-async def search_anime(
-    query: str,
-    *,
-    page: int = 1,
-    limit: int = DEFAULT_SEARCH_PAGE_SIZE,
-) -> list[dict[str, Any]]:
+async def _search_raw(query: str, *, page: int, limit: int) -> list[dict[str, Any]]:
     data = await _graphql(_search_query(page, limit), {"search": query})
     return data.get("animes", [])
 
 
-async def get_anime(anime_id: str) -> dict[str, Any] | None:
+async def _get_raw(anime_id: str) -> dict[str, Any] | None:
     data = await _graphql(BY_ID_QUERY, {"ids": anime_id})
     animes = data.get("animes", [])
     return animes[0] if animes else None
 
 
-def clean_text(value: Any) -> str:
-    if value is None:
-        return ""
-    return " ".join(str(value).replace("\r", " ").split())
+def _search_hit(raw: dict[str, Any]) -> SourceSearchHit:
+    russian = _clean_text(raw.get("russian"))
+    romaji = _clean_text(raw.get("name"))
+    english = _clean_text(raw.get("english"))
+    japanese = _clean_text(raw.get("japanese"))
+    synonyms = _dedupe(raw.get("synonyms") or [])
+    title = russian or romaji or english or japanese or "Без названия"
 
+    external_ids = {"shikimori": str(raw.get("id") or "")}
+    if raw.get("malId"):
+        external_ids["mal"] = str(raw["malId"])
 
-def _dedupe(values: list[str]) -> list[str]:
-    result: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        value = clean_text(value)
-        key = value.casefold()
-        if value and key not in seen:
-            seen.add(key)
-            result.append(value)
-    return result
-
-
-def _format_date(value: dict[str, Any] | None) -> str:
-    if not value:
-        return "—"
-    if value.get("date"):
-        return str(value["date"])
-
-    year, month, day = value.get("year"), value.get("month"), value.get("day")
-    if not year:
-        return "—"
-
-    result = f"{year:04d}"
-    if month:
-        result += f"-{month:02d}"
-    if day:
-        result += f"-{day:02d}"
-    return result
-
-
-def _format_datetime(value: str | None) -> str:
-    if not value:
-        return ""
+    score: float | None = None
     try:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return dt.strftime("%Y-%m-%d %H:%M %Z").strip()
-    except ValueError:
-        return value
+        if raw.get("score") not in (None, ""):
+            score = float(raw["score"])
+    except (TypeError, ValueError):
+        pass
+
+    return SourceSearchHit(
+        source="Shikimori",
+        source_id=str(raw.get("id") or ""),
+        title=title,
+        aliases=_dedupe([romaji, english, japanese, *synonyms]),
+        year=(raw.get("airedOn") or {}).get("year"),
+        external_ids=external_ids,
+        score=score,
+    )
 
 
-def _person_name(person: dict[str, Any]) -> str:
-    russian = clean_text(person.get("russian"))
-    name = clean_text(person.get("name"))
-    japanese = clean_text(person.get("japanese"))
-    preferred = russian or name or japanese or "Неизвестно"
-    extras = [
-        item
-        for item in _dedupe([name, japanese])
-        if item.casefold() != preferred.casefold()
-    ]
-    return f"{preferred} ({', '.join(extras)})" if extras else preferred
+def _credits(raw: dict[str, Any], *, voices: bool) -> list[PersonCredit]:
+    result: list[PersonCredit] = []
+    seen: set[tuple[str, tuple[str, ...]]] = set()
 
-
-def _people_lines(anime: dict[str, Any], want_seyu: bool) -> list[str]:
-    rows: list[str] = []
-    seen: set[tuple[str, str]] = set()
-
-    for role in anime.get("personRoles") or []:
+    for role in raw.get("personRoles") or []:
         person = role.get("person") or {}
-        if bool(person.get("isSeyu")) != want_seyu:
+        if bool(person.get("isSeyu")) != voices:
             continue
 
         roles = _dedupe(role.get("rolesRu") or role.get("rolesEn") or [])
-        roles_text = ", ".join(roles) if roles else "роль не указана"
         name = _person_name(person)
-        key = (name.casefold(), roles_text.casefold())
+        key = (name.casefold(), tuple(item.casefold() for item in roles))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(PersonCredit(name=name, roles=roles))
 
-        if key not in seen:
-            seen.add(key)
-            rows.append(f"• {name} — {roles_text}")
-
-    return rows
-
-
-def _people_section(
-    title: str,
-    rows: list[str],
-    limit: int | None,
-) -> str:
-    if not rows:
-        return ""
-
-    visible = rows if limit is None else rows[:limit]
-    result = list(visible)
-
-    if limit is not None and len(rows) > len(visible):
-        result.append(f"…и ещё {len(rows) - len(visible)}")
-
-    return title + "\n" + "\n".join(result)
+    return result
 
 
-def anime_title(anime: dict[str, Any]) -> str:
-    return (
-        clean_text(anime.get("russian"))
-        or clean_text(anime.get("name"))
-        or "Аниме"
-    )
+def _record(raw: dict[str, Any]) -> AnimeRecord:
+    russian = _clean_text(raw.get("russian"))
+    romaji = _clean_text(raw.get("name"))
+    english = _clean_text(raw.get("english"))
+    japanese = _clean_text(raw.get("japanese"))
+    licensed_ru = _clean_text(raw.get("licenseNameRu"))
 
+    titles = {
+        key: value
+        for key, value in {
+            "russian": russian,
+            "romaji": romaji,
+            "english": english,
+            "japanese": japanese,
+            "licensed_ru": licensed_ru,
+        }.items()
+        if value
+    }
 
-def _best_poster_url(poster: dict[str, Any]) -> str | None:
-    for field in (
-        "originalUrl",
-        "main2xUrl",
-        "mainUrl",
-        "preview2xUrl",
-        "previewUrl",
-    ):
-        value = clean_text(poster.get(field))
-        if value:
-            return value
-    return None
+    external_ids = {"shikimori": str(raw.get("id") or "")}
+    if raw.get("malId"):
+        external_ids["mal"] = str(raw["malId"])
 
-
-def poster_urls(anime: dict[str, Any]) -> list[str]:
-    """Return one best URL per poster entry, without duplicate size variants."""
-    poster_value = anime.get("poster")
-    posters: list[dict[str, Any]]
-
-    if isinstance(poster_value, list):
-        posters = [item for item in poster_value if isinstance(item, dict)]
-    elif isinstance(poster_value, dict):
-        posters = [poster_value]
-    else:
-        posters = []
-
-    urls = [_best_poster_url(poster) for poster in posters]
-    return _dedupe([url for url in urls if url])
-
-
-def poster_url(anime: dict[str, Any]) -> str | None:
-    urls = poster_urls(anime)
-    return urls[0] if urls else None
-
-
-def result_button_text(anime: dict[str, Any]) -> str:
-    title = anime.get("russian") or anime.get("name") or "Без названия"
-    year = (anime.get("airedOn") or {}).get("year")
-    text = f"{title} ({year})" if year else title
-    return text if len(text) <= 60 else text[:57] + "..."
-
-
-def anime_sections(
-    anime: dict[str, Any],
-    people_limit: int | None = 20,
-) -> list[str]:
-    russian = clean_text(anime.get("russian"))
-    name = clean_text(anime.get("name")) or "Без названия"
-    title = russian or name
-
-    kind = KIND_NAMES.get(anime.get("kind"), anime.get("kind") or "—")
-    status = STATUS_NAMES.get(anime.get("status"), anime.get("status") or "—")
-    rating = RATING_NAMES.get(anime.get("rating"), anime.get("rating") or "—")
-
-    total = anime.get("episodes") or 0
-    aired = anime.get("episodesAired") or 0
-    episodes = f"{aired}/{total}" if total else str(aired or "—")
-
-    studios = _dedupe(
-        [studio.get("name", "") for studio in anime.get("studios") or []]
-    )
-    genres = _dedupe(
-        [
-            genre.get("russian") or genre.get("name") or ""
-            for genre in anime.get("genres") or []
-        ]
-    )
-    licensors = _dedupe(anime.get("licensors") or [])
-
-    url = clean_text(anime.get("url"))
+    url = _clean_text(raw.get("url"))
     if url.startswith("/"):
         url = f"{site_url()}{url}"
 
-    info = [
-        title,
-        "",
-        f"Тип: {kind}",
-        f"Статус: {status}",
-        f"Серии: {episodes}",
-        f"Оценка Shikimori: {anime.get('score') or '—'}",
-        f"Возрастной рейтинг: {rating}",
-    ]
+    poster = raw.get("poster") or {}
+    poster_url = _best_poster_url(poster) if isinstance(poster, dict) else None
 
-    if anime.get("duration"):
-        info.append(f"Длительность серии: {anime['duration']} мин.")
-    if anime.get("season"):
-        info.append(f"Сезон: {anime['season']}")
-    if anime.get("franchise"):
-        info.append(f"Франшиза: {anime['franchise']}")
+    score: float | None = None
+    try:
+        if raw.get("score") not in (None, ""):
+            score = float(raw["score"])
+    except (TypeError, ValueError):
+        pass
 
-    aired_on = _format_date(anime.get("airedOn"))
-    released_on = _format_date(anime.get("releasedOn"))
-    if aired_on != "—":
-        info.append(f"Начало показа: {aired_on}")
-    if released_on != "—":
-        info.append(f"Окончание показа: {released_on}")
-
-    next_episode = _format_datetime(anime.get("nextEpisodeAt"))
-    if next_episode:
-        info.append(f"Следующая серия: {next_episode}")
-    if genres:
-        info.append(f"Жанры: {', '.join(genres)}")
-    if studios:
-        info.append(f"Студии: {', '.join(studios)}")
-    if licensors:
-        info.append(f"Лицензиаты: {', '.join(licensors)}")
-
-    ids = [f"Shikimori ID: {anime.get('id')}"]
-    if anime.get("malId"):
-        ids.append(f"MAL ID: {anime['malId']}")
-    info.append(" | ".join(ids))
-
-    if url:
-        info.append(url)
-
-    titles = ["Названия:"]
-    title_entries = [
-        ("Русское", russian),
-        ("Оригинальное / romaji", name),
-        ("English", clean_text(anime.get("english"))),
-        ("日本語", clean_text(anime.get("japanese"))),
-        ("Лицензионное RU", clean_text(anime.get("licenseNameRu"))),
-    ]
-
-    seen_titles: set[str] = set()
-    for label, value in title_entries:
-        if value and value.casefold() not in seen_titles:
-            seen_titles.add(value.casefold())
-            titles.append(f"• {label}: {value}")
-
-    synonyms = [
-        value
-        for value in _dedupe(anime.get("synonyms") or [])
-        if value.casefold() not in seen_titles
-    ]
-    if synonyms:
-        titles.append("• Синонимы: " + "; ".join(synonyms))
-
-    sections = ["\n".join(info), "\n".join(titles)]
-
-    description = clean_text(anime.get("description"))
-    if description:
-        sections.append("Описание:\n" + description)
-
-    staff = _people_section(
-        "Авторы и команда:",
-        _people_lines(anime, want_seyu=False),
-        people_limit,
-    )
-    voices = _people_section(
-        "Сэйю / актёры озвучки:",
-        _people_lines(anime, want_seyu=True),
-        people_limit,
+    return AnimeRecord(
+        source="Shikimori",
+        source_id=str(raw.get("id") or ""),
+        titles=titles,
+        synonyms=_dedupe(raw.get("synonyms") or []),
+        external_ids=external_ids,
+        kind=KIND_NAMES.get(raw.get("kind"), raw.get("kind") or None),
+        status=STATUS_NAMES.get(raw.get("status"), raw.get("status") or None),
+        rating=RATING_NAMES.get(raw.get("rating"), raw.get("rating") or None),
+        season=_clean_text(raw.get("season")) or None,
+        franchise=_clean_text(raw.get("franchise")) or None,
+        episodes_total=raw.get("episodes") or None,
+        episodes_aired=raw.get("episodesAired") or None,
+        duration_minutes=raw.get("duration") or None,
+        aired_on=_format_date(raw.get("airedOn")),
+        released_on=_format_date(raw.get("releasedOn")),
+        next_episode_at=_format_datetime(raw.get("nextEpisodeAt")),
+        score=score,
+        genres=_dedupe(
+            [genre.get("russian") or genre.get("name") or "" for genre in raw.get("genres") or []]
+        ),
+        studios=_dedupe([studio.get("name", "") for studio in raw.get("studios") or []]),
+        licensors=_dedupe(raw.get("licensors") or []),
+        descriptions={"Shikimori": _clean_text(raw.get("description"))}
+        if _clean_text(raw.get("description"))
+        else {},
+        posters=[poster_url] if poster_url else [],
+        urls={"Shikimori": url} if url else {},
+        staff=_credits(raw, voices=False),
+        voices=_credits(raw, voices=True),
     )
 
-    if staff:
-        sections.append(staff)
-    if voices:
-        sections.append(voices)
 
-    return sections
+class ShikimoriSource:
+    name = "Shikimori"
 
+    async def search(
+        self,
+        query: str,
+        *,
+        page: int,
+        limit: int,
+    ) -> SourceSearchPage:
+        effective_limit = max(1, min(int(limit), SHIKIMORI_MAX_PAGE_SIZE))
+        raw_items = await _search_raw(query, page=page, limit=effective_limit)
+        return SourceSearchPage(
+            items=[_search_hit(item) for item in raw_items],
+            has_next=len(raw_items) >= effective_limit,
+        )
 
-def anime_text(
-    anime: dict[str, Any],
-    people_limit: int | None = 20,
-) -> str:
-    return "\n\n".join(anime_sections(anime, people_limit=people_limit))
+    async def get_details(self, candidate: SearchCandidate) -> AnimeRecord | None:
+        source_id = candidate.source_refs.get(self.name)
+
+        if not source_id:
+            raw_matches = await _search_raw(candidate.title, page=1, limit=10)
+            if not raw_matches:
+                return None
+
+            mal_id = candidate.external_ids.get("mal")
+            if mal_id:
+                for raw in raw_matches:
+                    if str(raw.get("malId") or "") == mal_id:
+                        source_id = str(raw.get("id") or "")
+                        break
+
+            if not source_id and candidate.year:
+                for raw in raw_matches:
+                    if (raw.get("airedOn") or {}).get("year") == candidate.year:
+                        source_id = str(raw.get("id") or "")
+                        break
+
+            if not source_id:
+                source_id = str(raw_matches[0].get("id") or "")
+
+        if not source_id:
+            return None
+
+        raw = await _get_raw(source_id)
+        return _record(raw) if raw else None
