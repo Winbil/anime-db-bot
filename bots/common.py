@@ -191,59 +191,82 @@ def _format_people(title: str, people) -> str:
     return "\n".join(lines)
 
 
+def _append_block(target: list[str], title: str, lines: list[str]) -> None:
+    lines = [line for line in lines if line]
+    if not lines:
+        return
+    if target:
+        target.append("")
+    target.append(f"{title}:")
+    target.extend(lines)
+
+
 def _anime_sections(anime: AggregatedAnime) -> dict[str, str]:
     total = anime.episodes_total or 0
     aired = anime.episodes_aired or 0
     episodes = f"{aired}/{total}" if total else str(aired or "—")
 
-    main = [anime.title, ""]
+    main = [anime.title]
+
+    basic: list[str] = []
     if anime.kind:
-        main.append(f"Тип: {anime.kind}")
+        basic.append(f"Тип: {anime.kind}")
     if anime.status:
-        main.append(f"Статус: {anime.status}")
-    main.append(f"Серии: {episodes}")
+        basic.append(f"Статус: {anime.status}")
+    basic.append(f"Серии: {episodes}")
+    if anime.duration_minutes:
+        basic.append(f"Длительность серии: {anime.duration_minutes} мин.")
+    if anime.rating:
+        basic.append(f"Возрастной рейтинг: {anime.rating}")
+    _append_block(main, "Основное", basic)
+
+    release: list[str] = []
+    if anime.season:
+        release.append(f"Сезон: {anime.season}")
+    if anime.aired_on or anime.released_on:
+        release.append(
+            "Начало/Конец показа: "
+            f"{anime.aired_on or '—'}/{anime.released_on or '—'}"
+        )
+    if anime.next_episode_at:
+        release.append(f"Следующая серия: {anime.next_episode_at}")
+    if anime.franchise:
+        release.append(f"Франшиза: {anime.franchise}")
+    _append_block(main, "Выход", release)
+
+    production: list[str] = []
+    if anime.genres:
+        production.append(f"Жанры: {', '.join(anime.genres)}")
+    if anime.studios:
+        production.append(f"Студии: {', '.join(anime.studios)}")
+    if anime.licensors:
+        production.append(f"Лицензиаты: {', '.join(anime.licensors)}")
+    _append_block(main, "Производство", production)
 
     if anime.scores:
-        scores = "; ".join(
-            f"{source}: {score:g}" for source, score in anime.scores.items()
-        )
-        main.append(f"Оценки: {scores}")
-    if anime.rating:
-        main.append(f"Возрастной рейтинг: {anime.rating}")
-    if anime.duration_minutes:
-        main.append(f"Длительность серии: {anime.duration_minutes} мин.")
-    if anime.season:
-        main.append(f"Сезон: {anime.season}")
-    if anime.franchise:
-        main.append(f"Франшиза: {anime.franchise}")
-    if anime.aired_on:
-        main.append(f"Начало показа: {anime.aired_on}")
-    if anime.released_on:
-        main.append(f"Окончание показа: {anime.released_on}")
-    if anime.next_episode_at:
-        main.append(f"Следующая серия: {anime.next_episode_at}")
-    if anime.genres:
-        main.append(f"Жанры: {', '.join(anime.genres)}")
-    if anime.studios:
-        main.append(f"Студии: {', '.join(anime.studios)}")
-    if anime.licensors:
-        main.append(f"Лицензиаты: {', '.join(anime.licensors)}")
-    if anime.sources:
-        main.append(f"Источники: {', '.join(anime.sources)}")
+        score_lines = [
+            f"{source}: {score:g}"
+            for source, score in anime.scores.items()
+        ]
+        _append_block(main, "Оценки", score_lines)
 
+    source_lines: list[str] = []
+    if anime.sources:
+        source_lines.append(f"Базы: {', '.join(anime.sources)}")
     if anime.external_ids:
         ids = " | ".join(
             f"{name.upper()}: {value}" for name, value in anime.external_ids.items()
         )
-        main.append(ids)
-
+        source_lines.append(f"ID: {ids}")
     if anime.urls:
-        main.extend(f"{source}: {url}" for source, url in anime.urls.items())
-
-    if anime.errors:
-        main.append(
-            "Часть источников недоступна: " + ", ".join(anime.errors)
+        source_lines.extend(
+            f"{source}: {url}" for source, url in anime.urls.items()
         )
+    if anime.errors:
+        source_lines.append(
+            "Недоступны: " + ", ".join(anime.errors)
+        )
+    _append_block(main, "Источники", source_lines)
 
     titles = ["Названия:"]
     labels = {
