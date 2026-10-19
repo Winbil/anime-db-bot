@@ -113,11 +113,12 @@ TG_API_URL_VALUE="$(sed -n 's/^[[:space:]]*TELEGRAM_BOT_API_URL[[:space:]]*=[[:s
 
 if [[ -n "$TG_API_URL_VALUE" ]]; then
     BOT_MODULE="bots.tgapi"
-    info "Selected Telegram mode: custom tg-bot-api + sendRichMessage (up to 32768 UTF-8 chars)."
+    info "Selected Telegram transport: custom tg-bot-api."
 else
     BOT_MODULE="bots.official"
-    info "Selected Telegram mode: official Bot API + sendMessage (safe splitting near 4096 chars)."
+    info "Selected Telegram transport: official api.telegram.org."
 fi
+info "Anime cards use sendRichMessage (up to 32768 UTF-8 chars) in both modes."
 
 mkdir -p "$LOG_DIR"
 
