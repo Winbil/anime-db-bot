@@ -23,6 +23,28 @@ command -v tmux >/dev/null 2>&1 || fail "tmux is not installed. Install it first
 [[ -f "$SCRIPT_DIR/requirements.txt" ]] || fail "requirements.txt not found."
 [[ -f "$SCRIPT_DIR/bot.py" ]] || fail "bot.py not found."
 
+if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    info "Bot is already running in tmux session '$SESSION_NAME'."
+    if [[ ! -t 0 ]]; then
+        info "Non-interactive shell detected; leaving the running bot untouched."
+        info "Attach with: tmux attach -t $SESSION_NAME"
+        exit 0
+    fi
+
+    printf '[anime-db-bot] Restart the bot? [y/N]: '
+    read -r restart_answer
+    case "${restart_answer,,}" in
+        y|yes|д|да)
+            info "Stopping the current bot session..."
+            tmux kill-session -t "$SESSION_NAME"
+            ;;
+        *)
+            info "Restart cancelled. The current bot keeps running."
+            exit 0
+            ;;
+    esac
+fi
+
 create_venv() {
     info "Creating virtual environment in .venv..."
     rm -rf "$VENV_DIR"
@@ -41,9 +63,9 @@ PYTHON="$VENV_DIR/bin/python"
 if [[ ! -x "$PYTHON" ]]; then
     info "Virtual environment is incomplete. Recreating it..."
     create_venv
+    PYTHON="$VENV_DIR/bin/python"
 fi
 
-# Some minimal Python/Ubuntu installations can create a venv without pip.
 if ! "$PYTHON" -m pip --version >/dev/null 2>&1; then
     info "pip is missing from the virtual environment. Trying ensurepip..."
     if ! "$PYTHON" -m ensurepip --upgrade >/dev/null 2>&1; then
@@ -82,12 +104,6 @@ fi
 
 BOT_TOKEN_VALUE="$(sed -n 's/^[[:space:]]*BOT_TOKEN[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
 [[ -n "$BOT_TOKEN_VALUE" ]] || fail "BOT_TOKEN is empty in .env."
-
-if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-    info "tmux session '$SESSION_NAME' is already running."
-    info "Attach with: tmux attach -t $SESSION_NAME"
-    exit 0
-fi
 
 mkdir -p "$LOG_DIR"
 
