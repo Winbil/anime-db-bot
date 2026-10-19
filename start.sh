@@ -32,6 +32,7 @@ required_files=(
     "services/aggregator.py"
     "sources/registry.py"
     "sources/shikimori.py"
+    "sources/anilist.py"
 )
 for required_file in "${required_files[@]}"; do
     [[ -f "$SCRIPT_DIR/$required_file" ]] || fail "$required_file not found."
@@ -111,7 +112,9 @@ from core.contracts import AnimeSource
 from core.models import AggregatedAnime, AnimeRecord, SearchCandidate
 from services.aggregator import AnimeAggregator
 from services.search import SearchService
+from sources.anilist import AniListSource
 from sources.registry import get_sources
+from sources.shikimori import ShikimoriSource
 
 sources = get_sources()
 if not sources:
