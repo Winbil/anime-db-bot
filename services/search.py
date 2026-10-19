@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import re
 
+from core.contracts import AnimeSource
 from core.models import SearchCandidate, SearchPage, SourceSearchHit
-from sources.base import AnimeSource
 
 
 def _dedupe_strings(values: list[str]) -> list[str]:
@@ -24,9 +24,9 @@ def _normalize_title(value: str) -> str:
 
 
 def _candidate_key(hit: SourceSearchHit) -> tuple[str, str | int | None]:
-    for key in ("mal", "anilist", "anidb", "shikimori"):
-        if hit.external_ids.get(key):
-            return (f"id:{key}", hit.external_ids[key])
+    mal_id = hit.external_ids.get("mal")
+    if mal_id:
+        return ("id:mal", mal_id)
     return (_normalize_title(hit.title), hit.year)
 
 
