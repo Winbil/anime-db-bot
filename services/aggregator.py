@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
+from core.contracts import AnimeSource
 from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate
-from sources.base import AnimeSource
 
 
 def _dedupe_strings(values: list[str]) -> list[str]:
@@ -32,7 +32,7 @@ def _merge_people(groups: list[list[PersonCredit]]) -> list[PersonCredit]:
 
 
 class AnimeAggregator:
-    """Fetch and merge one anime from all configured sources."""
+    """Fetch and merge one anime from all configured source adapters."""
 
     def __init__(self, sources: tuple[AnimeSource, ...] | list[AnimeSource]) -> None:
         self._sources = tuple(sources)
@@ -58,7 +58,8 @@ class AnimeAggregator:
         if not records:
             raise RuntimeError("No source could provide anime details")
 
-        records.sort(key=lambda record: record.source != next(iter(candidate.source_refs), ""))
+        preferred_source = next(iter(candidate.source_refs), "")
+        records.sort(key=lambda record: record.source != preferred_source)
 
         def first(field_name: str):
             for record in records:
