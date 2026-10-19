@@ -20,10 +20,22 @@ fail() {
 
 command -v python3 >/dev/null 2>&1 || fail "python3 is not installed."
 command -v tmux >/dev/null 2>&1 || fail "tmux is not installed. Install it first, for example: sudo apt install tmux"
-[[ -f "$SCRIPT_DIR/requirements.txt" ]] || fail "requirements.txt not found."
-[[ -f "$SCRIPT_DIR/bots/official.py" ]] || fail "bots/official.py not found."
-[[ -f "$SCRIPT_DIR/bots/tgapi.py" ]] || fail "bots/tgapi.py not found."
-[[ -f "$SCRIPT_DIR/sources/shikimori.py" ]] || fail "sources/shikimori.py not found."
+
+required_files=(
+    "requirements.txt"
+    "bots/common.py"
+    "bots/official.py"
+    "bots/tgapi.py"
+    "core/models.py"
+    "core/contracts.py"
+    "services/search.py"
+    "services/aggregator.py"
+    "sources/registry.py"
+    "sources/shikimori.py"
+)
+for required_file in "${required_files[@]}"; do
+    [[ -f "$SCRIPT_DIR/$required_file" ]] || fail "$required_file not found."
+done
 
 if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
     info "Bot is already running in tmux session '$SESSION_NAME'."
@@ -89,14 +101,26 @@ info "Checking and installing Python dependencies..."
 info "Checking dependency consistency..."
 "$PYTHON" -m pip check
 
-info "Checking required imports..."
+info "Checking required imports and source registry..."
 "$PYTHON" - <<'PY'
 import aiogram
 import httpx
 import dotenv
 from aiogram.types import InputRichMessage
+from core.contracts import AnimeSource
+from core.models import AggregatedAnime, AnimeRecord, SearchCandidate
+from services.aggregator import AnimeAggregator
+from services.search import SearchService
+from sources.registry import get_sources
 
-print("Python imports: OK")
+sources = get_sources()
+if not sources:
+    raise RuntimeError("No anime sources are enabled in sources/registry.py")
+
+SearchService(sources)
+AnimeAggregator(sources)
+print("Python imports and service wiring: OK")
+print("Enabled sources:", ", ".join(source.name for source in sources))
 PY
 
 if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
@@ -118,6 +142,7 @@ else
     BOT_MODULE="bots.official"
     info "Selected Telegram transport: official api.telegram.org."
 fi
+info "Search service and source aggregator are enabled."
 info "Anime cards use sendRichMessage (up to 32768 UTF-8 chars) in both modes."
 
 mkdir -p "$LOG_DIR"
