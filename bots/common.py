@@ -102,6 +102,22 @@ def _rich(text: str) -> InputRichMessage:
     return InputRichMessage(html=_plain_text_to_rich_html(text))
 
 
+def _main_rich(anime_id: str, text: str) -> InputRichMessage:
+    base = _plain_text_to_rich_html(text)
+    links = (
+        "<p><b>Подробная информация</b><br>"
+        f'<tg-button type="callback_data" style="link" data="av:{anime_id}:description:0">Описание</tg-button>'
+        " — нажмите, чтобы открыть<br>"
+        f'<tg-button type="callback_data" style="link" data="av:{anime_id}:titles:0">Все названия</tg-button>'
+        " — нажмите, чтобы открыть<br>"
+        f'<tg-button type="callback_data" style="link" data="av:{anime_id}:staff:0">Авторы и команда</tg-button>'
+        " — нажмите, чтобы открыть<br>"
+        f'<tg-button type="callback_data" style="link" data="av:{anime_id}:voices:0">Сэйю</tg-button>'
+        " — нажмите, чтобы открыть</p>"
+    )
+    return InputRichMessage(html=base + links)
+
+
 async def _send_standard_text(
     message: Message,
     text: str,
@@ -136,10 +152,6 @@ def _anime_sections(anime: dict) -> dict[str, str]:
         elif section.startswith("Сэйю / актёры озвучки:"):
             result["voices"] = section
 
-    result["main"] += (
-        "\n\nПодробности скрыты, чтобы карточка оставалась компактной.\n"
-        "Нажми кнопку ниже: описание, названия, команда или сэйю."
-    )
     return result
 
 
@@ -148,32 +160,23 @@ def _view_pages(anime: dict, section: str) -> list[str]:
     return _split_text(text, RICH_MESSAGE_LIMIT)
 
 
-def _details_keyboard(
+def _navigation_keyboard(
     anime_id: str,
     current_section: str,
     page: int,
     page_count: int,
-) -> InlineKeyboardMarkup:
-    def section_button(section: str) -> InlineKeyboardButton:
-        label = SECTION_LABELS[section]
-        if section == current_section:
-            label = f"• {label}"
-        return InlineKeyboardButton(
-            text=label,
-            callback_data=f"av:{anime_id}:{section}:0",
-        )
+) -> InlineKeyboardMarkup | None:
+    rows: list[list[InlineKeyboardButton]] = []
 
-    rows = [
-        [
-            section_button("main"),
-            section_button("description"),
-            section_button("titles"),
-        ],
-        [
-            section_button("staff"),
-            section_button("voices"),
-        ],
-    ]
+    if current_section != "main":
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="← Назад",
+                    callback_data=f"av:{anime_id}:main:0",
+                )
+            ]
+        )
 
     if page_count > 1:
         nav: list[InlineKeyboardButton] = []
@@ -199,7 +202,34 @@ def _details_keyboard(
             )
         rows.append(nav)
 
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
+
+
+def _fallback_main_keyboard(anime_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Описание",
+                    callback_data=f"av:{anime_id}:description:0",
+                ),
+                InlineKeyboardButton(
+                    text="Названия",
+                    callback_data=f"av:{anime_id}:titles:0",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Команда",
+                    callback_data=f"av:{anime_id}:staff:0",
+                ),
+                InlineKeyboardButton(
+                    text="Сэйю",
+                    callback_data=f"av:{anime_id}:voices:0",
+                ),
+            ],
+        ]
+    )
 
 
 def _search_keyboard(animes: list[dict]) -> InlineKeyboardMarkup:
@@ -216,6 +246,12 @@ def _search_keyboard(animes: list[dict]) -> InlineKeyboardMarkup:
     )
 
 
+def _rich_view(anime_id: str, section: str, text: str) -> InputRichMessage:
+    if section == "main":
+        return _main_rich(anime_id, text)
+    return _rich(text)
+
+
 async def _send_anime_view(
     message: Message,
     anime: dict,
@@ -225,16 +261,26 @@ async def _send_anime_view(
     anime_id = str(anime.get("id") or "")
     pages = _view_pages(anime, section)
     page = max(0, min(page, len(pages) - 1))
-    keyboard = _details_keyboard(anime_id, section, page, len(pages))
+    keyboard = _navigation_keyboard(anime_id, section, page, len(pages))
     text = pages[page]
 
     try:
-        await message.answer_rich(_rich(text), reply_markup=keyboard)
+        await message.answer_rich(
+            _rich_view(anime_id, section, text),
+            reply_markup=keyboard,
+        )
     except Exception:
         logging.exception(
             "sendRichMessage failed; falling back to standard sendMessage"
         )
-        await _send_standard_text(message, text, reply_markup=keyboard)
+        fallback_keyboard = (
+            _fallback_main_keyboard(anime_id) if section == "main" else keyboard
+        )
+        await _send_standard_text(
+            message,
+            text,
+            reply_markup=fallback_keyboard,
+        )
 
 
 async def _edit_anime_view(
@@ -246,12 +292,12 @@ async def _edit_anime_view(
     anime_id = str(anime.get("id") or "")
     pages = _view_pages(anime, section)
     page = max(0, min(page, len(pages) - 1))
-    keyboard = _details_keyboard(anime_id, section, page, len(pages))
+    keyboard = _navigation_keyboard(anime_id, section, page, len(pages))
     text = pages[page]
 
     try:
         await message.edit_text(
-            rich_message=_rich(text),
+            rich_message=_rich_view(anime_id, section, text),
             reply_markup=keyboard,
         )
     except Exception:
@@ -259,9 +305,12 @@ async def _edit_anime_view(
             "Rich message edit failed; falling back to standard text edit"
         )
         standard_page = _split_text(text, STANDARD_MESSAGE_LIMIT)[0]
+        fallback_keyboard = (
+            _fallback_main_keyboard(anime_id) if section == "main" else keyboard
+        )
         await message.edit_text(
             text=standard_page,
-            reply_markup=keyboard,
+            reply_markup=fallback_keyboard,
         )
 
 
@@ -436,7 +485,7 @@ async def run_bot(*, use_custom_api: bool, mode_name: str) -> None:
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
     logging.info("Bot mode: %s", mode_name)
-    logging.info("Anime details use interactive rich-message sections")
+    logging.info("Anime details use rich-text callback links and inline navigation")
     logging.info("Using Shikimori API: %s", shikimori.graphql_url())
 
     bot = create_bot(use_custom_api=use_custom_api)
