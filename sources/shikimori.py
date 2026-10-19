@@ -6,6 +6,8 @@ import httpx
 
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
 DEFAULT_SHIKIMORI_SITE_URL = "https://shikimori.io"
+DEFAULT_SEARCH_PAGE_SIZE = 10
+SHIKIMORI_MAX_PAGE_SIZE = 50
 
 SEARCH_FIELDS = """
     id
@@ -44,16 +46,14 @@ DETAIL_FIELDS = """
       person { id name russian japanese isSeyu }
     }
     description
-    poster { mainUrl }
+    poster {
+      originalUrl
+      main2xUrl
+      mainUrl
+      preview2xUrl
+      previewUrl
+    }
     url
-"""
-
-SEARCH_QUERY = f"""
-query SearchAnime($search: String!) {{
-  animes(search: $search, limit: 5, order: popularity) {{
-{SEARCH_FIELDS}
-  }}
-}}
 """
 
 BY_ID_QUERY = f"""
@@ -109,7 +109,7 @@ def site_url() -> str:
 
 async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
     headers = {
-        "User-Agent": "anime-db-bot/0.2 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": "anime-db-bot/0.3 (https://github.com/Winbil/anime-db-bot)",
         "Accept": "application/json",
     }
 
@@ -144,8 +144,25 @@ async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
     return body.get("data", {})
 
 
-async def search_anime(query: str) -> list[dict[str, Any]]:
-    data = await _graphql(SEARCH_QUERY, {"search": query})
+def _search_query(page: int, limit: int) -> str:
+    page = max(1, int(page))
+    limit = max(1, min(int(limit), SHIKIMORI_MAX_PAGE_SIZE))
+    return f"""
+query SearchAnime($search: String!) {{
+  animes(search: $search, page: {page}, limit: {limit}, order: popularity) {{
+{SEARCH_FIELDS}
+  }}
+}}
+"""
+
+
+async def search_anime(
+    query: str,
+    *,
+    page: int = 1,
+    limit: int = DEFAULT_SEARCH_PAGE_SIZE,
+) -> list[dict[str, Any]]:
+    data = await _graphql(_search_query(page, limit), {"search": query})
     return data.get("animes", [])
 
 
@@ -260,8 +277,39 @@ def anime_title(anime: dict[str, Any]) -> str:
     )
 
 
+def _best_poster_url(poster: dict[str, Any]) -> str | None:
+    for field in (
+        "originalUrl",
+        "main2xUrl",
+        "mainUrl",
+        "preview2xUrl",
+        "previewUrl",
+    ):
+        value = clean_text(poster.get(field))
+        if value:
+            return value
+    return None
+
+
+def poster_urls(anime: dict[str, Any]) -> list[str]:
+    """Return one best URL per poster entry, without duplicate size variants."""
+    poster_value = anime.get("poster")
+    posters: list[dict[str, Any]]
+
+    if isinstance(poster_value, list):
+        posters = [item for item in poster_value if isinstance(item, dict)]
+    elif isinstance(poster_value, dict):
+        posters = [poster_value]
+    else:
+        posters = []
+
+    urls = [_best_poster_url(poster) for poster in posters]
+    return _dedupe([url for url in urls if url])
+
+
 def poster_url(anime: dict[str, Any]) -> str | None:
-    return (anime.get("poster") or {}).get("mainUrl")
+    urls = poster_urls(anime)
+    return urls[0] if urls else None
 
 
 def result_button_text(anime: dict[str, Any]) -> str:
