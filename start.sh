@@ -23,17 +23,41 @@ command -v tmux >/dev/null 2>&1 || fail "tmux is not installed. Install it first
 [[ -f "$SCRIPT_DIR/requirements.txt" ]] || fail "requirements.txt not found."
 [[ -f "$SCRIPT_DIR/bot.py" ]] || fail "bot.py not found."
 
-if [[ ! -d "$VENV_DIR" ]]; then
+create_venv() {
     info "Creating virtual environment in .venv..."
+    rm -rf "$VENV_DIR"
     if ! python3 -m venv "$VENV_DIR"; then
         fail "Could not create venv. On Ubuntu/Debian install python3-venv: sudo apt install python3-venv"
     fi
+}
+
+if [[ ! -d "$VENV_DIR" ]]; then
+    create_venv
 else
     info "Virtual environment already exists."
 fi
 
 PYTHON="$VENV_DIR/bin/python"
-[[ -x "$PYTHON" ]] || fail "Virtual environment is incomplete: $PYTHON is missing. Remove .venv and run this script again."
+if [[ ! -x "$PYTHON" ]]; then
+    info "Virtual environment is incomplete. Recreating it..."
+    create_venv
+fi
+
+# Some minimal Python/Ubuntu installations can create a venv without pip.
+if ! "$PYTHON" -m pip --version >/dev/null 2>&1; then
+    info "pip is missing from the virtual environment. Trying ensurepip..."
+    if ! "$PYTHON" -m ensurepip --upgrade >/dev/null 2>&1; then
+        info "Could not bootstrap pip in the existing venv. Recreating it once..."
+        create_venv
+        PYTHON="$VENV_DIR/bin/python"
+        if ! "$PYTHON" -m pip --version >/dev/null 2>&1; then
+            fail "pip is unavailable in the venv. On Ubuntu/Debian run: sudo apt update && sudo apt install python3-venv python3-pip, then remove .venv and run ./start.sh again."
+        fi
+    fi
+fi
+
+info "Using Python: $($PYTHON --version 2>&1)"
+info "Using pip: $($PYTHON -m pip --version)"
 
 info "Checking and installing Python dependencies..."
 "$PYTHON" -m pip install --disable-pip-version-check -r "$SCRIPT_DIR/requirements.txt"
