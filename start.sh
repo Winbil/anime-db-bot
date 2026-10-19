@@ -22,6 +22,8 @@ command -v python3 >/dev/null 2>&1 || fail "python3 is not installed."
 command -v tmux >/dev/null 2>&1 || fail "tmux is not installed. Install it first, for example: sudo apt install tmux"
 [[ -f "$SCRIPT_DIR/requirements.txt" ]] || fail "requirements.txt not found."
 [[ -f "$SCRIPT_DIR/bot.py" ]] || fail "bot.py not found."
+[[ -f "$SCRIPT_DIR/bot_official.py" ]] || fail "bot_official.py not found."
+[[ -f "$SCRIPT_DIR/bot_tgapi.py" ]] || fail "bot_tgapi.py not found."
 
 if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
     info "Bot is already running in tmux session '$SESSION_NAME'."
@@ -105,17 +107,28 @@ fi
 BOT_TOKEN_VALUE="$(sed -n 's/^[[:space:]]*BOT_TOKEN[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
 [[ -n "$BOT_TOKEN_VALUE" ]] || fail "BOT_TOKEN is empty in .env."
 
+TG_API_URL_VALUE="$(sed -n 's/^[[:space:]]*TELEGRAM_BOT_API_URL[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
+if [[ -n "$TG_API_URL_VALUE" ]]; then
+    BOT_ENTRYPOINT="$SCRIPT_DIR/bot_tgapi.py"
+    BOT_MODE="custom tg-bot-api (extended messages)"
+else
+    BOT_ENTRYPOINT="$SCRIPT_DIR/bot_official.py"
+    BOT_MODE="official Telegram Bot API (safe 3900-char splitting)"
+fi
+
+info "Selected Telegram mode: $BOT_MODE"
 mkdir -p "$LOG_DIR"
 
 tmux new-session -d \
     -s "$SESSION_NAME" \
     -c "$SCRIPT_DIR" \
-    "exec '$PYTHON' '$SCRIPT_DIR/bot.py' 2>&1 | tee -a '$LOG_FILE'"
+    "exec '$PYTHON' '$BOT_ENTRYPOINT' 2>&1 | tee -a '$LOG_FILE'"
 
 sleep 1
 
 if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
     info "Bot started in tmux session '$SESSION_NAME'."
+    info "Mode:   $BOT_MODE"
     info "Attach: tmux attach -t $SESSION_NAME"
     info "Logs:   tail -f '$LOG_FILE'"
 else
