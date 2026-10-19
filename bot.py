@@ -17,8 +17,9 @@ load_dotenv()
 
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
 DEFAULT_SHIKIMORI_SITE_URL = "https://shikimori.io"
-MAX_PEOPLE_PER_SECTION = 20
-MAX_MESSAGE_LENGTH = 3900
+OFFICIAL_MAX_PEOPLE_PER_SECTION = 20
+OFFICIAL_MAX_MESSAGE_LENGTH = 3900
+RUNTIME_MODE = "auto"
 
 SEARCH_FIELDS = """
     id
@@ -113,14 +114,34 @@ def env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def create_bot() -> Bot:
+def telegram_bot_api_url() -> str:
+    return os.getenv("TELEGRAM_BOT_API_URL", "").strip().rstrip("/")
+
+
+def resolve_runtime_mode(mode: str) -> str:
+    normalized = (mode or "auto").strip().lower()
+    if normalized not in {"auto", "official", "tgapi"}:
+        raise RuntimeError(f"Unknown Telegram runtime mode: {mode}")
+    if normalized == "auto":
+        return "tgapi" if telegram_bot_api_url() else "official"
+    return normalized
+
+
+def extended_message_mode() -> bool:
+    return RUNTIME_MODE == "tgapi"
+
+
+def create_bot(mode: str) -> Bot:
     token = os.getenv("BOT_TOKEN", "").strip()
     if not token:
         raise RuntimeError("BOT_TOKEN is not set. Copy .env.example to .env and add the bot token.")
 
-    api_url = os.getenv("TELEGRAM_BOT_API_URL", "").strip().rstrip("/")
-    if not api_url:
+    if mode == "official":
         return Bot(token=token)
+
+    api_url = telegram_bot_api_url()
+    if not api_url:
+        raise RuntimeError("TELEGRAM_BOT_API_URL is required for the tg-bot-api version.")
 
     api = TelegramAPIServer.from_base(
         api_url,
@@ -245,16 +266,19 @@ def people_lines(anime: dict[str, Any], want_seyu: bool) -> list[str]:
     return rows
 
 
-def people_section(title: str, rows: list[str]) -> str:
+def people_section(title: str, rows: list[str], unlimited: bool = False) -> str:
     if not rows:
         return ""
-    visible = rows[:MAX_PEOPLE_PER_SECTION]
-    if len(rows) > len(visible):
-        visible.append(f"…и ещё {len(rows) - len(visible)}")
+    if unlimited:
+        visible = rows
+    else:
+        visible = rows[:OFFICIAL_MAX_PEOPLE_PER_SECTION]
+        if len(rows) > len(visible):
+            visible.append(f"…и ещё {len(rows) - len(visible)}")
     return title + "\n" + "\n".join(visible)
 
 
-def anime_sections(anime: dict[str, Any]) -> list[str]:
+def anime_sections(anime: dict[str, Any], unlimited: bool = False) -> list[str]:
     russian = clean_text(anime.get("russian"))
     name = clean_text(anime.get("name")) or "Без названия"
     title = russian or name
@@ -335,8 +359,8 @@ def anime_sections(anime: dict[str, Any]) -> list[str]:
     if description:
         sections.append("Описание:\n" + description)
 
-    staff = people_section("Авторы и команда:", people_lines(anime, want_seyu=False))
-    voices = people_section("Сэйю / актёры озвучки:", people_lines(anime, want_seyu=True))
+    staff = people_section("Авторы и команда:", people_lines(anime, want_seyu=False), unlimited=unlimited)
+    voices = people_section("Сэйю / актёры озвучки:", people_lines(anime, want_seyu=True), unlimited=unlimited)
     if staff:
         sections.append(staff)
     if voices:
@@ -344,7 +368,7 @@ def anime_sections(anime: dict[str, Any]) -> list[str]:
     return sections
 
 
-def split_long_text(text: str, limit: int = MAX_MESSAGE_LENGTH) -> list[str]:
+def split_long_text(text: str, limit: int = OFFICIAL_MAX_MESSAGE_LENGTH) -> list[str]:
     text = text.strip()
     if len(text) <= limit:
         return [text] if text else []
@@ -362,12 +386,17 @@ def split_long_text(text: str, limit: int = MAX_MESSAGE_LENGTH) -> list[str]:
     return chunks
 
 
-def anime_text_chunks(anime: dict[str, Any]) -> list[str]:
+def anime_text_chunks(anime: dict[str, Any], unlimited: bool = False) -> list[str]:
+    sections = anime_sections(anime, unlimited=unlimited)
+    if unlimited:
+        text = "\n\n".join(section for section in sections if section).strip()
+        return [text] if text else []
+
     chunks: list[str] = []
     current = ""
-    for section in anime_sections(anime):
+    for section in sections:
         candidate = section if not current else current + "\n\n" + section
-        if len(candidate) <= MAX_MESSAGE_LENGTH:
+        if len(candidate) <= OFFICIAL_MAX_MESSAGE_LENGTH:
             current = candidate
             continue
         if current:
@@ -404,7 +433,8 @@ async def send_anime_card(message: Message, anime: dict[str, Any]) -> None:
             await message.answer_photo(photo=poster_url, caption=title[:1000])
         except Exception:
             logging.exception("Failed to send poster, continuing with text")
-    for chunk in anime_text_chunks(anime):
+
+    for chunk in anime_text_chunks(anime, unlimited=extended_message_mode()):
         await message.answer(chunk)
 
 
@@ -413,8 +443,10 @@ dp = Dispatcher()
 
 @dp.message(CommandStart())
 async def start_handler(message: Message) -> None:
+    mode_text = "кастомный tg-bot-api" if extended_message_mode() else "официальный Telegram Bot API"
     await message.answer(
         "Привет! Это первая версия anime-db-bot.\n\n"
+        f"Режим: {mode_text}.\n"
         "Команды:\n"
         "/anime <название> — найти аниме в Shikimori\n"
         "/ping — проверить, что бот работает"
@@ -480,15 +512,27 @@ async def anime_callback_handler(callback: CallbackQuery) -> None:
     await send_anime_card(callback.message, anime)
 
 
-async def main() -> None:
+async def main(mode: str = "auto") -> None:
+    global RUNTIME_MODE
+    RUNTIME_MODE = resolve_runtime_mode(mode)
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
     logging.info("Using Shikimori API: %s", shikimori_graphql_url())
-    bot = create_bot()
+    if RUNTIME_MODE == "tgapi":
+        logging.info("Telegram mode: custom tg-bot-api (%s), extended messages enabled", telegram_bot_api_url())
+    else:
+        logging.info("Telegram mode: official API, safe message splitting enabled")
+
+    bot = create_bot(RUNTIME_MODE)
     try:
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
 
 
+def run(mode: str = "auto") -> None:
+    asyncio.run(main(mode))
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    run("auto")
