@@ -1,86 +1,75 @@
 # anime-db-bot
 
-Минимальный Telegram-бот для поиска информации об аниме. Первая версия использует Shikimori GraphQL как источник данных.
+Telegram-бот для поиска и объединения информации об аниме из нескольких внешних баз данных. Сейчас подключён Shikimori GraphQL.
 
-## Сейчас умеет
+## Структура
 
-- `/start` — показать краткую справку
-- `/ping` — проверить, что бот запущен
-- `/anime <название>` — найти аниме в Shikimori и показать основную информацию
+```text
+anime-db-bot/
+├── bots/
+│   ├── common.py      # общие Telegram-хендлеры и отправка сообщений
+│   ├── official.py    # официальный Bot API + sendMessage
+│   └── tgapi.py       # custom telegram-bot-api + sendRichMessage
+├── sources/
+│   └── shikimori.py   # всё, что относится к Shikimori
+├── start.sh
+├── requirements.txt
+└── .env.example
+```
 
-## Требования
+Новые источники нужно добавлять отдельными модулями в `sources/`, например `anilist.py`, `anidb.py`, `animethemes.py`, `skipdb.py`.
 
-- Python 3.11+
-- Telegram-бот, созданный через BotFather
+## Команды
 
-## Запуск
+- `/start` — краткая справка и текущий Telegram-режим
+- `/ping` — проверить, что бот работает
+- `/anime <название>` — найти аниме в Shikimori
+
+## Быстрый запуск на Linux
 
 ```bash
-git clone https://github.com/Winbil/anime-db-bot.git
+git clone git@github.com:Winbil/anime-db-bot.git
 cd anime-db-bot
-python -m venv .venv
-```
-
-Linux/macOS:
-
-```bash
-source .venv/bin/activate
-```
-
-Windows PowerShell:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-Установи зависимости:
-
-```bash
-pip install -r requirements.txt
-```
-
-Создай `.env` из примера:
-
-```bash
 cp .env.example .env
+nano .env
+./start.sh
 ```
 
-На Windows можно просто скопировать `.env.example` в `.env` вручную.
+`start.sh` сам создаёт `.venv`, устанавливает зависимости, проверяет импорты и запускает бота в tmux-сессии `anime-db-bot`.
 
-Минимальная конфигурация:
+Если бот уже запущен, скрипт спросит, нужно ли его перезапустить.
+
+## Telegram API режимы
+
+Режим выбирается через `.env`.
+
+### Официальный Bot API
 
 ```env
-BOT_TOKEN=123456:telegram_bot_token
+TELEGRAM_BOT_API_URL=
 ```
 
-После этого:
+Запускается `bots.official`. Используется обычный `sendMessage`; длинный текст автоматически разбивается, чтобы не превышать лимит 4096 символов.
 
-```bash
-python bot.py
-```
-
-## Свой Telegram Bot API сервер
-
-По умолчанию бот использует официальный `https://api.telegram.org`.
-
-Если рядом запущен собственный `telegram-bot-api`, укажи его базовый адрес:
+### Свой telegram-bot-api
 
 ```env
-BOT_TOKEN=123456:telegram_bot_token
 TELEGRAM_BOT_API_URL=http://127.0.0.1:8081
-TELEGRAM_BOT_API_LOCAL=false
-```
-
-Если сам `telegram-bot-api` запущен с флагом `--local`, выставь:
-
-```env
 TELEGRAM_BOT_API_LOCAL=true
 ```
 
-Если `TELEGRAM_BOT_API_URL` оставить пустым, никаких дополнительных настроек не требуется — будет использован официальный Telegram Bot API.
+Запускается `bots.tgapi`. Для подробной карточки используется `sendRichMessage`, который поддерживает до 32768 UTF-8 символов. Если локальный Bot API слишком старый и не поддерживает этот метод, бот автоматически откатывается на обычные `sendMessage` с разбиением.
+
+`TELEGRAM_BOT_API_LOCAL=true` нужен только если сам сервер `telegram-bot-api` запущен с `--local`.
 
 ## Источники
 
-Сейчас подключён только Shikimori. Остальные источники будут добавляться постепенно, когда появится работающая база проекта.
+Сейчас:
 
-Планируемые источники: AniList/AniDB, AnimeThemes и SkipDB.
+- Shikimori — `sources/shikimori.py`
+
+Планируются:
+
+- AniList / AniDB
+- AnimeThemes
+- SkipDB
