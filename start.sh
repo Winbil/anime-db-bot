@@ -30,6 +30,8 @@ required_files=(
     "core/contracts.py"
     "services/search.py"
     "services/aggregator.py"
+    "search/registry.py"
+    "search/mal.py"
     "sources/registry.py"
     "sources/shikimori.py"
     "sources/anilist.py"
@@ -102,39 +104,46 @@ info "Checking and installing Python dependencies..."
 info "Checking dependency consistency..."
 "$PYTHON" -m pip check
 
-info "Checking required imports and source registry..."
+info "Checking required imports and service wiring..."
 "$PYTHON" - <<'PY'
 import aiogram
 import httpx
 import dotenv
 from aiogram.types import InputRichMessage
-from core.contracts import AnimeSource
-from core.models import AggregatedAnime, AnimeRecord, SearchCandidate
+from core.contracts import AnimeSearchProvider, AnimeSource
+from core.models import AggregatedAnime, AnimeRecord, SearchCandidate, SearchPage
+from search.mal import MALSearchProvider
+from search.registry import get_search_provider
 from services.aggregator import AnimeAggregator
 from services.search import SearchService
 from sources.anilist import AniListSource
 from sources.registry import get_sources
 from sources.shikimori import ShikimoriSource
 
+provider = get_search_provider()
 sources = get_sources()
 if not sources:
-    raise RuntimeError("No anime sources are enabled in sources/registry.py")
+    raise RuntimeError("No anime metadata sources are enabled in sources/registry.py")
 
-SearchService(sources)
+SearchService(provider)
 AnimeAggregator(sources)
 print("Python imports and service wiring: OK")
-print("Enabled sources:", ", ".join(source.name for source in sources))
+print("Search provider:", provider.name)
+print("Metadata sources:", ", ".join(source.name for source in sources))
 PY
 
 if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
     [[ -f "$SCRIPT_DIR/.env.example" ]] || fail ".env and .env.example are both missing."
     cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
     info "Created .env from .env.example."
-    fail "Add BOT_TOKEN to .env, then run ./start.sh again."
+    fail "Add BOT_TOKEN and MAL_CLIENT_ID to .env, then run ./start.sh again."
 fi
 
 BOT_TOKEN_VALUE="$(sed -n 's/^[[:space:]]*BOT_TOKEN[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
 [[ -n "$BOT_TOKEN_VALUE" ]] || fail "BOT_TOKEN is empty in .env."
+
+MAL_CLIENT_ID_VALUE="$(sed -n 's/^[[:space:]]*MAL_CLIENT_ID[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
+[[ -n "$MAL_CLIENT_ID_VALUE" ]] || fail "MAL_CLIENT_ID is empty in .env. Create an API application at https://myanimelist.net/apiconfig and copy its Client ID."
 
 TG_API_URL_VALUE="$(sed -n 's/^[[:space:]]*TELEGRAM_BOT_API_URL[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
 
@@ -145,7 +154,8 @@ else
     BOT_MODULE="bots.official"
     info "Selected Telegram transport: official api.telegram.org."
 fi
-info "Search service and source aggregator are enabled."
+info "Search provider: MyAnimeList API v2."
+info "Metadata sources are queried only after a MAL result is selected."
 info "Anime cards use sendRichMessage (up to 32768 UTF-8 chars) in both modes."
 
 mkdir -p "$LOG_DIR"
