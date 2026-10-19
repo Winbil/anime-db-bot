@@ -14,7 +14,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SHIKIMORI_GRAPHQL_URL = "https://shikimori.one/api/graphql"
+DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
+DEFAULT_SHIKIMORI_SITE_URL = "https://shikimori.io"
+
 SHIKIMORI_QUERY = """
 query SearchAnime($search: String!) {
   animes(search: $search, limit: 1) {
@@ -80,6 +82,14 @@ def create_bot() -> Bot:
     return Bot(token=token, session=session)
 
 
+def shikimori_graphql_url() -> str:
+    return os.getenv("SHIKIMORI_API_URL", DEFAULT_SHIKIMORI_GRAPHQL_URL).strip() or DEFAULT_SHIKIMORI_GRAPHQL_URL
+
+
+def shikimori_site_url() -> str:
+    return os.getenv("SHIKIMORI_SITE_URL", DEFAULT_SHIKIMORI_SITE_URL).strip().rstrip("/") or DEFAULT_SHIKIMORI_SITE_URL
+
+
 async def search_shikimori(query: str) -> dict[str, Any] | None:
     payload = {
         "query": SHIKIMORI_QUERY,
@@ -87,15 +97,34 @@ async def search_shikimori(query: str) -> dict[str, Any] | None:
     }
     headers = {
         "User-Agent": "anime-db-bot/0.1 (https://github.com/Winbil/anime-db-bot)",
+        "Accept": "application/json",
     }
+    api_url = shikimori_graphql_url()
 
-    async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
-        response = await client.post(SHIKIMORI_GRAPHQL_URL, json=payload)
-        response.raise_for_status()
+    async with httpx.AsyncClient(
+        timeout=15.0,
+        headers=headers,
+        follow_redirects=True,
+    ) as client:
+        response = await client.post(api_url, json=payload)
+
+    if response.is_error:
+        preview = response.text.replace("\n", " ")[:800]
+        raise RuntimeError(
+            f"Shikimori HTTP {response.status_code} from {response.url}: {preview}"
+        )
+
+    try:
         body = response.json()
+    except ValueError as exc:
+        preview = response.text.replace("\n", " ")[:800]
+        raise RuntimeError(
+            f"Shikimori returned non-JSON response from {response.url}: {preview}"
+        ) from exc
 
     if body.get("errors"):
-        raise RuntimeError(body["errors"][0].get("message", "Shikimori GraphQL error"))
+        messages = [error.get("message", str(error)) for error in body["errors"]]
+        raise RuntimeError("Shikimori GraphQL error: " + "; ".join(messages))
 
     animes = body.get("data", {}).get("animes", [])
     return animes[0] if animes else None
@@ -119,7 +148,7 @@ def anime_text(anime: dict[str, Any]) -> str:
 
     url = anime.get("url") or ""
     if url.startswith("/"):
-        url = f"https://shikimori.one{url}"
+        url = f"{shikimori_site_url()}{url}"
 
     lines = [
         title,
@@ -163,9 +192,16 @@ async def anime_handler(message: Message, command: CommandObject) -> None:
 
     try:
         anime = await search_shikimori(query)
-    except (httpx.HTTPError, RuntimeError, ValueError):
-        logging.exception("Failed to query Shikimori")
-        await message.answer("Не удалось получить данные из Shikimori. Попробуй ещё раз позже.")
+    except Exception as exc:
+        logging.error(
+            "Shikimori request failed: %s: %s",
+            type(exc).__name__,
+            exc,
+            exc_info=True,
+        )
+        await message.answer(
+            "Не удалось получить данные из Shikimori. Причина записана в лог бота."
+        )
         return
 
     if anime is None:
@@ -190,6 +226,8 @@ async def main() -> None:
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
+    logging.info("Using Shikimori API: %s", shikimori_graphql_url())
+
     bot = create_bot()
     try:
         await dp.start_polling(bot)
