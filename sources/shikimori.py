@@ -6,23 +6,10 @@ from typing import Any
 
 import httpx
 
-from core.models import AnimeRecord, PersonCredit, SearchCandidate, SourceSearchHit, SourceSearchPage
+from core.models import AnimeRecord, PersonCredit
 
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
 DEFAULT_SHIKIMORI_SITE_URL = "https://shikimori.io"
-SHIKIMORI_MAX_PAGE_SIZE = 50
-
-SEARCH_FIELDS = """
-    id
-    malId
-    name
-    russian
-    english
-    japanese
-    synonyms
-    score
-    airedOn { year }
-"""
 
 DETAIL_FIELDS = """
     id
@@ -190,7 +177,7 @@ def _best_poster_url(poster: dict[str, Any]) -> str | None:
 
 async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
     headers = {
-        "User-Agent": "anime-db-bot/0.4 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": "anime-db-bot/0.6 (https://github.com/Winbil/anime-db-bot)",
         "Accept": "application/json",
     }
 
@@ -225,57 +212,10 @@ async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
     return body.get("data", {})
 
 
-def _search_query(page: int, limit: int) -> str:
-    page = max(1, int(page))
-    limit = max(1, min(int(limit), SHIKIMORI_MAX_PAGE_SIZE))
-    return f"""
-query SearchAnime($search: String!) {{
-  animes(search: $search, page: {page}, limit: {limit}, order: popularity) {{
-{SEARCH_FIELDS}
-  }}
-}}
-"""
-
-
-async def _search_raw(query: str, *, page: int, limit: int) -> list[dict[str, Any]]:
-    data = await _graphql(_search_query(page, limit), {"search": query})
-    return data.get("animes", [])
-
-
 async def _get_raw(anime_id: str) -> dict[str, Any] | None:
     data = await _graphql(BY_ID_QUERY, {"ids": anime_id})
     animes = data.get("animes", [])
     return animes[0] if animes else None
-
-
-def _search_hit(raw: dict[str, Any]) -> SourceSearchHit:
-    russian = _clean_text(raw.get("russian"))
-    romaji = _clean_text(raw.get("name"))
-    english = _clean_text(raw.get("english"))
-    japanese = _clean_text(raw.get("japanese"))
-    synonyms = _dedupe(raw.get("synonyms") or [])
-    title = russian or romaji or english or japanese or "Без названия"
-
-    external_ids = {"shikimori": str(raw.get("id") or "")}
-    if raw.get("malId"):
-        external_ids["mal"] = str(raw["malId"])
-
-    score: float | None = None
-    try:
-        if raw.get("score") not in (None, ""):
-            score = float(raw["score"])
-    except (TypeError, ValueError):
-        pass
-
-    return SourceSearchHit(
-        source="Shikimori",
-        source_id=str(raw.get("id") or ""),
-        title=title,
-        aliases=_dedupe([romaji, english, japanese, *synonyms]),
-        year=(raw.get("airedOn") or {}).get("year"),
-        external_ids=external_ids,
-        score=score,
-    )
 
 
 def _credits(raw: dict[str, Any], *, voices: bool) -> list[PersonCredit]:
@@ -335,6 +275,8 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
     except (TypeError, ValueError):
         pass
 
+    description = _clean_text(raw.get("description"))
+
     return AnimeRecord(
         source="Shikimori",
         source_id=str(raw.get("id") or ""),
@@ -358,9 +300,7 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         ),
         studios=_dedupe([studio.get("name", "") for studio in raw.get("studios") or []]),
         licensors=_dedupe(raw.get("licensors") or []),
-        descriptions={"Shikimori": _clean_text(raw.get("description"))}
-        if _clean_text(raw.get("description"))
-        else {},
+        descriptions={"Shikimori": description} if description else {},
         posters=[poster_url] if poster_url else [],
         urls={"Shikimori": url} if url else {},
         staff=_credits(raw, voices=False),
@@ -371,46 +311,16 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
 class ShikimoriSource:
     name = "Shikimori"
 
-    async def search(
-        self,
-        query: str,
-        *,
-        page: int,
-        limit: int,
-    ) -> SourceSearchPage:
-        effective_limit = max(1, min(int(limit), SHIKIMORI_MAX_PAGE_SIZE))
-        raw_items = await _search_raw(query, page=page, limit=effective_limit)
-        return SourceSearchPage(
-            items=[_search_hit(item) for item in raw_items],
-            has_next=len(raw_items) >= effective_limit,
-        )
-
-    async def get_details(self, candidate: SearchCandidate) -> AnimeRecord | None:
-        source_id = candidate.source_refs.get(self.name)
-
-        if not source_id:
-            raw_matches = await _search_raw(candidate.title, page=1, limit=10)
-            if not raw_matches:
-                return None
-
-            mal_id = candidate.external_ids.get("mal")
-            if mal_id:
-                for raw in raw_matches:
-                    if str(raw.get("malId") or "") == mal_id:
-                        source_id = str(raw.get("id") or "")
-                        break
-
-            if not source_id and candidate.year:
-                for raw in raw_matches:
-                    if (raw.get("airedOn") or {}).get("year") == candidate.year:
-                        source_id = str(raw.get("id") or "")
-                        break
-
-            if not source_id:
-                source_id = str(raw_matches[0].get("id") or "")
-
-        if not source_id:
+    async def get_details(self, mal_id: str) -> AnimeRecord | None:
+        mal_id = str(mal_id).strip()
+        if not mal_id.isdigit():
             return None
 
-        raw = await _get_raw(source_id)
-        return _record(raw) if raw else None
+        # Shikimori's linked anime IDs commonly match MAL IDs. We still verify
+        # the returned malId and never fall back to a text search.
+        raw = await _get_raw(mal_id)
+        if not raw:
+            return None
+        if str(raw.get("malId") or "") != mal_id:
+            return None
+        return _record(raw)
