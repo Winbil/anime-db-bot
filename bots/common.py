@@ -21,6 +21,7 @@ from aiogram.types import (
 from dotenv import load_dotenv
 
 from core.models import AggregatedAnime, SearchCandidate, SearchPage
+from search.registry import get_search_provider
 from services.aggregator import AnimeAggregator
 from services.search import SearchService
 from sources.registry import get_sources
@@ -33,8 +34,9 @@ SEARCH_PAGE_SIZE = 10
 MAX_SEARCH_SESSIONS = 200
 MAX_ANIME_SESSIONS = 200
 
+SEARCH_PROVIDER = get_search_provider()
 SOURCES = get_sources()
-SEARCH_SERVICE = SearchService(SOURCES)
+SEARCH_SERVICE = SearchService(SEARCH_PROVIDER)
 AGGREGATOR = AnimeAggregator(SOURCES)
 
 SECTION_LABELS = {
@@ -102,7 +104,6 @@ def _split_text(text: str, limit: int) -> list[str]:
             split_at = text.rfind(" ", 0, limit)
         if split_at < limit // 2:
             split_at = limit
-
         chunks.append(text[:split_at].strip())
         text = text[split_at:].strip()
 
@@ -124,14 +125,11 @@ def _poster_html(anime: AggregatedAnime) -> str:
     urls = anime.posters[:50]
     if not urls:
         return ""
-
     images = "".join(
         f'<img src="{html.escape(url, quote=True)}"/>'
         for url in urls
     )
-    if len(urls) == 1:
-        return images
-    return f"<tg-slideshow>{images}</tg-slideshow>"
+    return images if len(urls) == 1 else f"<tg-slideshow>{images}</tg-slideshow>"
 
 
 def _rich(text: str) -> InputRichMessage:
@@ -139,8 +137,6 @@ def _rich(text: str) -> InputRichMessage:
 
 
 def _main_rich(token: str, anime: AggregatedAnime, text: str) -> InputRichMessage:
-    media = _poster_html(anime)
-    base = _plain_text_to_rich_html(text)
     links = (
         "<p><b>Подробная информация</b><br>"
         f'<tg-button type="callback_data" style="link" data="av:{token}:description:0">Описание</tg-button>'
@@ -152,7 +148,9 @@ def _main_rich(token: str, anime: AggregatedAnime, text: str) -> InputRichMessag
         f'<tg-button type="callback_data" style="link" data="av:{token}:voices:0">Сэйю</tg-button>'
         " — нажмите, чтобы открыть</p>"
     )
-    return InputRichMessage(html=media + base + links)
+    return InputRichMessage(
+        html=_poster_html(anime) + _plain_text_to_rich_html(text) + links
+    )
 
 
 async def _send_standard_text(
@@ -183,7 +181,6 @@ def _dedupe_strings(values: list[str]) -> list[str]:
 def _format_people(title: str, people) -> str:
     if not people:
         return f"{title}:\nНет данных."
-
     lines = [f"{title}:"]
     for person in people:
         roles = ", ".join(person.roles) if person.roles else "роль не указана"
@@ -244,28 +241,24 @@ def _anime_sections(anime: AggregatedAnime) -> dict[str, str]:
     _append_block(main, "Производство", production)
 
     if anime.scores:
-        score_lines = [
-            f"{source}: {score:g}"
-            for source, score in anime.scores.items()
-        ]
-        _append_block(main, "Оценки", score_lines)
+        _append_block(
+            main,
+            "Оценки",
+            [f"{source}: {score:g}" for source, score in anime.scores.items()],
+        )
 
     source_lines: list[str] = []
     if anime.sources:
-        source_lines.append(f"Базы: {', '.join(anime.sources)}")
+        source_lines.append(f"Базы данных: {', '.join(anime.sources)}")
     if anime.external_ids:
         ids = " | ".join(
             f"{name.upper()}: {value}" for name, value in anime.external_ids.items()
         )
         source_lines.append(f"ID: {ids}")
     if anime.urls:
-        source_lines.extend(
-            f"{source}: {url}" for source, url in anime.urls.items()
-        )
+        source_lines.extend(f"{source}: {url}" for source, url in anime.urls.items())
     if anime.errors:
-        source_lines.append(
-            "Недоступны: " + ", ".join(anime.errors)
-        )
+        source_lines.append("Недоступны: " + ", ".join(anime.errors))
     _append_block(main, "Источники", source_lines)
 
     titles = ["Названия:"]
@@ -310,8 +303,7 @@ def _anime_sections(anime: AggregatedAnime) -> dict[str, str]:
 
 
 def _view_pages(anime: AggregatedAnime, section: str) -> list[str]:
-    text = _anime_sections(anime).get(section) or "Нет данных."
-    return _split_text(text, RICH_MESSAGE_LIMIT)
+    return _split_text(_anime_sections(anime).get(section) or "Нет данных.", RICH_MESSAGE_LIMIT)
 
 
 def _navigation_keyboard(
@@ -321,69 +313,43 @@ def _navigation_keyboard(
     page_count: int,
 ) -> InlineKeyboardMarkup | None:
     rows: list[list[InlineKeyboardButton]] = []
-
     if current_section != "main":
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text="← Назад",
-                    callback_data=f"av:{token}:main:0",
-                )
-            ]
-        )
+        rows.append([
+            InlineKeyboardButton(
+                text="← Назад",
+                callback_data=f"av:{token}:main:0",
+            )
+        ])
 
     if page_count > 1:
         nav: list[InlineKeyboardButton] = []
         if page > 0:
-            nav.append(
-                InlineKeyboardButton(
-                    text="◀️",
-                    callback_data=f"av:{token}:{current_section}:{page - 1}",
-                )
-            )
-        nav.append(
-            InlineKeyboardButton(
-                text=f"{page + 1}/{page_count}",
-                callback_data="noop",
-            )
-        )
+            nav.append(InlineKeyboardButton(
+                text="◀️",
+                callback_data=f"av:{token}:{current_section}:{page - 1}",
+            ))
+        nav.append(InlineKeyboardButton(text=f"{page + 1}/{page_count}", callback_data="noop"))
         if page + 1 < page_count:
-            nav.append(
-                InlineKeyboardButton(
-                    text="▶️",
-                    callback_data=f"av:{token}:{current_section}:{page + 1}",
-                )
-            )
+            nav.append(InlineKeyboardButton(
+                text="▶️",
+                callback_data=f"av:{token}:{current_section}:{page + 1}",
+            ))
         rows.append(nav)
 
     return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
 
 
 def _fallback_main_keyboard(token: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Описание",
-                    callback_data=f"av:{token}:description:0",
-                ),
-                InlineKeyboardButton(
-                    text="Названия",
-                    callback_data=f"av:{token}:titles:0",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Команда",
-                    callback_data=f"av:{token}:staff:0",
-                ),
-                InlineKeyboardButton(
-                    text="Сэйю",
-                    callback_data=f"av:{token}:voices:0",
-                ),
-            ],
-        ]
-    )
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Описание", callback_data=f"av:{token}:description:0"),
+            InlineKeyboardButton(text="Названия", callback_data=f"av:{token}:titles:0"),
+        ],
+        [
+            InlineKeyboardButton(text="Команда", callback_data=f"av:{token}:staff:0"),
+            InlineKeyboardButton(text="Сэйю", callback_data=f"av:{token}:voices:0"),
+        ],
+    ])
 
 
 def _remember_search(query: str, first_page: SearchPage) -> str:
@@ -404,54 +370,39 @@ def _remember_anime(anime: AggregatedAnime) -> str:
 
 def _candidate_button_text(candidate: SearchCandidate) -> str:
     text = f"{candidate.title} ({candidate.year})" if candidate.year else candidate.title
-    if len(candidate.source_refs) > 1:
-        text += f" · {len(candidate.source_refs)} источника"
-    return text if len(text) <= 60 else text[:57] + "..."
+    mal_id = candidate.external_ids.get("mal")
+    if mal_id:
+        text += f" · MAL {mal_id}"
+    return text if len(text) <= 64 else text[:61] + "..."
 
 
-def _search_keyboard(
-    search_page: SearchPage,
-    token: str,
-) -> InlineKeyboardMarkup:
+def _search_keyboard(search_page: SearchPage, token: str) -> InlineKeyboardMarkup:
     rows = [
-        [
-            InlineKeyboardButton(
-                text=_candidate_button_text(candidate),
-                callback_data=f"pick:{token}:{search_page.page}:{index}",
-            )
-        ]
+        [InlineKeyboardButton(
+            text=_candidate_button_text(candidate),
+            callback_data=f"pick:{token}:{search_page.page}:{index}",
+        )]
         for index, candidate in enumerate(search_page.items)
     ]
 
     nav: list[InlineKeyboardButton] = []
     if search_page.page > 1:
-        nav.append(
-            InlineKeyboardButton(
-                text="◀️",
-                callback_data=f"sp:{token}:{search_page.page - 1}",
-            )
-        )
-    nav.append(
-        InlineKeyboardButton(
-            text=f"Стр. {search_page.page}",
-            callback_data="noop",
-        )
-    )
+        nav.append(InlineKeyboardButton(
+            text="◀️",
+            callback_data=f"sp:{token}:{search_page.page - 1}",
+        ))
+    nav.append(InlineKeyboardButton(text=f"Стр. {search_page.page}", callback_data="noop"))
     if search_page.has_next:
-        nav.append(
-            InlineKeyboardButton(
-                text="▶️",
-                callback_data=f"sp:{token}:{search_page.page + 1}",
-            )
-        )
+        nav.append(InlineKeyboardButton(
+            text="▶️",
+            callback_data=f"sp:{token}:{search_page.page + 1}",
+        ))
     rows.append(nav)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _rich_view(token: str, anime: AggregatedAnime, section: str, text: str) -> InputRichMessage:
-    if section == "main":
-        return _main_rich(token, anime, text)
-    return _rich(text)
+    return _main_rich(token, anime, text) if section == "main" else _rich(text)
 
 
 async def _send_anime_view(
@@ -473,8 +424,8 @@ async def _send_anime_view(
         )
     except Exception:
         logging.exception("sendRichMessage failed; falling back to standard sendMessage")
-        fallback_keyboard = _fallback_main_keyboard(token) if section == "main" else keyboard
-        await _send_standard_text(message, text, reply_markup=fallback_keyboard)
+        fallback = _fallback_main_keyboard(token) if section == "main" else keyboard
+        await _send_standard_text(message, text, reply_markup=fallback)
 
 
 async def _edit_anime_view(
@@ -496,22 +447,32 @@ async def _edit_anime_view(
         )
     except Exception:
         logging.exception("Rich message edit failed; falling back to standard text edit")
-        standard_page = _split_text(text, STANDARD_MESSAGE_LIMIT)[0]
-        fallback_keyboard = _fallback_main_keyboard(token) if section == "main" else keyboard
-        await message.edit_text(text=standard_page, reply_markup=fallback_keyboard)
+        fallback = _fallback_main_keyboard(token) if section == "main" else keyboard
+        await message.edit_text(
+            text=_split_text(text, STANDARD_MESSAGE_LIMIT)[0],
+            reply_markup=fallback,
+        )
 
 
 async def _aggregate_and_send(message: Message, candidate: SearchCandidate) -> None:
+    mal_id = candidate.external_ids.get("mal")
+    if not mal_id:
+        await message.answer("У выбранного результата нет MAL ID.")
+        return
+
     try:
         anime = await AGGREGATOR.aggregate(candidate)
     except Exception as exc:
         logging.error(
-            "Anime aggregation failed: %s: %s",
+            "Anime aggregation failed for MAL %s: %s: %s",
+            mal_id,
             type(exc).__name__,
             exc,
             exc_info=True,
         )
-        await message.answer("Не удалось собрать данные об аниме из подключённых источников.")
+        await message.answer(
+            f"Не удалось собрать данные для MAL ID {mal_id} из подключённых источников."
+        )
         return
 
     token = _remember_anime(anime)
@@ -537,10 +498,11 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
         await message.answer(
             "Привет! Это anime-db-bot.\n\n"
             f"Режим Telegram: {mode_name}\n"
-            f"Источники: {source_names}\n\n"
-            "Поиск и агрегация не зависят от конкретной базы данных.\n\n"
+            f"Поиск: {SEARCH_SERVICE.provider_name}\n"
+            f"Источники данных: {source_names}\n\n"
+            "Поиск возвращает MAL ID, после выбора этот ID передаётся всем источникам.\n\n"
             "Команды:\n"
-            "/anime <название> — найти аниме во всех источниках\n"
+            "/anime <название> — найти аниме через MyAnimeList\n"
             "/ping — проверить, что бот работает"
         )
 
@@ -556,21 +518,19 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             return
 
         try:
-            search_page = await SEARCH_SERVICE.search(
-                query,
-                page=1,
-                page_size=SEARCH_PAGE_SIZE,
-            )
+            search_page = await SEARCH_SERVICE.search(query, page=1, page_size=SEARCH_PAGE_SIZE)
         except Exception as exc:
-            logging.error("Search service failed: %s: %s", type(exc).__name__, exc, exc_info=True)
-            await message.answer("Не удалось выполнить поиск. Причина записана в лог бота.")
+            logging.error(
+                "MAL search failed: %s: %s",
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
+            await message.answer("Не удалось выполнить поиск через MyAnimeList. Причина записана в лог.")
             return
 
         if not search_page.items:
-            if search_page.errors:
-                await message.answer("Источники недоступны или ничего не найдено.")
-            else:
-                await message.answer("Ничего не найдено.")
+            await message.answer("MyAnimeList ничего не нашёл по этому запросу.")
             return
 
         if len(search_page.items) == 1 and not search_page.has_next:
@@ -579,7 +539,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
 
         token = _remember_search(query, search_page)
         await message.answer(
-            f"Результаты по запросу «{query}». Выбери нужное аниме:",
+            f"Результаты MyAnimeList по запросу «{query}». Выбери нужное аниме:",
             reply_markup=_search_keyboard(search_page, token),
         )
 
@@ -603,12 +563,11 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             await callback.answer()
             return
 
-        page = max(1, int(page_text))
         try:
-            search_page = await _get_search_page(session, page)
+            search_page = await _get_search_page(session, max(1, int(page_text)))
         except Exception as exc:
-            logging.error("Search page failed: %s: %s", type(exc).__name__, exc, exc_info=True)
-            await callback.answer("Не удалось загрузить страницу.", show_alert=True)
+            logging.error("MAL search page failed: %s: %s", type(exc).__name__, exc, exc_info=True)
+            await callback.answer("Не удалось загрузить страницу MAL.", show_alert=True)
             return
 
         if not search_page.items:
@@ -617,7 +576,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
 
         await callback.answer()
         await callback.message.edit_text(
-            f"Результаты по запросу «{session.query}». Выбери нужное аниме:",
+            f"Результаты MyAnimeList по запросу «{session.query}». Выбери нужное аниме:",
             reply_markup=_search_keyboard(search_page, token),
         )
 
@@ -637,15 +596,14 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             await callback.answer()
             return
 
-        page = max(1, int(page_text))
-        index = int(index_text)
         try:
-            search_page = await _get_search_page(session, page)
+            search_page = await _get_search_page(session, max(1, int(page_text)))
         except Exception:
-            logging.exception("Could not reload search page for selection")
-            await callback.answer("Не удалось получить результат.", show_alert=True)
+            logging.exception("Could not reload MAL search page for selection")
+            await callback.answer("Не удалось получить результат MAL.", show_alert=True)
             return
 
+        index = int(index_text)
         if index < 0 or index >= len(search_page.items):
             await callback.answer("Результат больше недоступен.", show_alert=True)
             return
@@ -695,8 +653,8 @@ async def run_bot(*, use_custom_api: bool, mode_name: str) -> None:
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
     logging.info("Bot mode: %s", mode_name)
-    logging.info("Sources: %s", ", ".join(source.name for source in SOURCES))
-    logging.info("Search service and source aggregator enabled")
+    logging.info("Search provider: %s", SEARCH_SERVICE.provider_name)
+    logging.info("Metadata sources: %s", ", ".join(source.name for source in SOURCES))
 
     bot = create_bot(use_custom_api=use_custom_api)
     dp = build_dispatcher(mode_name=mode_name)
