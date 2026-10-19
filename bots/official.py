@@ -7,7 +7,6 @@ if __name__ == "__main__":
     asyncio.run(
         run_bot(
             use_custom_api=False,
-            rich_mode=False,
-            mode_name="official Bot API / sendMessage",
+            mode_name="official Bot API",
         )
     )
