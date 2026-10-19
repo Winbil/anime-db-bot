@@ -23,6 +23,14 @@ load_dotenv()
 STANDARD_MESSAGE_LIMIT = 3900
 RICH_MESSAGE_LIMIT = 32000
 
+SECTION_LABELS = {
+    "main": "Основное",
+    "titles": "Названия",
+    "description": "Описание",
+    "staff": "Команда",
+    "voices": "Сэйю",
+}
+
 
 def _env_bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
@@ -57,7 +65,7 @@ def create_bot(use_custom_api: bool) -> Bot:
 def _split_text(text: str, limit: int) -> list[str]:
     text = text.strip()
     if not text:
-        return []
+        return ["Нет данных."]
     if len(text) <= limit:
         return [text]
 
@@ -90,15 +98,108 @@ def _plain_text_to_rich_html(text: str) -> str:
     return "".join(paragraphs)
 
 
-async def _send_standard_text(message: Message, text: str) -> None:
-    for chunk in _split_text(text, STANDARD_MESSAGE_LIMIT):
-        await message.answer(chunk)
+def _rich(text: str) -> InputRichMessage:
+    return InputRichMessage(html=_plain_text_to_rich_html(text))
 
 
-async def _send_rich_text(message: Message, text: str) -> None:
-    for chunk in _split_text(text, RICH_MESSAGE_LIMIT):
-        rich = InputRichMessage(html=_plain_text_to_rich_html(chunk))
-        await message.answer_rich(rich)
+async def _send_standard_text(
+    message: Message,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
+    chunks = _split_text(text, STANDARD_MESSAGE_LIMIT)
+    for index, chunk in enumerate(chunks):
+        await message.answer(
+            chunk,
+            reply_markup=reply_markup if index == len(chunks) - 1 else None,
+        )
+
+
+def _anime_sections(anime: dict) -> dict[str, str]:
+    sections = shikimori.anime_sections(anime, people_limit=None)
+
+    result = {
+        "main": sections[0] if sections else shikimori.anime_title(anime),
+        "titles": "Названия:\nНет данных.",
+        "description": "Описание:\nНет данных.",
+        "staff": "Авторы и команда:\nНет данных.",
+        "voices": "Сэйю / актёры озвучки:\nНет данных.",
+    }
+
+    for section in sections[1:]:
+        if section.startswith("Названия:"):
+            result["titles"] = section
+        elif section.startswith("Описание:"):
+            result["description"] = section
+        elif section.startswith("Авторы и команда:"):
+            result["staff"] = section
+        elif section.startswith("Сэйю / актёры озвучки:"):
+            result["voices"] = section
+
+    result["main"] += (
+        "\n\nПодробности скрыты, чтобы карточка оставалась компактной.\n"
+        "Нажми кнопку ниже: описание, названия, команда или сэйю."
+    )
+    return result
+
+
+def _view_pages(anime: dict, section: str) -> list[str]:
+    text = _anime_sections(anime).get(section) or "Нет данных."
+    return _split_text(text, RICH_MESSAGE_LIMIT)
+
+
+def _details_keyboard(
+    anime_id: str,
+    current_section: str,
+    page: int,
+    page_count: int,
+) -> InlineKeyboardMarkup:
+    def section_button(section: str) -> InlineKeyboardButton:
+        label = SECTION_LABELS[section]
+        if section == current_section:
+            label = f"• {label}"
+        return InlineKeyboardButton(
+            text=label,
+            callback_data=f"av:{anime_id}:{section}:0",
+        )
+
+    rows = [
+        [
+            section_button("main"),
+            section_button("description"),
+            section_button("titles"),
+        ],
+        [
+            section_button("staff"),
+            section_button("voices"),
+        ],
+    ]
+
+    if page_count > 1:
+        nav: list[InlineKeyboardButton] = []
+        if page > 0:
+            nav.append(
+                InlineKeyboardButton(
+                    text="◀️",
+                    callback_data=f"av:{anime_id}:{current_section}:{page - 1}",
+                )
+            )
+        nav.append(
+            InlineKeyboardButton(
+                text=f"{page + 1}/{page_count}",
+                callback_data="noop",
+            )
+        )
+        if page + 1 < page_count:
+            nav.append(
+                InlineKeyboardButton(
+                    text="▶️",
+                    callback_data=f"av:{anime_id}:{current_section}:{page + 1}",
+                )
+            )
+        rows.append(nav)
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _search_keyboard(animes: list[dict]) -> InlineKeyboardMarkup:
@@ -115,6 +216,55 @@ def _search_keyboard(animes: list[dict]) -> InlineKeyboardMarkup:
     )
 
 
+async def _send_anime_view(
+    message: Message,
+    anime: dict,
+    section: str = "main",
+    page: int = 0,
+) -> None:
+    anime_id = str(anime.get("id") or "")
+    pages = _view_pages(anime, section)
+    page = max(0, min(page, len(pages) - 1))
+    keyboard = _details_keyboard(anime_id, section, page, len(pages))
+    text = pages[page]
+
+    try:
+        await message.answer_rich(_rich(text), reply_markup=keyboard)
+    except Exception:
+        logging.exception(
+            "sendRichMessage failed; falling back to standard sendMessage"
+        )
+        await _send_standard_text(message, text, reply_markup=keyboard)
+
+
+async def _edit_anime_view(
+    message: Message,
+    anime: dict,
+    section: str,
+    page: int,
+) -> None:
+    anime_id = str(anime.get("id") or "")
+    pages = _view_pages(anime, section)
+    page = max(0, min(page, len(pages) - 1))
+    keyboard = _details_keyboard(anime_id, section, page, len(pages))
+    text = pages[page]
+
+    try:
+        await message.edit_text(
+            rich_message=_rich(text),
+            reply_markup=keyboard,
+        )
+    except Exception:
+        logging.exception(
+            "Rich message edit failed; falling back to standard text edit"
+        )
+        standard_page = _split_text(text, STANDARD_MESSAGE_LIMIT)[0]
+        await message.edit_text(
+            text=standard_page,
+            reply_markup=keyboard,
+        )
+
+
 async def _send_anime_card(message: Message, anime: dict) -> None:
     poster = shikimori.poster_url(anime)
     title = shikimori.anime_title(anime)
@@ -125,15 +275,7 @@ async def _send_anime_card(message: Message, anime: dict) -> None:
         except Exception:
             logging.exception("Failed to send poster, continuing with text")
 
-    text = shikimori.anime_text(anime, people_limit=None)
-
-    try:
-        await _send_rich_text(message, text)
-    except Exception:
-        logging.exception(
-            "sendRichMessage failed; falling back to standard sendMessage chunks"
-        )
-        await _send_standard_text(message, text)
+    await _send_anime_view(message, anime, section="main", page=0)
 
 
 def build_dispatcher(mode_name: str) -> Dispatcher:
@@ -144,7 +286,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
         await message.answer(
             "Привет! Это anime-db-bot.\n\n"
             f"Режим: {mode_name}\n"
-            "Подробные карточки: sendRichMessage (до 32768 UTF-8 символов).\n\n"
+            "Подробные карточки используют sendRichMessage.\n\n"
             "Команды:\n"
             "/anime <название> — найти аниме в Shikimori\n"
             "/ping — проверить, что бот работает"
@@ -191,6 +333,10 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             reply_markup=_search_keyboard(animes),
         )
 
+    @dp.callback_query(F.data == "noop")
+    async def noop_callback(callback: CallbackQuery) -> None:
+        await callback.answer()
+
     @dp.callback_query(F.data.startswith("anime:"))
     async def anime_callback_handler(callback: CallbackQuery) -> None:
         anime_id = callback.data.split(":", 1)[1] if callback.data else ""
@@ -209,6 +355,54 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             logging.debug("Could not remove search keyboard", exc_info=True)
 
         await _load_and_send(callback.message, anime_id)
+
+    @dp.callback_query(F.data.startswith("av:"))
+    async def anime_view_callback_handler(callback: CallbackQuery) -> None:
+        data = (callback.data or "").split(":")
+        if len(data) != 4:
+            await callback.answer("Некорректная команда.", show_alert=True)
+            return
+
+        _, anime_id, section, page_text = data
+        if (
+            not anime_id.isdigit()
+            or section not in SECTION_LABELS
+            or not page_text.isdigit()
+        ):
+            await callback.answer("Некорректная команда.", show_alert=True)
+            return
+
+        if callback.message is None:
+            await callback.answer()
+            return
+
+        await callback.answer()
+
+        try:
+            anime = await shikimori.get_anime(anime_id)
+        except Exception as exc:
+            logging.error(
+                "Shikimori anime view lookup failed: %s: %s",
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
+            await callback.answer(
+                "Не удалось обновить карточку.",
+                show_alert=True,
+            )
+            return
+
+        if anime is None:
+            await callback.answer("Аниме не найдено.", show_alert=True)
+            return
+
+        await _edit_anime_view(
+            callback.message,
+            anime,
+            section=section,
+            page=int(page_text),
+        )
 
     return dp
 
@@ -242,7 +436,7 @@ async def run_bot(*, use_custom_api: bool, mode_name: str) -> None:
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
     logging.info("Bot mode: %s", mode_name)
-    logging.info("Detailed cards use sendRichMessage with fallback to sendMessage")
+    logging.info("Anime details use interactive rich-message sections")
     logging.info("Using Shikimori API: %s", shikimori.graphql_url())
 
     bot = create_bot(use_custom_api=use_custom_api)
