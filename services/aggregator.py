@@ -32,15 +32,19 @@ def _merge_people(groups: list[list[PersonCredit]]) -> list[PersonCredit]:
 
 
 class AnimeAggregator:
-    """Fetch and merge one anime from all configured source adapters."""
+    """Fetch and merge one anime from all metadata sources using one MAL ID."""
 
     def __init__(self, sources: tuple[AnimeSource, ...] | list[AnimeSource]) -> None:
         self._sources = tuple(sources)
 
     async def aggregate(self, candidate: SearchCandidate) -> AggregatedAnime:
+        mal_id = str(candidate.external_ids.get("mal") or "").strip()
+        if not mal_id:
+            raise RuntimeError("Search result does not contain a MAL ID")
+
         async def run(source: AnimeSource):
             try:
-                record = await source.get_details(candidate)
+                record = await source.get_details(mal_id)
                 return source.name, record, None
             except Exception as exc:
                 return source.name, None, f"{type(exc).__name__}: {exc}"
@@ -56,10 +60,7 @@ class AnimeAggregator:
                 records.append(record)
 
         if not records:
-            raise RuntimeError("No source could provide anime details")
-
-        preferred_source = next(iter(candidate.source_refs), "")
-        records.sort(key=lambda record: record.source != preferred_source)
+            raise RuntimeError("No metadata source could provide details for this MAL ID")
 
         def first(field_name: str):
             for record in records:
@@ -71,7 +72,6 @@ class AnimeAggregator:
         titles: dict[str, str] = {}
         synonyms: list[str] = list(candidate.aliases)
         external_ids = dict(candidate.external_ids)
-        source_refs = dict(candidate.source_refs)
         scores = dict(candidate.scores)
         descriptions: dict[str, str] = {}
         urls: dict[str, str] = {}
@@ -82,7 +82,6 @@ class AnimeAggregator:
                     titles[key] = value
             synonyms.extend(record.synonyms)
             external_ids.update({k: v for k, v in record.external_ids.items() if v})
-            source_refs[record.source] = record.source_id
             if record.score is not None:
                 scores[record.source] = record.score
             descriptions.update(record.descriptions)
@@ -100,7 +99,6 @@ class AnimeAggregator:
             titles=titles,
             synonyms=_dedupe_strings(synonyms),
             external_ids=external_ids,
-            source_refs=source_refs,
             sources=[record.source for record in records],
             kind=first("kind"),
             status=first("status"),
