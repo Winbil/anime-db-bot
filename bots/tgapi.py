@@ -7,7 +7,6 @@ if __name__ == "__main__":
     asyncio.run(
         run_bot(
             use_custom_api=True,
-            rich_mode=True,
-            mode_name="custom tg-bot-api / sendRichMessage",
+            mode_name="custom tg-bot-api",
         )
     )
