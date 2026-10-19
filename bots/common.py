@@ -20,9 +20,8 @@ from sources import shikimori
 
 load_dotenv()
 
-OFFICIAL_MESSAGE_LIMIT = 3900
+STANDARD_MESSAGE_LIMIT = 3900
 RICH_MESSAGE_LIMIT = 32000
-OFFICIAL_PEOPLE_LIMIT = 20
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -92,7 +91,7 @@ def _plain_text_to_rich_html(text: str) -> str:
 
 
 async def _send_standard_text(message: Message, text: str) -> None:
-    for chunk in _split_text(text, OFFICIAL_MESSAGE_LIMIT):
+    for chunk in _split_text(text, STANDARD_MESSAGE_LIMIT):
         await message.answer(chunk)
 
 
@@ -116,11 +115,7 @@ def _search_keyboard(animes: list[dict]) -> InlineKeyboardMarkup:
     )
 
 
-async def _send_anime_card(
-    message: Message,
-    anime: dict,
-    rich_mode: bool,
-) -> None:
+async def _send_anime_card(message: Message, anime: dict) -> None:
     poster = shikimori.poster_url(anime)
     title = shikimori.anime_title(anime)
 
@@ -130,12 +125,7 @@ async def _send_anime_card(
         except Exception:
             logging.exception("Failed to send poster, continuing with text")
 
-    people_limit = None if rich_mode else OFFICIAL_PEOPLE_LIMIT
-    text = shikimori.anime_text(anime, people_limit=people_limit)
-
-    if not rich_mode:
-        await _send_standard_text(message, text)
-        return
+    text = shikimori.anime_text(anime, people_limit=None)
 
     try:
         await _send_rich_text(message, text)
@@ -146,19 +136,15 @@ async def _send_anime_card(
         await _send_standard_text(message, text)
 
 
-def build_dispatcher(rich_mode: bool) -> Dispatcher:
+def build_dispatcher(mode_name: str) -> Dispatcher:
     dp = Dispatcher()
 
     @dp.message(CommandStart())
     async def start_handler(message: Message) -> None:
-        mode = (
-            "tg-bot-api + sendRichMessage"
-            if rich_mode
-            else "официальный Bot API + sendMessage"
-        )
         await message.answer(
             "Привет! Это anime-db-bot.\n\n"
-            f"Режим: {mode}\n\n"
+            f"Режим: {mode_name}\n"
+            "Подробные карточки: sendRichMessage (до 32768 UTF-8 символов).\n\n"
             "Команды:\n"
             "/anime <название> — найти аниме в Shikimori\n"
             "/ping — проверить, что бот работает"
@@ -196,7 +182,7 @@ def build_dispatcher(rich_mode: bool) -> Dispatcher:
             return
 
         if len(animes) == 1:
-            await _load_and_send(message, str(animes[0]["id"]), rich_mode)
+            await _load_and_send(message, str(animes[0]["id"]))
             return
 
         await message.answer(
@@ -222,16 +208,12 @@ def build_dispatcher(rich_mode: bool) -> Dispatcher:
         except Exception:
             logging.debug("Could not remove search keyboard", exc_info=True)
 
-        await _load_and_send(callback.message, anime_id, rich_mode)
+        await _load_and_send(callback.message, anime_id)
 
     return dp
 
 
-async def _load_and_send(
-    message: Message,
-    anime_id: str,
-    rich_mode: bool,
-) -> None:
+async def _load_and_send(message: Message, anime_id: str) -> None:
     try:
         anime = await shikimori.get_anime(anime_id)
     except Exception as exc:
@@ -251,24 +233,20 @@ async def _load_and_send(
         await message.answer("Аниме не найдено.")
         return
 
-    await _send_anime_card(message, anime, rich_mode)
+    await _send_anime_card(message, anime)
 
 
-async def run_bot(
-    *,
-    use_custom_api: bool,
-    rich_mode: bool,
-    mode_name: str,
-) -> None:
+async def run_bot(*, use_custom_api: bool, mode_name: str) -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
     logging.info("Bot mode: %s", mode_name)
+    logging.info("Detailed cards use sendRichMessage with fallback to sendMessage")
     logging.info("Using Shikimori API: %s", shikimori.graphql_url())
 
     bot = create_bot(use_custom_api=use_custom_api)
-    dp = build_dispatcher(rich_mode=rich_mode)
+    dp = build_dispatcher(mode_name=mode_name)
 
     try:
         await dp.start_polling(bot)
