@@ -9,11 +9,9 @@ from typing import Any
 
 import httpx
 
-from core.models import AnimeRecord, PersonCredit, SearchCandidate, SourceSearchHit, SourceSearchPage
+from core.models import AnimeRecord, PersonCredit
 
 DEFAULT_ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
-ANILIST_MAX_PAGE_SIZE = 50
-ANILIST_PEOPLE_PAGE_SIZE = 25
 DEFAULT_PEOPLE_MAX_PAGES = 4
 
 FORMAT_NAMES = {
@@ -41,38 +39,12 @@ SEASON_NAMES = {
     "FALL": "Осень",
 }
 
-SEARCH_QUERY = """
-query SearchAnime($search: String!, $page: Int!, $perPage: Int!) {
-  Page(page: $page, perPage: $perPage) {
-    pageInfo {
-      hasNextPage
-    }
-    media(search: $search, type: ANIME) {
-      id
-      idMal
-      title {
-        romaji
-        english
-        native
-      }
-      synonyms
-      seasonYear
-      averageScore
-    }
-  }
-}
-"""
-
 DETAIL_QUERY = """
-query AnimeDetails($id: Int, $idMal: Int) {
-  Media(id: $id, idMal: $idMal, type: ANIME) {
+query AnimeDetails($idMal: Int!) {
+  Media(idMal: $idMal, type: ANIME) {
     id
     idMal
-    title {
-      romaji
-      english
-      native
-    }
+    title { romaji english native }
     synonyms
     format
     status
@@ -86,42 +58,22 @@ query AnimeDetails($id: Int, $idMal: Int) {
     averageScore
     genres
     isAdult
-    coverImage {
-      extraLarge
-      large
-      medium
-    }
+    coverImage { extraLarge large medium }
     siteUrl
-    nextAiringEpisode {
-      airingAt
-      episode
-    }
-    studios {
-      nodes {
-        name
-      }
-    }
+    nextAiringEpisode { airingAt episode }
+    studios { nodes { name } }
     staff(page: 1, perPage: 25) {
       pageInfo { hasNextPage }
       edges {
         role
-        node {
-          id
-          name { full native }
-        }
+        node { id name { full native } }
       }
     }
     characters(page: 1, perPage: 25) {
       pageInfo { hasNextPage }
       edges {
-        node {
-          id
-          name { full native }
-        }
-        voiceActors {
-          id
-          name { full native }
-        }
+        node { id name { full native } }
+        voiceActors { id name { full native } }
       }
     }
   }
@@ -135,10 +87,7 @@ query AnimeStaff($id: Int!, $page: Int!) {
       pageInfo { hasNextPage }
       edges {
         role
-        node {
-          id
-          name { full native }
-        }
+        node { id name { full native } }
       }
     }
   }
@@ -151,14 +100,8 @@ query AnimeCharacters($id: Int!, $page: Int!) {
     characters(page: $page, perPage: 25) {
       pageInfo { hasNextPage }
       edges {
-        node {
-          id
-          name { full native }
-        }
-        voiceActors {
-          id
-          name { full native }
-        }
+        node { id name { full native } }
+        voiceActors { id name { full native } }
       }
     }
   }
@@ -256,7 +199,7 @@ def _headers() -> dict[str, str]:
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "User-Agent": "anime-db-bot/0.5 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": "anime-db-bot/0.6 (https://github.com/Winbil/anime-db-bot)",
     }
     access_token = os.getenv("ANILIST_ACCESS_TOKEN", "").strip()
     if access_token:
@@ -279,9 +222,7 @@ async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
         preview = response.text.replace("\n", " ")[:800]
         retry_after = response.headers.get("Retry-After")
         retry_text = f"; retry after {retry_after}s" if retry_after else ""
-        raise RuntimeError(
-            f"AniList HTTP {response.status_code}{retry_text}: {preview}"
-        )
+        raise RuntimeError(f"AniList HTTP {response.status_code}{retry_text}: {preview}")
 
     try:
         body = response.json()
@@ -296,61 +237,10 @@ async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
     return body.get("data", {})
 
 
-async def _search_raw(query: str, *, page: int, limit: int) -> tuple[list[dict[str, Any]], bool]:
-    effective_limit = max(1, min(int(limit), ANILIST_MAX_PAGE_SIZE))
-    data = await _graphql(
-        SEARCH_QUERY,
-        {
-            "search": query,
-            "page": max(1, int(page)),
-            "perPage": effective_limit,
-        },
-    )
-    page_data = data.get("Page") or {}
-    return page_data.get("media") or [], bool((page_data.get("pageInfo") or {}).get("hasNextPage"))
-
-
-async def _get_raw(*, anilist_id: str | None = None, mal_id: str | None = None) -> dict[str, Any] | None:
-    variables: dict[str, int | None] = {"id": None, "idMal": None}
-    if anilist_id:
-        variables["id"] = int(anilist_id)
-    elif mal_id:
-        variables["idMal"] = int(mal_id)
-    else:
-        return None
-
-    data = await _graphql(DETAIL_QUERY, variables)
-    return data.get("Media")
-
-
-def _search_hit(raw: dict[str, Any]) -> SourceSearchHit:
-    titles = raw.get("title") or {}
-    romaji = _clean_text(titles.get("romaji"))
-    english = _clean_text(titles.get("english"))
-    native = _clean_text(titles.get("native"))
-    synonyms = _dedupe(raw.get("synonyms") or [])
-    title = english or romaji or native or "Без названия"
-
-    external_ids = {"anilist": str(raw.get("id") or "")}
-    if raw.get("idMal"):
-        external_ids["mal"] = str(raw["idMal"])
-
-    return SourceSearchHit(
-        source="AniList",
-        source_id=str(raw.get("id") or ""),
-        title=title,
-        aliases=_dedupe([romaji, english, native, *synonyms]),
-        year=raw.get("seasonYear"),
-        external_ids=external_ids,
-        score=_score(raw.get("averageScore")),
-    )
-
-
 def _staff_from_connection(connection: dict[str, Any] | None) -> list[PersonCredit]:
     result: list[PersonCredit] = []
     for edge in (connection or {}).get("edges") or []:
-        node = edge.get("node") or {}
-        name = _person_name(node)
+        name = _person_name(edge.get("node"))
         role = _clean_text(edge.get("role"))
         if name:
             result.append(PersonCredit(name=name, roles=[role] if role else []))
@@ -369,12 +259,11 @@ def _voices_from_connection(connection: dict[str, Any] | None) -> list[PersonCre
     return result
 
 
-async def _additional_staff(media_id: int, first_connection: dict[str, Any]) -> list[PersonCredit]:
-    result = _staff_from_connection(first_connection)
-    has_next = bool((first_connection.get("pageInfo") or {}).get("hasNextPage"))
+async def _all_staff(media_id: int, first: dict[str, Any]) -> list[PersonCredit]:
+    result = _staff_from_connection(first)
+    has_next = bool((first.get("pageInfo") or {}).get("hasNextPage"))
     page = 2
-    max_pages = _people_max_pages()
-    while has_next and page <= max_pages:
+    while has_next and page <= _people_max_pages():
         data = await _graphql(STAFF_PAGE_QUERY, {"id": media_id, "page": page})
         connection = ((data.get("Media") or {}).get("staff") or {})
         result.extend(_staff_from_connection(connection))
@@ -383,12 +272,11 @@ async def _additional_staff(media_id: int, first_connection: dict[str, Any]) -> 
     return result
 
 
-async def _additional_voices(media_id: int, first_connection: dict[str, Any]) -> list[PersonCredit]:
-    result = _voices_from_connection(first_connection)
-    has_next = bool((first_connection.get("pageInfo") or {}).get("hasNextPage"))
+async def _all_voices(media_id: int, first: dict[str, Any]) -> list[PersonCredit]:
+    result = _voices_from_connection(first)
+    has_next = bool((first.get("pageInfo") or {}).get("hasNextPage"))
     page = 2
-    max_pages = _people_max_pages()
-    while has_next and page <= max_pages:
+    while has_next and page <= _people_max_pages():
         data = await _graphql(CHARACTERS_PAGE_QUERY, {"id": media_id, "page": page})
         connection = ((data.get("Media") or {}).get("characters") or {})
         result.extend(_voices_from_connection(connection))
@@ -431,7 +319,11 @@ async def _record(raw: dict[str, Any]) -> AnimeRecord:
 
     cover = raw.get("coverImage") or {}
     poster = next(
-        (_clean_text(cover.get(key)) for key in ("extraLarge", "large", "medium") if _clean_text(cover.get(key))),
+        (
+            _clean_text(cover.get(key))
+            for key in ("extraLarge", "large", "medium")
+            if _clean_text(cover.get(key))
+        ),
         None,
     )
 
@@ -445,11 +337,9 @@ async def _record(raw: dict[str, Any]) -> AnimeRecord:
         episodes_aired = None
 
     media_id = int(raw.get("id"))
-    staff_connection = raw.get("staff") or {}
-    characters_connection = raw.get("characters") or {}
     staff, voices = await asyncio.gather(
-        _additional_staff(media_id, staff_connection),
-        _additional_voices(media_id, characters_connection),
+        _all_staff(media_id, raw.get("staff") or {}),
+        _all_voices(media_id, raw.get("characters") or {}),
     )
 
     description = _clean_description(raw.get("description"))
@@ -473,7 +363,9 @@ async def _record(raw: dict[str, Any]) -> AnimeRecord:
         next_episode_at=_format_timestamp(next_airing.get("airingAt")),
         score=_score(raw.get("averageScore")),
         genres=_dedupe(raw.get("genres") or []),
-        studios=_dedupe([node.get("name", "") for node in ((raw.get("studios") or {}).get("nodes") or [])]),
+        studios=_dedupe(
+            [node.get("name", "") for node in ((raw.get("studios") or {}).get("nodes") or [])]
+        ),
         descriptions={"AniList": description} if description else {},
         posters=[poster] if poster else [],
         urls={"AniList": site_url} if site_url else {},
@@ -485,38 +377,15 @@ async def _record(raw: dict[str, Any]) -> AnimeRecord:
 class AniListSource:
     name = "AniList"
 
-    async def search(
-        self,
-        query: str,
-        *,
-        page: int,
-        limit: int,
-    ) -> SourceSearchPage:
-        raw_items, has_next = await _search_raw(query, page=page, limit=limit)
-        return SourceSearchPage(
-            items=[_search_hit(item) for item in raw_items],
-            has_next=has_next,
-        )
-
-    async def get_details(self, candidate: SearchCandidate) -> AnimeRecord | None:
-        anilist_id = candidate.source_refs.get(self.name) or candidate.external_ids.get("anilist")
-        mal_id = candidate.external_ids.get("mal")
-
-        raw = await _get_raw(anilist_id=anilist_id, mal_id=mal_id)
-        if raw:
-            return await _record(raw)
-
-        raw_items, _ = await _search_raw(candidate.title, page=1, limit=10)
-        if not raw_items:
+    async def get_details(self, mal_id: str) -> AnimeRecord | None:
+        mal_id = str(mal_id).strip()
+        if not mal_id.isdigit():
             return None
 
-        selected: dict[str, Any] | None = None
-        if candidate.year:
-            selected = next(
-                (item for item in raw_items if item.get("seasonYear") == candidate.year),
-                None,
-            )
-        selected = selected or raw_items[0]
-
-        raw = await _get_raw(anilist_id=str(selected.get("id") or ""))
-        return await _record(raw) if raw else None
+        data = await _graphql(DETAIL_QUERY, {"idMal": int(mal_id)})
+        raw = data.get("Media")
+        if not raw:
+            return None
+        if str(raw.get("idMal") or "") != mal_id:
+            return None
+        return await _record(raw)
