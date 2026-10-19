@@ -21,9 +21,9 @@ fail() {
 command -v python3 >/dev/null 2>&1 || fail "python3 is not installed."
 command -v tmux >/dev/null 2>&1 || fail "tmux is not installed. Install it first, for example: sudo apt install tmux"
 [[ -f "$SCRIPT_DIR/requirements.txt" ]] || fail "requirements.txt not found."
-[[ -f "$SCRIPT_DIR/bot.py" ]] || fail "bot.py not found."
-[[ -f "$SCRIPT_DIR/bot_official.py" ]] || fail "bot_official.py not found."
-[[ -f "$SCRIPT_DIR/bot_tgapi.py" ]] || fail "bot_tgapi.py not found."
+[[ -f "$SCRIPT_DIR/bots/official.py" ]] || fail "bots/official.py not found."
+[[ -f "$SCRIPT_DIR/bots/tgapi.py" ]] || fail "bots/tgapi.py not found."
+[[ -f "$SCRIPT_DIR/sources/shikimori.py" ]] || fail "sources/shikimori.py not found."
 
 if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
     info "Bot is already running in tmux session '$SESSION_NAME'."
@@ -94,6 +94,8 @@ info "Checking required imports..."
 import aiogram
 import httpx
 import dotenv
+from aiogram.types import InputRichMessage
+
 print("Python imports: OK")
 PY
 
@@ -108,29 +110,29 @@ BOT_TOKEN_VALUE="$(sed -n 's/^[[:space:]]*BOT_TOKEN[[:space:]]*=[[:space:]]*//p'
 [[ -n "$BOT_TOKEN_VALUE" ]] || fail "BOT_TOKEN is empty in .env."
 
 TG_API_URL_VALUE="$(sed -n 's/^[[:space:]]*TELEGRAM_BOT_API_URL[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
+
 if [[ -n "$TG_API_URL_VALUE" ]]; then
-    BOT_ENTRYPOINT="$SCRIPT_DIR/bot_tgapi.py"
-    BOT_MODE="custom tg-bot-api (extended messages)"
+    BOT_MODULE="bots.tgapi"
+    info "Selected Telegram mode: custom tg-bot-api + sendRichMessage (up to 32768 UTF-8 chars)."
 else
-    BOT_ENTRYPOINT="$SCRIPT_DIR/bot_official.py"
-    BOT_MODE="official Telegram Bot API (safe 3900-char splitting)"
+    BOT_MODULE="bots.official"
+    info "Selected Telegram mode: official Bot API + sendMessage (safe splitting near 4096 chars)."
 fi
 
-info "Selected Telegram mode: $BOT_MODE"
 mkdir -p "$LOG_DIR"
 
 tmux new-session -d \
     -s "$SESSION_NAME" \
     -c "$SCRIPT_DIR" \
-    "exec '$PYTHON' '$BOT_ENTRYPOINT' 2>&1 | tee -a '$LOG_FILE'"
+    "exec '$PYTHON' -m '$BOT_MODULE' 2>&1 | tee -a '$LOG_FILE'"
 
 sleep 1
 
 if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
     info "Bot started in tmux session '$SESSION_NAME'."
-    info "Mode:   $BOT_MODE"
-    info "Attach: tmux attach -t $SESSION_NAME"
-    info "Logs:   tail -f '$LOG_FILE'"
+    info "Module:  $BOT_MODULE"
+    info "Attach:  tmux attach -t $SESSION_NAME"
+    info "Logs:    tail -f '$LOG_FILE'"
 else
     printf '\n' >&2
     [[ -f "$LOG_FILE" ]] && tail -n 50 "$LOG_FILE" >&2 || true
