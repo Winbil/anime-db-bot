@@ -8,8 +8,8 @@ Telegram-бот для поиска и объединения информаци
 anime-db-bot/
 ├── bots/
 │   ├── common.py      # общие Telegram-хендлеры и отправка сообщений
-│   ├── official.py    # официальный Bot API + sendMessage
-│   └── tgapi.py       # custom telegram-bot-api + sendRichMessage
+│   ├── official.py    # официальный api.telegram.org
+│   └── tgapi.py       # custom/self-hosted telegram-bot-api
 ├── sources/
 │   └── shikimori.py   # всё, что относится к Shikimori
 ├── start.sh
@@ -41,7 +41,7 @@ nano .env
 
 ## Telegram API режимы
 
-Режим выбирается через `.env`.
+Режим выбирается через `.env`. В обоих режимах подробные карточки аниме отправляются через `sendRichMessage`, который поддерживает до 32768 UTF-8 символов. Если rich message не удалось отправить, бот автоматически откатывается на обычный `sendMessage` с разбиением текста.
 
 ### Официальный Bot API
 
@@ -49,7 +49,7 @@ nano .env
 TELEGRAM_BOT_API_URL=
 ```
 
-Запускается `bots.official`. Используется обычный `sendMessage`; длинный текст автоматически разбивается, чтобы не превышать лимит 4096 символов.
+Запускается `bots.official` и используется официальный `https://api.telegram.org`.
 
 ### Свой telegram-bot-api
 
@@ -58,7 +58,7 @@ TELEGRAM_BOT_API_URL=http://127.0.0.1:8081
 TELEGRAM_BOT_API_LOCAL=true
 ```
 
-Запускается `bots.tgapi`. Для подробной карточки используется `sendRichMessage`, который поддерживает до 32768 UTF-8 символов. Если локальный Bot API слишком старый и не поддерживает этот метод, бот автоматически откатывается на обычные `sendMessage` с разбиением.
+Запускается `bots.tgapi` и запросы идут через указанный custom/self-hosted Bot API endpoint.
 
 `TELEGRAM_BOT_API_LOCAL=true` нужен только если сам сервер `telegram-bot-api` запущен с `--local`.
 
