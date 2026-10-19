@@ -4,12 +4,12 @@ import os
 from typing import Any
 
 import httpx
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, F
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 from aiogram.filters import Command, CommandStart
 from aiogram.filters.command import CommandObject
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,9 +17,7 @@ load_dotenv()
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
 DEFAULT_SHIKIMORI_SITE_URL = "https://shikimori.io"
 
-SHIKIMORI_QUERY = """
-query SearchAnime($search: String!) {
-  animes(search: $search, limit: 1) {
+ANIME_FIELDS = """
     id
     name
     russian
@@ -35,8 +33,22 @@ query SearchAnime($search: String!) {
       mainUrl
     }
     url
-  }
-}
+"""
+
+SHIKIMORI_SEARCH_QUERY = f"""
+query SearchAnime($search: String!) {{
+  animes(search: $search, limit: 5, order: popularity) {{
+{ANIME_FIELDS}
+  }}
+}}
+"""
+
+SHIKIMORI_BY_ID_QUERY = f"""
+query AnimeById($ids: String!) {{
+  animes(ids: $ids, limit: 1) {{
+{ANIME_FIELDS}
+  }}
+}}
 """
 
 STATUS_NAMES = {
@@ -90,11 +102,7 @@ def shikimori_site_url() -> str:
     return os.getenv("SHIKIMORI_SITE_URL", DEFAULT_SHIKIMORI_SITE_URL).strip().rstrip("/") or DEFAULT_SHIKIMORI_SITE_URL
 
 
-async def search_shikimori(query: str) -> dict[str, Any] | None:
-    payload = {
-        "query": SHIKIMORI_QUERY,
-        "variables": {"search": query},
-    }
+async def shikimori_graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
     headers = {
         "User-Agent": "anime-db-bot/0.1 (https://github.com/Winbil/anime-db-bot)",
         "Accept": "application/json",
@@ -106,7 +114,10 @@ async def search_shikimori(query: str) -> dict[str, Any] | None:
         headers=headers,
         follow_redirects=True,
     ) as client:
-        response = await client.post(api_url, json=payload)
+        response = await client.post(
+            api_url,
+            json={"query": query, "variables": variables},
+        )
 
     if response.is_error:
         preview = response.text.replace("\n", " ")[:800]
@@ -126,7 +137,23 @@ async def search_shikimori(query: str) -> dict[str, Any] | None:
         messages = [error.get("message", str(error)) for error in body["errors"]]
         raise RuntimeError("Shikimori GraphQL error: " + "; ".join(messages))
 
-    animes = body.get("data", {}).get("animes", [])
+    return body.get("data", {})
+
+
+async def search_shikimori(query: str) -> list[dict[str, Any]]:
+    data = await shikimori_graphql(
+        SHIKIMORI_SEARCH_QUERY,
+        {"search": query},
+    )
+    return data.get("animes", [])
+
+
+async def get_shikimori_anime(anime_id: str) -> dict[str, Any] | None:
+    data = await shikimori_graphql(
+        SHIKIMORI_BY_ID_QUERY,
+        {"ids": anime_id},
+    )
+    animes = data.get("animes", [])
     return animes[0] if animes else None
 
 
@@ -165,6 +192,42 @@ def anime_text(anime: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def result_button_text(anime: dict[str, Any]) -> str:
+    title = anime.get("russian") or anime.get("name") or "Без названия"
+    year = (anime.get("airedOn") or {}).get("year")
+    suffix = f" ({year})" if year else ""
+    text = f"{title}{suffix}"
+    return text if len(text) <= 60 else text[:57] + "..."
+
+
+def search_keyboard(animes: list[dict[str, Any]]) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=result_button_text(anime),
+                    callback_data=f"anime:{anime['id']}",
+                )
+            ]
+            for anime in animes
+        ]
+    )
+
+
+async def send_anime_card(message: Message, anime: dict[str, Any]) -> None:
+    text = anime_text(anime)
+    poster_url = (anime.get("poster") or {}).get("mainUrl")
+
+    if poster_url:
+        try:
+            await message.answer_photo(photo=poster_url, caption=text)
+            return
+        except Exception:
+            logging.exception("Failed to send poster, falling back to text")
+
+    await message.answer(text)
+
+
 dp = Dispatcher()
 
 
@@ -191,7 +254,7 @@ async def anime_handler(message: Message, command: CommandObject) -> None:
         return
 
     try:
-        anime = await search_shikimori(query)
+        animes = await search_shikimori(query)
     except Exception as exc:
         logging.error(
             "Shikimori request failed: %s: %s",
@@ -204,21 +267,51 @@ async def anime_handler(message: Message, command: CommandObject) -> None:
         )
         return
 
-    if anime is None:
+    if not animes:
         await message.answer("Ничего не найдено.")
         return
 
-    text = anime_text(anime)
-    poster_url = (anime.get("poster") or {}).get("mainUrl")
+    if len(animes) == 1:
+        await send_anime_card(message, animes[0])
+        return
 
-    if poster_url:
-        try:
-            await message.answer_photo(photo=poster_url, caption=text)
-            return
-        except Exception:
-            logging.exception("Failed to send poster, falling back to text")
+    await message.answer(
+        f"Нашёл несколько вариантов по запросу «{query}». Выбери нужное аниме:",
+        reply_markup=search_keyboard(animes),
+    )
 
-    await message.answer(text)
+
+@dp.callback_query(F.data.startswith("anime:"))
+async def anime_callback_handler(callback: CallbackQuery) -> None:
+    anime_id = callback.data.split(":", 1)[1] if callback.data else ""
+    if not anime_id.isdigit():
+        await callback.answer("Некорректный ID.", show_alert=True)
+        return
+
+    await callback.answer()
+
+    try:
+        anime = await get_shikimori_anime(anime_id)
+    except Exception as exc:
+        logging.error(
+            "Shikimori anime lookup failed: %s: %s",
+            type(exc).__name__,
+            exc,
+            exc_info=True,
+        )
+        await callback.answer("Не удалось получить данные из Shikimori.", show_alert=True)
+        return
+
+    if anime is None or callback.message is None:
+        await callback.answer("Аниме не найдено.", show_alert=True)
+        return
+
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        logging.debug("Could not remove search keyboard", exc_info=True)
+
+    await send_anime_card(callback.message, anime)
 
 
 async def main() -> None:
