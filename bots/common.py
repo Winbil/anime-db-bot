@@ -1,6 +1,7 @@
 import html
 import logging
 import os
+import secrets
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.session.aiohttp import AiohttpSession
@@ -22,6 +23,9 @@ load_dotenv()
 
 STANDARD_MESSAGE_LIMIT = 3900
 RICH_MESSAGE_LIMIT = 32000
+SEARCH_PAGE_SIZE = 10
+MAX_SEARCH_SESSIONS = 200
+SEARCH_SESSIONS: dict[str, str] = {}
 
 SECTION_LABELS = {
     "main": "Основное",
@@ -98,11 +102,27 @@ def _plain_text_to_rich_html(text: str) -> str:
     return "".join(paragraphs)
 
 
+def _poster_html(anime: dict) -> str:
+    urls = shikimori.poster_urls(anime)
+    if not urls:
+        return ""
+
+    images = "".join(
+        f'<img src="{html.escape(url, quote=True)}"/>'
+        for url in urls
+    )
+    if len(urls) == 1:
+        return images
+    return f"<tg-slideshow>{images}</tg-slideshow>"
+
+
 def _rich(text: str) -> InputRichMessage:
     return InputRichMessage(html=_plain_text_to_rich_html(text))
 
 
-def _main_rich(anime_id: str, text: str) -> InputRichMessage:
+def _main_rich(anime: dict, text: str) -> InputRichMessage:
+    anime_id = str(anime.get("id") or "")
+    media = _poster_html(anime)
     base = _plain_text_to_rich_html(text)
     links = (
         "<p><b>Подробная информация</b><br>"
@@ -115,7 +135,7 @@ def _main_rich(anime_id: str, text: str) -> InputRichMessage:
         f'<tg-button type="callback_data" style="link" data="av:{anime_id}:voices:0">Сэйю</tg-button>'
         " — нажмите, чтобы открыть</p>"
     )
-    return InputRichMessage(html=base + links)
+    return InputRichMessage(html=media + base + links)
 
 
 async def _send_standard_text(
@@ -232,23 +252,63 @@ def _fallback_main_keyboard(anime_id: str) -> InlineKeyboardMarkup:
     )
 
 
-def _search_keyboard(animes: list[dict]) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=shikimori.result_button_text(anime),
-                    callback_data=f"anime:{anime['id']}",
-                )
-            ]
-            for anime in animes
+def _remember_search(query: str) -> str:
+    token = secrets.token_urlsafe(6)
+    SEARCH_SESSIONS[token] = query
+
+    while len(SEARCH_SESSIONS) > MAX_SEARCH_SESSIONS:
+        oldest = next(iter(SEARCH_SESSIONS))
+        SEARCH_SESSIONS.pop(oldest, None)
+
+    return token
+
+
+def _search_keyboard(
+    animes: list[dict],
+    token: str,
+    page: int,
+) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=shikimori.result_button_text(anime),
+                callback_data=f"anime:{anime['id']}",
+            )
         ]
+        for anime in animes
+    ]
+
+    nav: list[InlineKeyboardButton] = []
+    if page > 1:
+        nav.append(
+            InlineKeyboardButton(
+                text="◀️",
+                callback_data=f"sp:{token}:{page - 1}",
+            )
+        )
+
+    nav.append(
+        InlineKeyboardButton(
+            text=f"Стр. {page}",
+            callback_data="noop",
+        )
     )
 
+    if len(animes) >= SEARCH_PAGE_SIZE:
+        nav.append(
+            InlineKeyboardButton(
+                text="▶️",
+                callback_data=f"sp:{token}:{page + 1}",
+            )
+        )
 
-def _rich_view(anime_id: str, section: str, text: str) -> InputRichMessage:
+    rows.append(nav)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _rich_view(anime: dict, section: str, text: str) -> InputRichMessage:
     if section == "main":
-        return _main_rich(anime_id, text)
+        return _main_rich(anime, text)
     return _rich(text)
 
 
@@ -266,7 +326,7 @@ async def _send_anime_view(
 
     try:
         await message.answer_rich(
-            _rich_view(anime_id, section, text),
+            _rich_view(anime, section, text),
             reply_markup=keyboard,
         )
     except Exception:
@@ -297,7 +357,7 @@ async def _edit_anime_view(
 
     try:
         await message.edit_text(
-            rich_message=_rich_view(anime_id, section, text),
+            rich_message=_rich_view(anime, section, text),
             reply_markup=keyboard,
         )
     except Exception:
@@ -315,15 +375,6 @@ async def _edit_anime_view(
 
 
 async def _send_anime_card(message: Message, anime: dict) -> None:
-    poster = shikimori.poster_url(anime)
-    title = shikimori.anime_title(anime)
-
-    if poster:
-        try:
-            await message.answer_photo(photo=poster, caption=title[:1000])
-        except Exception:
-            logging.exception("Failed to send poster, continuing with text")
-
     await _send_anime_view(message, anime, section="main", page=0)
 
 
@@ -335,7 +386,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
         await message.answer(
             "Привет! Это anime-db-bot.\n\n"
             f"Режим: {mode_name}\n"
-            "Подробные карточки используют sendRichMessage.\n\n"
+            "Карточки используют rich messages с медиа и интерактивными разделами.\n\n"
             "Команды:\n"
             "/anime <название> — найти аниме в Shikimori\n"
             "/ping — проверить, что бот работает"
@@ -355,7 +406,11 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             return
 
         try:
-            animes = await shikimori.search_anime(query)
+            animes = await shikimori.search_anime(
+                query,
+                page=1,
+                limit=SEARCH_PAGE_SIZE,
+            )
         except Exception as exc:
             logging.error(
                 "Shikimori search failed: %s: %s",
@@ -376,15 +431,65 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             await _load_and_send(message, str(animes[0]["id"]))
             return
 
+        token = _remember_search(query)
         await message.answer(
-            f"Нашёл несколько вариантов по запросу «{query}». "
-            "Выбери нужное аниме:",
-            reply_markup=_search_keyboard(animes),
+            f"Результаты по запросу «{query}». Выбери нужное аниме:",
+            reply_markup=_search_keyboard(animes, token, 1),
         )
 
     @dp.callback_query(F.data == "noop")
     async def noop_callback(callback: CallbackQuery) -> None:
         await callback.answer()
+
+    @dp.callback_query(F.data.startswith("sp:"))
+    async def search_page_callback_handler(callback: CallbackQuery) -> None:
+        data = (callback.data or "").split(":")
+        if len(data) != 3 or not data[2].isdigit():
+            await callback.answer("Некорректная страница.", show_alert=True)
+            return
+
+        _, token, page_text = data
+        query = SEARCH_SESSIONS.get(token)
+        if query is None:
+            await callback.answer(
+                "Этот поиск устарел. Выполни /anime ещё раз.",
+                show_alert=True,
+            )
+            return
+
+        if callback.message is None:
+            await callback.answer()
+            return
+
+        page = max(1, int(page_text))
+        try:
+            animes = await shikimori.search_anime(
+                query,
+                page=page,
+                limit=SEARCH_PAGE_SIZE,
+            )
+        except Exception as exc:
+            logging.error(
+                "Shikimori search page failed: %s: %s",
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
+            await callback.answer(
+                "Не удалось загрузить страницу поиска.",
+                show_alert=True,
+            )
+            return
+
+        if not animes:
+            await callback.answer("Больше результатов нет.", show_alert=True)
+            return
+
+        await callback.answer()
+        await callback.message.edit_text(
+            f"Результаты по запросу «{query}». Выбери нужное аниме:",
+            reply_markup=_search_keyboard(animes, token, page),
+        )
 
     @dp.callback_query(F.data.startswith("anime:"))
     async def anime_callback_handler(callback: CallbackQuery) -> None:
@@ -485,7 +590,8 @@ async def run_bot(*, use_custom_api: bool, mode_name: str) -> None:
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
     logging.info("Bot mode: %s", mode_name)
-    logging.info("Anime details use rich-text callback links and inline navigation")
+    logging.info("Anime cards use embedded poster media and interactive rich sections")
+    logging.info("Anime search uses Shikimori pagination without a bot-side total limit")
     logging.info("Using Shikimori API: %s", shikimori.graphql_url())
 
     bot = create_bot(use_custom_api=use_custom_api)
