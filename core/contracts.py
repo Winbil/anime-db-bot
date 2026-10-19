@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from core.models import AnimeRecord, SearchCandidate, SourceSearchPage
+from core.models import AnimeRecord, SearchPage
 
 
-class AnimeSource(Protocol):
-    """Source adapter contract known by services, but independent of implementations."""
+class AnimeSearchProvider(Protocol):
+    """Dedicated anime search backend, independent from metadata sources."""
 
     name: str
 
@@ -16,8 +16,14 @@ class AnimeSource(Protocol):
         *,
         page: int,
         limit: int,
-    ) -> SourceSearchPage:
+    ) -> SearchPage:
         ...
 
-    async def get_details(self, candidate: SearchCandidate) -> AnimeRecord | None:
+
+class AnimeSource(Protocol):
+    """Metadata source. Sources receive a MAL ID and do not implement text search."""
+
+    name: str
+
+    async def get_details(self, mal_id: str) -> AnimeRecord | None:
         ...
