@@ -8,6 +8,7 @@ from core.canonicalization import (
     canonical_genre,
     canonical_role,
     canonical_studio,
+    is_localization_role,
     normalize_key,
     person_identity_keys,
     preferred_person_name,
@@ -37,13 +38,6 @@ def _dedupe_strings(values: list[str]) -> list[str]:
 
 
 def _person_names(person: PersonCredit) -> list[str]:
-    """Return all names usable for cross-source identity matching.
-
-    Older Shikimori records used a display string like
-    ``Русское имя (Romanized, 日本語)``. Parse that form too so existing source
-    adapters already benefit from multilingual merging.
-    """
-
     names = [person.name, *person.aliases]
     parsed: list[str] = []
     for value in list(names):
@@ -58,22 +52,28 @@ def _person_names(person: PersonCredit) -> list[str]:
     return _dedupe_strings([*names, *parsed])
 
 
-def _merge_people(groups: list[list[PersonCredit]]) -> list[PersonCredit]:
-    """Merge people using all names/aliases from every language/source.
-
-    No localization or dub credits are discarded here. English, Japanese,
-    Russian and other variants are intentionally kept as matching evidence.
-    """
-
+def _merge_people(
+    groups: list[list[PersonCredit]],
+    *,
+    drop_localization_roles: bool = False,
+) -> list[PersonCredit]:
     merged: list[PersonCredit] = []
     identity_sets: list[set[str]] = []
 
     for group in groups:
         for person in group:
             names = _person_names(person)
+            raw_roles = [
+                role
+                for role in person.roles
+                if role and not (drop_localization_roles and is_localization_role(role))
+            ]
             roles = _dedupe_strings(
-                [canonical_role(role) for role in person.roles if canonical_role(role)]
+                [canonical_role(role) for role in raw_roles if canonical_role(role)]
             )
+
+            if drop_localization_roles and person.roles and not roles:
+                continue
 
             keys = person_identity_keys(names)
             match_index: int | None = None
@@ -122,12 +122,6 @@ def _merge_people(groups: list[list[PersonCredit]]) -> list[PersonCredit]:
 
 
 def _merge_studios(records: list[AnimeRecord]) -> list[str]:
-    """Merge studio names ignoring harmless punctuation differences.
-
-    Examples: ``8bit`` == ``8-bit`` == ``8 bit`` and
-    ``A-1 Pictures`` == ``A1 Pictures``.
-    """
-
     merged: dict[str, str] = {}
     order: list[str] = []
     for record in records:
@@ -231,12 +225,7 @@ def _merge_source_text(target: dict[str, str], values: dict[str, str]) -> None:
 
 
 class AnimeAggregator:
-    """Fetch and semantically merge one anime from all metadata sources.
-
-    Metadata whose meaning is language-independent is canonicalized before
-    merging. Provenance-sensitive fields such as scores, descriptions and URLs
-    still retain source labels.
-    """
+    """Fetch and semantically merge one anime from all metadata sources."""
 
     def __init__(self, sources: tuple[AnimeSource, ...] | list[AnimeSource]) -> None:
         self._sources = tuple(sources)
@@ -371,7 +360,10 @@ class AnimeAggregator:
                 [value for record in records for value in record.posters]
             ),
             urls=urls,
-            staff=_merge_people([record.staff for record in records]),
+            staff=_merge_people(
+                [record.staff for record in records],
+                drop_localization_roles=True,
+            ),
             voices=_merge_people([record.voices for record in records]),
             errors=errors,
         )
