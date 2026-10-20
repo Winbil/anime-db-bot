@@ -101,8 +101,8 @@ class AggregatedAnime:
     released_on: str | None = None
     next_episode_at: str | None = None
 
-    # Individual source scores are kept internally for transparency/debugging,
-    # while the UI presents score_average instead of separate source buckets.
+    # Keep individual source scores for transparency while also exposing a
+    # calculated average for the compact summary card.
     scores: dict[str, float] = field(default_factory=dict)
     score_average: float | None = None
     score_sources_count: int = 0
@@ -118,6 +118,10 @@ class AggregatedAnime:
     source_materials: list[str] = field(default_factory=list)
     broadcasts: list[str] = field(default_factory=list)
 
+    # Descriptions and URLs intentionally remain keyed by source because the UI
+    # lets the user choose which source to read/open. Equivalent list metadata
+    # such as genres and studios is still merged above.
+    descriptions: dict[str, str] = field(default_factory=dict)
     description: str | None = None
     background: str | None = None
     posters: list[str] = field(default_factory=list)
