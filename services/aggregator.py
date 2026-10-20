@@ -7,9 +7,12 @@ from collections import Counter
 from core.canonicalization import (
     canonical_genre,
     canonical_role,
+    canonical_studio,
+    is_localization_role,
     normalize_key,
     person_identity_keys,
     preferred_person_name,
+    studio_identity_key,
 )
 from core.contracts import AnimeSource
 from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate
@@ -56,18 +59,32 @@ def _person_names(person: PersonCredit) -> list[str]:
     return _dedupe_strings([*names, *parsed])
 
 
-def _merge_people(groups: list[list[PersonCredit]]) -> list[PersonCredit]:
+def _merge_people(
+    groups: list[list[PersonCredit]],
+    *,
+    drop_localization_roles: bool = False,
+) -> list[PersonCredit]:
     merged: list[PersonCredit] = []
     identity_sets: list[set[str]] = []
 
     for group in groups:
         for person in group:
             names = _person_names(person)
-            keys = person_identity_keys(names)
+            raw_roles = [
+                role
+                for role in person.roles
+                if role and not (drop_localization_roles and is_localization_role(role))
+            ]
             roles = _dedupe_strings(
-                [canonical_role(role) for role in person.roles if canonical_role(role)]
+                [canonical_role(role) for role in raw_roles if canonical_role(role)]
             )
 
+            # If a credit only consisted of localization/ADR roles, do not keep
+            # an empty person entry in the main production team.
+            if drop_localization_roles and person.roles and not roles:
+                continue
+
+            keys = person_identity_keys(names)
             match_index: int | None = None
             if keys:
                 for index, existing_keys in enumerate(identity_sets):
@@ -94,9 +111,7 @@ def _merge_people(groups: list[list[PersonCredit]]) -> list[PersonCredit]:
                 continue
 
             current = merged[match_index]
-            all_names = _dedupe_strings(
-                [current.name, *current.aliases, *names]
-            )
+            all_names = _dedupe_strings([current.name, *current.aliases, *names])
             preferred = preferred_person_name(all_names)
             current.name = preferred
             current.aliases = _dedupe_strings(
@@ -113,6 +128,27 @@ def _merge_people(groups: list[list[PersonCredit]]) -> list[PersonCredit]:
             identity_sets[match_index] |= keys
 
     return merged
+
+
+def _merge_studios(records: list[AnimeRecord]) -> list[str]:
+    """Merge studio names ignoring harmless punctuation differences.
+
+    Examples: ``8bit`` == ``8-bit`` == ``8 bit`` and
+    ``A-1 Pictures`` == ``A1 Pictures``.
+    """
+
+    merged: dict[str, str] = {}
+    order: list[str] = []
+    for record in records:
+        for raw_value in record.studios:
+            value = canonical_studio(raw_value)
+            key = studio_identity_key(value)
+            if not value or not key:
+                continue
+            if key not in merged:
+                merged[key] = value
+                order.append(key)
+    return [merged[key] for key in order]
 
 
 def _consensus_text(records: list[AnimeRecord], field_name: str) -> str | None:
@@ -192,10 +228,7 @@ def _average_score(scores: dict[str, float]) -> float | None:
     return round(sum(float(value) for value in values) / len(values), 2)
 
 
-def _merge_source_text(
-    target: dict[str, str],
-    values: dict[str, str],
-) -> None:
+def _merge_source_text(target: dict[str, str], values: dict[str, str]) -> None:
     for source, value in values.items():
         source = _clean(source)
         value = _clean(value)
@@ -331,9 +364,7 @@ class AnimeAggregator:
             scoring_users=_max_int(records, "scoring_users"),
             favorites=_max_int(records, "favorites"),
             genres=canonical_genres,
-            studios=_dedupe_strings(
-                [value for record in records for value in record.studios]
-            ),
+            studios=_merge_studios(records),
             licensors=_dedupe_strings(
                 [value for record in records for value in record.licensors]
             ),
@@ -349,7 +380,10 @@ class AnimeAggregator:
                 [value for record in records for value in record.posters]
             ),
             urls=urls,
-            staff=_merge_people([record.staff for record in records]),
+            staff=_merge_people(
+                [record.staff for record in records],
+                drop_localization_roles=True,
+            ),
             voices=_merge_people([record.voices for record in records]),
             errors=errors,
         )
