@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import httpx
+
 from core.canonicalization import is_primary_voice_role, normalize_key
 from core.models import AnimeRecord, PersonCredit
 from sources.shikimori import (
@@ -11,6 +13,7 @@ from sources.shikimori import (
     _dedupe,
     _graphql,
     _person_credit,
+    site_url,
 )
 
 
@@ -56,12 +59,7 @@ query PeoplePosters($ids: [ID!]) {
 
 
 def _is_original_voice_role(value: str) -> bool:
-    """Recognize Japanese/original voice-credit labels from Shikimori.
-
-    The ordinary canonical matcher remains the primary rule. Extra patterns
-    cover English labels that explicitly say Japanese voice while still
-    excluding EN/DE/ES/etc. dub credits.
-    """
+    """Recognize original/Japanese voice labels used by Shikimori."""
 
     if is_primary_voice_role(value):
         return True
@@ -70,6 +68,11 @@ def _is_original_voice_role(value: str) -> bool:
     if not key:
         return False
 
+    # Shikimori stores the raw language in PersonRole.roles. The original
+    # Japanese voice relation is literally "Japanese"; its localized label is
+    # "Seiyu" / "Сэйю". Other languages are foreign dubs and are excluded.
+    if key == "japanese":
+        return True
     if "japanese" in key and "voice" in key:
         return True
     if "япон" in key and ("озвуч" in key or "сэйю" in key or "сейю" in key):
@@ -84,12 +87,12 @@ def _is_original_voice_role(value: str) -> bool:
 
 
 def _voice_credits(raw: dict[str, Any]) -> list[PersonCredit]:
+    """Fallback parser for the GraphQL personRoles representation."""
+
     result: list[PersonCredit] = []
     seen: set[tuple[str, tuple[str, ...]]] = set()
 
     for entry in raw.get("personRoles") or []:
-        # Do not choose rolesRu OR rolesEn. Both can contain useful semantic
-        # information and Shikimori may localize one more aggressively.
         all_roles = _dedupe([
             *(entry.get("rolesRu") or []),
             *(entry.get("rolesEn") or []),
@@ -98,14 +101,14 @@ def _voice_credits(raw: dict[str, Any]) -> list[PersonCredit]:
         if not roles:
             continue
 
-        credit = _person_credit(entry.get("person") or {}, roles)
+        credit = _person_credit(entry.get("person") or {}, ["Сэйю"])
         if credit is None:
             continue
 
         person_id = str(credit.external_ids.get("shikimori") or "").strip()
         key = (
             person_id or credit.name.casefold(),
-            tuple(role.casefold() for role in credit.roles),
+            tuple(role.casefold() for role in roles),
         )
         if key in seen:
             continue
@@ -123,17 +126,96 @@ async def _reload_voice_credits(anime_id: str) -> list[PersonCredit]:
     return _voice_credits(animes[0] or {})
 
 
+async def _rest_anime_roles(anime_id: str) -> list[dict[str, Any]]:
+    """Fetch full anime role relations from Shikimori REST v1.
+
+    Unlike GraphQL personRoles, this endpoint returns the person and character
+    in the same relation, plus the raw role language (Japanese, English, ...).
+    """
+
+    url = f"{site_url()}/api/animes/{anime_id}/roles"
+    headers = {
+        "User-Agent": "anime-db-bot/1.0 (https://github.com/Winbil/anime-db-bot)",
+        "Accept": "application/json",
+    }
+    async with httpx.AsyncClient(
+        timeout=20.0,
+        headers=headers,
+        follow_redirects=True,
+    ) as client:
+        response = await client.get(url)
+
+    if response.is_error:
+        preview = response.text.replace("\n", " ")[:800]
+        raise RuntimeError(
+            f"Shikimori roles HTTP {response.status_code} from {response.url}: {preview}"
+        )
+
+    try:
+        body = response.json()
+    except ValueError as exc:
+        preview = response.text.replace("\n", " ")[:800]
+        raise RuntimeError(
+            f"Shikimori roles returned non-JSON response: {preview}"
+        ) from exc
+
+    if not isinstance(body, list):
+        raise RuntimeError("Shikimori roles returned non-list JSON")
+    return [item for item in body if isinstance(item, dict)]
+
+
+def _rest_voice_credits(entries: list[dict[str, Any]]) -> list[PersonCredit]:
+    """Extract only original Japanese seiyuu from REST role relations."""
+
+    result: list[PersonCredit] = []
+    by_person_id: dict[str, PersonCredit] = {}
+
+    for entry in entries:
+        raw_roles = _dedupe([str(value) for value in (entry.get("roles") or [])])
+        if not any(normalize_key(role) == "japanese" for role in raw_roles):
+            continue
+
+        person = entry.get("person") or {}
+        character = entry.get("character") or {}
+        if not isinstance(person, dict) or not person:
+            continue
+        if not isinstance(character, dict) or not character:
+            continue
+
+        character_name = (
+            str(character.get("russian") or "").strip()
+            or str(character.get("name") or "").strip()
+            or "Неизвестно"
+        )
+        role = (
+            f"Озвучка: {character_name}"
+            if character_name != "Неизвестно"
+            else "Сэйю"
+        )
+        credit = _person_credit(person, [role])
+        if credit is None:
+            continue
+
+        person_id = str(credit.external_ids.get("shikimori") or "").strip()
+        identity = person_id or credit.name.casefold()
+        existing = by_person_id.get(identity)
+        if existing is None:
+            by_person_id[identity] = credit
+            result.append(credit)
+            continue
+
+        existing.roles = _dedupe([*existing.roles, *credit.roles])
+        existing.aliases = _dedupe([*existing.aliases, *credit.aliases])
+
+    return result
+
+
 def _portrait_count(people: list[PersonCredit]) -> int:
     return sum(1 for person in people if person.portraits.get("Shikimori"))
 
 
 async def _refresh_portraits(people: list[PersonCredit]) -> None:
-    """Re-read person posters by stable Shikimori person ID.
-
-    This intentionally refreshes every voice credit, even when the nested
-    anime/personRoles query already returned a poster. The dedicated people
-    query preloads posters and is the authoritative fallback for this UI.
-    """
+    """Re-read person posters by stable Shikimori person ID."""
 
     ids = _dedupe([
         str(person.external_ids.get("shikimori") or "").strip()
@@ -164,7 +246,7 @@ async def _refresh_portraits(people: list[PersonCredit]) -> None:
 
 
 class ShikimoriSource(BaseShikimoriSource):
-    """Shikimori metadata with hardened seiyuu/portrait enrichment."""
+    """Shikimori metadata with REST-backed original seiyuu relations."""
 
     async def get_details(
         self,
@@ -177,17 +259,39 @@ class ShikimoriSource(BaseShikimoriSource):
 
         anime_id = str(known_ids.get("shikimori") or record.source_id or "").strip()
 
-        # The base adapter normally provides voices. If it ever classifies zero
-        # entries, retry from the raw role payload using rolesRu + rolesEn.
-        if not record.voices and anime_id.isdigit():
+        if anime_id.isdigit():
             try:
-                record.voices = await _reload_voice_credits(anime_id)
+                raw_roles = await _rest_anime_roles(anime_id)
+                rest_voices = _rest_voice_credits(raw_roles)
+                logging.info(
+                    "Shikimori REST roles for anime %s: total=%d, "
+                    "japanese_voice_links=%d",
+                    anime_id,
+                    len(raw_roles),
+                    len(rest_voices),
+                )
+                # REST roles are authoritative here because each voice relation
+                # contains both its person and character plus the raw language.
+                record.voices = rest_voices
             except Exception:
                 logging.warning(
-                    "Could not reload Shikimori voice credits for anime %s",
+                    "Could not load Shikimori REST roles for anime %s",
                     anime_id,
                     exc_info=True,
                 )
+
+                # Keep a GraphQL fallback so a REST outage does not remove
+                # Shikimori voice data entirely.
+                if not record.voices:
+                    try:
+                        record.voices = await _reload_voice_credits(anime_id)
+                    except Exception:
+                        logging.warning(
+                            "Could not reload Shikimori GraphQL voice credits "
+                            "for anime %s",
+                            anime_id,
+                            exc_info=True,
+                        )
 
         try:
             await _refresh_portraits(record.voices)
