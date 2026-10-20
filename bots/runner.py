@@ -5,6 +5,7 @@ import logging
 from aiogram.types import Message
 
 from bots import common as common_bot
+from bots.people_portraits import install as install_people_portraits
 from bots.search_ui import register_search_handlers
 from core.models import SearchCandidate
 
@@ -73,10 +74,11 @@ async def run_bot(*, use_custom_api: bool, mode_name: str) -> None:
     logging.info("Metadata sources: %s", ", ".join(source.name for source in common_bot.SOURCES))
     logging.info("Selectable /search providers are enabled")
 
-    # build_dispatcher() resolves _aggregate_and_send from bots.common when its
-    # callback runs. Replace that global with the cleanup wrapper so the same
-    # behavior applies to both /anime and /search selections.
+    # build_dispatcher() resolves these helpers from bots.common when callbacks
+    # run. Install the search cleanup and portrait-aware staff/seiyuu views
+    # before registering handlers so both /anime and /search share the same UI.
     common_bot._aggregate_and_send = _aggregate_and_cleanup_search
+    install_people_portraits(common_bot)
 
     bot = common_bot.create_bot(use_custom_api=use_custom_api)
     dp = common_bot.build_dispatcher(mode_name=mode_name)
