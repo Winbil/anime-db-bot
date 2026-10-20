@@ -47,6 +47,12 @@ SECTION_LABELS = {
     "staff": "Команда",
     "voices": "Сэйю",
 }
+SOURCE_SELECTABLE_SECTIONS = {"titles", "staff", "voices"}
+ALL_SOURCE_LABELS = {
+    "titles": "Все названия",
+    "staff": "Вся команда",
+    "voices": "Все сэйю",
+}
 
 
 @dataclass(slots=True)
@@ -197,6 +203,41 @@ def _format_people(title: str, people) -> str:
     return "\n".join(lines)
 
 
+def _format_titles(
+    titles_map: dict[str, str],
+    synonyms_values: list[str],
+    *,
+    source: str | None = None,
+) -> str:
+    title = f"Названия — {source}:" if source else "Названия:"
+    lines = [title]
+    labels = {
+        "russian": "Русское",
+        "romaji": "Оригинальное / romaji",
+        "english": "English",
+        "japanese": "日本語",
+        "licensed_ru": "Лицензионное RU",
+    }
+    seen_titles: set[str] = set()
+    for key in ("russian", "romaji", "english", "japanese", "licensed_ru"):
+        value = (titles_map.get(key) or "").strip()
+        if value and value.casefold() not in seen_titles:
+            seen_titles.add(value.casefold())
+            lines.append(f"• {labels[key]}: {value}")
+
+    synonyms = [
+        value
+        for value in _dedupe_strings(synonyms_values)
+        if value.casefold() not in seen_titles
+    ]
+    if synonyms:
+        lines.append("• Синонимы: " + "; ".join(synonyms))
+
+    if len(lines) == 1:
+        lines.append("Нет данных.")
+    return "\n".join(lines)
+
+
 def _append_block(target: list[str], title: str, lines: list[str]) -> None:
     lines = [line for line in lines if line]
     if not lines:
@@ -221,6 +262,53 @@ def _ordered_mapping_items(
         if source not in seen:
             result.append((source, value))
     return result
+
+
+def _source_section_sources(anime: AggregatedAnime, section: str) -> list[str]:
+    if section == "titles":
+        available = {
+            source
+            for source in set(anime.titles_by_source) | set(anime.synonyms_by_source)
+            if anime.titles_by_source.get(source) or anime.synonyms_by_source.get(source)
+        }
+    elif section == "staff":
+        available = {
+            source for source, people in anime.staff_by_source.items() if people
+        }
+    elif section == "voices":
+        available = {
+            source for source, people in anime.voices_by_source.items() if people
+        }
+    else:
+        return []
+
+    ordered = [source for source in anime.sources if source in available]
+    ordered.extend(sorted(available - set(ordered)))
+    return ordered
+
+
+def _source_section_text(
+    anime: AggregatedAnime,
+    section: str,
+    source: str,
+) -> str:
+    if section == "titles":
+        return _format_titles(
+            anime.titles_by_source.get(source, {}),
+            anime.synonyms_by_source.get(source, []),
+            source=source,
+        )
+    if section == "staff":
+        return _format_people(
+            f"Авторы и команда — {source}",
+            anime.staff_by_source.get(source, []),
+        )
+    if section == "voices":
+        return _format_people(
+            f"Сэйю / актёры озвучки — {source}",
+            anime.voices_by_source.get(source, []),
+        )
+    return "Нет данных."
 
 
 def _anime_sections(anime: AggregatedAnime) -> dict[str, str]:
@@ -301,29 +389,6 @@ def _anime_sections(anime: AggregatedAnime) -> dict[str, str]:
         source_lines.append("Недоступны: " + ", ".join(anime.errors))
     _append_block(main, "Источники", source_lines)
 
-    titles = ["Названия:"]
-    labels = {
-        "russian": "Русское",
-        "romaji": "Оригинальное / romaji",
-        "english": "English",
-        "japanese": "日本語",
-        "licensed_ru": "Лицензионное RU",
-    }
-    seen_titles: set[str] = set()
-    for key in ("russian", "romaji", "english", "japanese", "licensed_ru"):
-        value = anime.titles.get(key)
-        if value and value.casefold() not in seen_titles:
-            seen_titles.add(value.casefold())
-            titles.append(f"• {labels[key]}: {value}")
-
-    synonyms = [
-        value
-        for value in _dedupe_strings(anime.synonyms)
-        if value.casefold() not in seen_titles
-    ]
-    if synonyms:
-        titles.append("• Синонимы: " + "; ".join(synonyms))
-
     description_text = (
         "Описание:\nВыбери источник кнопкой ниже."
         if anime.descriptions
@@ -337,7 +402,7 @@ def _anime_sections(anime: AggregatedAnime) -> dict[str, str]:
 
     return {
         "main": "\n".join(main),
-        "titles": "\n".join(titles),
+        "titles": _format_titles(anime.titles, anime.synonyms),
         "description": description_text,
         "links": links_text,
         "staff": _format_people("Авторы и команда", anime.staff),
@@ -373,6 +438,39 @@ def _description_selection_rows(
     return [buttons[index:index + 2] for index in range(0, len(buttons), 2)]
 
 
+def _source_section_selection_rows(
+    token: str,
+    anime: AggregatedAnime,
+    section: str,
+    *,
+    selected_source_index: int | None = None,
+) -> list[list[InlineKeyboardButton]]:
+    sources = _source_section_sources(anime, section)
+    if not sources:
+        return []
+
+    all_label = ALL_SOURCE_LABELS[section]
+    rows: list[list[InlineKeyboardButton]] = [[
+        InlineKeyboardButton(
+            text=("✓ " + all_label) if selected_source_index is None else all_label,
+            callback_data=f"av:{token}:{section}:0",
+        )
+    ]]
+
+    source_buttons = [
+        InlineKeyboardButton(
+            text=("✓ " + source) if selected_source_index == index else source,
+            callback_data=f"as:{token}:{section}:{index}:0",
+        )
+        for index, source in enumerate(sources)
+    ]
+    rows.extend(
+        source_buttons[index:index + 2]
+        for index in range(0, len(source_buttons), 2)
+    )
+    return rows
+
+
 def _link_rows(anime: AggregatedAnime) -> list[list[InlineKeyboardButton]]:
     buttons = [
         InlineKeyboardButton(text=source, url=str(url))
@@ -395,6 +493,15 @@ def _navigation_keyboard(
         rows.extend(_description_selection_rows(token, anime))
     elif current_section == "links":
         rows.extend(_link_rows(anime))
+    elif current_section in SOURCE_SELECTABLE_SECTIONS:
+        rows.extend(
+            _source_section_selection_rows(
+                token,
+                anime,
+                current_section,
+                selected_source_index=None,
+            )
+        )
 
     if current_section != "main":
         rows.append([
@@ -460,6 +567,49 @@ def _description_keyboard(
             callback_data=f"av:{token}:main:0",
         ),
     ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _source_section_keyboard(
+    token: str,
+    anime: AggregatedAnime,
+    section: str,
+    source_index: int,
+    page: int,
+    page_count: int,
+) -> InlineKeyboardMarkup:
+    rows = _source_section_selection_rows(
+        token,
+        anime,
+        section,
+        selected_source_index=source_index,
+    )
+
+    rows.append([
+        InlineKeyboardButton(
+            text="← Назад",
+            callback_data=f"av:{token}:main:0",
+        )
+    ])
+
+    if page_count > 1:
+        nav: list[InlineKeyboardButton] = []
+        if page > 0:
+            nav.append(InlineKeyboardButton(
+                text="◀️",
+                callback_data=f"as:{token}:{section}:{source_index}:{page - 1}",
+            ))
+        nav.append(InlineKeyboardButton(
+            text=f"{page + 1}/{page_count}",
+            callback_data="noop",
+        ))
+        if page + 1 < page_count:
+            nav.append(InlineKeyboardButton(
+                text="▶️",
+                callback_data=f"as:{token}:{section}:{source_index}:{page + 1}",
+            ))
+        rows.append(nav)
+
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -642,6 +792,46 @@ async def _edit_description_view(
         )
     except Exception:
         logging.exception("Rich description edit failed; falling back to standard text edit")
+        await message.edit_text(
+            text=_split_text(pages[page], STANDARD_MESSAGE_LIMIT)[0],
+            reply_markup=keyboard,
+        )
+
+
+async def _edit_source_section_view(
+    message: Message,
+    token: str,
+    anime: AggregatedAnime,
+    section: str,
+    source_index: int,
+    page: int,
+) -> None:
+    sources = _source_section_sources(anime, section)
+    if source_index < 0 or source_index >= len(sources):
+        raise ValueError("Source section index is out of range")
+
+    source = sources[source_index]
+    pages = _split_text(
+        _source_section_text(anime, section, source),
+        RICH_MESSAGE_LIMIT,
+    )
+    page = max(0, min(page, len(pages) - 1))
+    keyboard = _source_section_keyboard(
+        token,
+        anime,
+        section,
+        source_index,
+        page,
+        len(pages),
+    )
+
+    try:
+        await message.edit_text(
+            rich_message=_rich(pages[page]),
+            reply_markup=keyboard,
+        )
+    except Exception:
+        logging.exception("Rich source section edit failed; falling back to standard text edit")
         await message.edit_text(
             text=_split_text(pages[page], STANDARD_MESSAGE_LIMIT)[0],
             reply_markup=keyboard,
@@ -870,6 +1060,46 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             anime,
             source_index=source_index,
             page=int(page_text),
+        )
+
+    @dp.callback_query(F.data.startswith("as:"))
+    async def source_section_callback_handler(callback: CallbackQuery) -> None:
+        data = (callback.data or "").split(":")
+        if (
+            len(data) != 5
+            or data[2] not in SOURCE_SELECTABLE_SECTIONS
+            or not data[3].isdigit()
+            or not data[4].isdigit()
+        ):
+            await callback.answer("Некорректный источник.", show_alert=True)
+            return
+
+        _, token, section, source_index_text, page_text = data
+        anime = ANIME_SESSIONS.get(token)
+        if anime is None:
+            await callback.answer(
+                "Карточка устарела. Выполни поиск ещё раз.",
+                show_alert=True,
+            )
+            return
+        if callback.message is None:
+            await callback.answer()
+            return
+
+        sources = _source_section_sources(anime, section)
+        source_index = int(source_index_text)
+        if source_index >= len(sources):
+            await callback.answer("Источник больше недоступен.", show_alert=True)
+            return
+
+        await callback.answer()
+        await _edit_source_section_view(
+            callback.message,
+            token,
+            anime,
+            section,
+            source_index,
+            int(page_text),
         )
 
     @dp.callback_query(F.data.startswith("av:"))
