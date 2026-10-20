@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from core.canonicalization import is_primary_voice_role, normalize_key
+from core.canonicalization import normalize_key
 from core.models import AnimeRecord, PersonCredit
 
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
@@ -244,19 +244,16 @@ def _credits(raw: dict[str, Any], *, voices: bool) -> list[PersonCredit]:
 
     for entry in raw.get("personRoles") or []:
         person = entry.get("person") or {}
-        # Prefer the already localized Russian roles. Fall back to English only
-        # when Shikimori has no Russian label for this entry.
+        # Prefer Russian role labels when available but keep every actual credit,
+        # including foreign dub voice roles, so aliases from different databases
+        # can be used for cross-source identity matching.
         all_roles = _dedupe(entry.get("rolesRu") or entry.get("rolesEn") or [])
 
         if voices:
-            # Shikimori marks a person globally as isSeyu, which is not enough:
-            # a seiyuu can also be a scriptwriter/director on the same anime.
-            # Keep only explicit original/Japanese voice roles and reject
-            # foreign dub roles such as "Сэйю (EN)".
-            roles = [role for role in all_roles if is_primary_voice_role(role)]
+            roles = [role for role in all_roles if _is_any_voice_role(role)]
         else:
-            # Production staff must not contain any voice-actor role, including
-            # foreign dub variants.
+            # Keep production/localization staff, but do not duplicate voice-only
+            # credits into the staff section.
             roles = [role for role in all_roles if not _is_any_voice_role(role)]
 
         if not roles:
