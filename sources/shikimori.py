@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from core.canonicalization import normalize_key
+from core.canonicalization import is_primary_voice_role, normalize_key
 from core.models import AnimeRecord, PersonCredit
 
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
@@ -244,16 +244,11 @@ def _credits(raw: dict[str, Any], *, voices: bool) -> list[PersonCredit]:
 
     for entry in raw.get("personRoles") or []:
         person = entry.get("person") or {}
-        # Prefer Russian role labels when available but keep every actual credit,
-        # including foreign dub voice roles, so aliases from different databases
-        # can be used for cross-source identity matching.
         all_roles = _dedupe(entry.get("rolesRu") or entry.get("rolesEn") or [])
 
         if voices:
-            roles = [role for role in all_roles if _is_any_voice_role(role)]
+            roles = [role for role in all_roles if is_primary_voice_role(role)]
         else:
-            # Keep production/localization staff, but do not duplicate voice-only
-            # credits into the staff section.
             roles = [role for role in all_roles if not _is_any_voice_role(role)]
 
         if not roles:
