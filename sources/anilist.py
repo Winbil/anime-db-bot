@@ -199,7 +199,7 @@ def _headers() -> dict[str, str]:
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "User-Agent": "anime-db-bot/0.6 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": "anime-db-bot/0.7 (https://github.com/Winbil/anime-db-bot)",
     }
     access_token = os.getenv("ANILIST_ACCESS_TOKEN", "").strip()
     if access_token:
@@ -377,7 +377,11 @@ async def _record(raw: dict[str, Any]) -> AnimeRecord:
 class AniListSource:
     name = "AniList"
 
-    async def get_details(self, mal_id: str) -> AnimeRecord | None:
+    async def get_details(
+        self,
+        mal_id: str,
+        known_ids: dict[str, str],
+    ) -> AnimeRecord | None:
         mal_id = str(mal_id).strip()
         if not mal_id.isdigit():
             return None
