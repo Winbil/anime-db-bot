@@ -29,14 +29,17 @@ class PersonCredit:
 
     ``name`` is the preferred display value. ``aliases`` keeps alternate
     spellings/languages so the aggregator can identify the same person across
-    Russian and international databases. ``external_ids`` intentionally keeps
-    source-local person IDs for future enrichment such as portraits.
+    Russian and international databases. ``external_ids`` keeps source-local
+    person IDs. ``portraits`` keeps source-keyed image URLs so the merged UI can
+    show every available portrait or one database at a time without losing
+    provenance.
     """
 
     name: str
     roles: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
     external_ids: dict[str, str] = field(default_factory=dict)
+    portraits: dict[str, list[str]] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
