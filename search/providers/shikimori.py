@@ -10,9 +10,7 @@ from core.models import SearchCandidate, SearchPage
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
 SHIKIMORI_MAX_PAGE_SIZE = 50
 
-SEARCH_QUERY = """
-query SearchAnime($search: String!, $page: PositiveInt!, $limit: PositiveInt!) {
-  animes(search: $search, page: $page, limit: $limit, order: popularity) {
+SEARCH_FIELDS = """
     id
     malId
     name
@@ -22,8 +20,6 @@ query SearchAnime($search: String!, $page: PositiveInt!, $limit: PositiveInt!) {
     synonyms
     score
     airedOn { year }
-  }
-}
 """
 
 
@@ -51,12 +47,8 @@ class ShikimoriSearchProvider:
             "User-Agent": "anime-db-bot/0.7 (https://github.com/Winbil/anime-db-bot)",
         }
         payload = {
-            "query": SEARCH_QUERY,
-            "variables": {
-                "search": query,
-                "page": page,
-                "limit": limit,
-            },
+            "query": _search_query(page, limit),
+            "variables": {"search": query},
         }
 
         async with httpx.AsyncClient(
@@ -131,6 +123,16 @@ class ShikimoriSearchProvider:
             page_size=limit,
             has_next=len(raw_items) >= limit,
         )
+
+
+def _search_query(page: int, limit: int) -> str:
+    return f"""
+query SearchAnime($search: String!) {{
+  animes(search: $search, page: {page}, limit: {limit}, order: popularity) {{
+{SEARCH_FIELDS}
+  }}
+}}
+"""
 
 
 def _clean(value: Any) -> str:
