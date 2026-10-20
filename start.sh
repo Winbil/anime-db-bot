@@ -24,6 +24,8 @@ command -v tmux >/dev/null 2>&1 || fail "tmux is not installed. Install it first
 required_files=(
     "requirements.txt"
     "bots/common.py"
+    "bots/runner.py"
+    "bots/search_ui.py"
     "bots/official.py"
     "bots/tgapi.py"
     "core/models.py"
@@ -33,9 +35,11 @@ required_files=(
     "search/registry.py"
     "search/providers/mal.py"
     "search/providers/shikimori.py"
+    "search/providers/anilist.py"
     "sources/registry.py"
     "sources/shikimori.py"
     "sources/anilist.py"
+    "sources/mal.py"
 )
 for required_file in "${required_files[@]}"; do
     [[ -f "$SCRIPT_DIR/$required_file" ]] || fail "$required_file not found."
@@ -111,28 +115,35 @@ import aiogram
 import httpx
 import dotenv
 from aiogram.types import InputRichMessage
+from bots.search_ui import register_search_handlers
 from core.contracts import AnimeSearchProvider, AnimeSource
 from core.models import AggregatedAnime, AnimeRecord, SearchCandidate, SearchPage
+from search.providers.anilist import AniListSearchProvider
 from search.providers.mal import MALSearchProvider
 from search.providers.shikimori import ShikimoriSearchProvider
-from search.registry import get_search_providers
+from search.registry import get_search_provider_map, get_search_providers
 from services.aggregator import AnimeAggregator
 from services.search import SearchService
 from sources.anilist import AniListSource
+from sources.mal import MALSource
 from sources.registry import get_sources
 from sources.shikimori import ShikimoriSource
 
 providers = get_search_providers()
+all_provider_map = get_search_provider_map()
 sources = get_sources()
 if not providers:
-    raise RuntimeError("No anime search providers are enabled in search/registry.py")
+    raise RuntimeError("No default anime search providers are enabled in search/registry.py")
+if not all_provider_map:
+    raise RuntimeError("No selectable anime search providers are enabled")
 if not sources:
     raise RuntimeError("No anime metadata sources are enabled in sources/registry.py")
 
 SearchService(providers)
 AnimeAggregator(sources)
 print("Python imports and service wiring: OK")
-print("Search providers:", ", ".join(provider.name for provider in providers))
+print("Default search providers:", ", ".join(provider.name for provider in providers))
+print("Selectable search providers:", ", ".join(all_provider_map))
 print("Metadata sources:", ", ".join(source.name for source in sources))
 PY
 
@@ -148,7 +159,8 @@ BOT_TOKEN_VALUE="$(sed -n 's/^[[:space:]]*BOT_TOKEN[[:space:]]*=[[:space:]]*//p'
 
 MAL_CLIENT_ID_VALUE="$(sed -n 's/^[[:space:]]*MAL_CLIENT_ID[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
 if [[ -z "$MAL_CLIENT_ID_VALUE" ]]; then
-    info "MAL_CLIENT_ID is empty: MyAnimeList search will be skipped when it fails, but Shikimori search can still work."
+    info "MAL_CLIENT_ID is empty: MyAnimeList search and metadata will be unavailable."
+    info "Shikimori search plus Shikimori/AniList metadata can still work."
     info "Optional MAL setup: https://myanimelist.net/apiconfig"
 fi
 
@@ -161,8 +173,11 @@ else
     BOT_MODULE="bots.official"
     info "Selected Telegram transport: official api.telegram.org."
 fi
-info "Search providers: Shikimori + MyAnimeList, merged by MAL ID."
-info "Metadata sources are queried only after a search result is selected."
+
+info "Default search: Shikimori + MyAnimeList, merged by MAL ID."
+info "Selectable /search providers include MAL, Shikimori and AniList."
+info "Metadata sources: Shikimori + AniList + MyAnimeList."
+info "Equivalent metadata fields are semantically merged without duplicates."
 info "Anime cards use sendRichMessage (up to 32768 UTF-8 chars) in both modes."
 
 mkdir -p "$LOG_DIR"
