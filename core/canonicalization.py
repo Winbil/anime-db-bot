@@ -254,8 +254,23 @@ def clean_text(value: str) -> str:
 
 def normalize_key(value: str) -> str:
     value = clean_text(value).casefold().replace("ё", "е")
-    value = unicodedata.normalize("NFKD", value)
-    value = "".join(char for char in value if not unicodedata.combining(char))
+
+    # NFKD is useful for accent-insensitive Latin matching, but Cyrillic "й"
+    # decomposes into "и" + COMBINING BREVE. Dropping all combining marks would
+    # therefore silently turn "й" into "и" (for example "сэйю" -> "сэию").
+    # Preserve "й" explicitly while still stripping Latin diacritics.
+    normalized_parts: list[str] = []
+    for char in value:
+        if char == "й":
+            normalized_parts.append(char)
+            continue
+        normalized_parts.extend(
+            item
+            for item in unicodedata.normalize("NFKD", char)
+            if not unicodedata.combining(item)
+        )
+    value = "".join(normalized_parts)
+
     value = WORD_RE.sub(" ", value)
     return " ".join(value.split())
 
