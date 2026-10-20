@@ -177,7 +177,7 @@ def _best_poster_url(poster: dict[str, Any]) -> str | None:
 
 async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
     headers = {
-        "User-Agent": "anime-db-bot/0.6 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": "anime-db-bot/0.7 (https://github.com/Winbil/anime-db-bot)",
         "Accept": "application/json",
     }
 
@@ -311,14 +311,17 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
 class ShikimoriSource:
     name = "Shikimori"
 
-    async def get_details(self, mal_id: str) -> AnimeRecord | None:
+    async def get_details(
+        self,
+        mal_id: str,
+        known_ids: dict[str, str],
+    ) -> AnimeRecord | None:
         mal_id = str(mal_id).strip()
-        if not mal_id.isdigit():
+        shikimori_id = str(known_ids.get("shikimori") or "").strip()
+        if not mal_id.isdigit() or not shikimori_id.isdigit():
             return None
 
-        # Shikimori's linked anime IDs commonly match MAL IDs. We still verify
-        # the returned malId and never fall back to a text search.
-        raw = await _get_raw(mal_id)
+        raw = await _get_raw(shikimori_id)
         if not raw:
             return None
         if str(raw.get("malId") or "") != mal_id:
