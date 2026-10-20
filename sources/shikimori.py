@@ -39,7 +39,20 @@ DETAIL_FIELDS = """
     personRoles {
       rolesRu
       rolesEn
-      person { id name russian japanese isSeyu }
+      person {
+        id
+        name
+        russian
+        japanese
+        isSeyu
+        poster {
+          originalUrl
+          main2xUrl
+          mainUrl
+          preview2xUrl
+          previewUrl
+        }
+      }
     }
     description
     poster {
@@ -149,38 +162,6 @@ def _format_datetime(value: str | None) -> str | None:
         return value
 
 
-def _person_credit(person: dict[str, Any], roles: list[str]) -> PersonCredit | None:
-    russian = _clean_text(person.get("russian"))
-    name = _clean_text(person.get("name"))
-    japanese = _clean_text(person.get("japanese"))
-    names = _dedupe([russian, name, japanese])
-    if not names:
-        return None
-
-    preferred = russian or name or japanese
-    source_id = str(person.get("id") or "").strip()
-    return PersonCredit(
-        name=preferred,
-        roles=_dedupe(roles),
-        aliases=[item for item in names if item.casefold() != preferred.casefold()],
-        external_ids={"shikimori": source_id} if source_id else {},
-    )
-
-
-def _is_any_voice_role(value: str) -> bool:
-    key = normalize_key(value)
-    return (
-        key == "сейю"
-        or key.startswith("сейю ")
-        or key == "seiyuu"
-        or key.startswith("seiyuu ")
-        or key == "voice actor"
-        or key.startswith("voice actor ")
-        or key == "voice acting"
-        or key.startswith("voice acting ")
-    )
-
-
 def _best_poster_url(poster: dict[str, Any]) -> str | None:
     for field in (
         "originalUrl",
@@ -195,9 +176,46 @@ def _best_poster_url(poster: dict[str, Any]) -> str | None:
     return None
 
 
+def _person_credit(person: dict[str, Any], roles: list[str]) -> PersonCredit | None:
+    russian = _clean_text(person.get("russian"))
+    name = _clean_text(person.get("name"))
+    japanese = _clean_text(person.get("japanese"))
+    names = _dedupe([russian, name, japanese])
+    if not names:
+        return None
+
+    preferred = russian or name or japanese
+    source_id = str(person.get("id") or "").strip()
+    poster = person.get("poster") or {}
+    portrait = _best_poster_url(poster) if isinstance(poster, dict) else None
+    return PersonCredit(
+        name=preferred,
+        roles=_dedupe(roles),
+        aliases=[item for item in names if item.casefold() != preferred.casefold()],
+        external_ids={"shikimori": source_id} if source_id else {},
+        portraits={"Shikimori": [portrait]} if portrait else {},
+    )
+
+
+def _is_any_voice_role(value: str) -> bool:
+    key = normalize_key(value)
+    return (
+        key == "сэйю"
+        or key.startswith("сэйю ")
+        or key == "сейю"
+        or key.startswith("сейю ")
+        or key == "seiyuu"
+        or key.startswith("seiyuu ")
+        or key == "voice actor"
+        or key.startswith("voice actor ")
+        or key == "voice acting"
+        or key.startswith("voice acting ")
+    )
+
+
 async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
     headers = {
-        "User-Agent": "anime-db-bot/0.9 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": "anime-db-bot/1.0 (https://github.com/Winbil/anime-db-bot)",
         "Accept": "application/json",
     }
 
