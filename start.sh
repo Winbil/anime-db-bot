@@ -116,6 +116,7 @@ import aiogram
 import httpx
 import dotenv
 from aiogram.types import InputRichMessage
+from bots.common import SOURCE_SELECTABLE_SECTIONS, _source_section_sources
 from bots.search_ui import register_search_handlers
 from core.canonicalization import (
     canonical_genre,
@@ -156,12 +157,26 @@ if not is_primary_voice_role("Сэйю"):
     raise RuntimeError("Primary seiyuu role smoke test failed")
 if is_primary_voice_role("Сэйю (EN)"):
     raise RuntimeError("Foreign dub seiyuu filter smoke test failed")
+if SOURCE_SELECTABLE_SECTIONS != {"titles", "staff", "voices"}:
+    raise RuntimeError("Source-selectable section registry smoke test failed")
+
+sample = AggregatedAnime(
+    title="Smoke test",
+    sources=["AniList"],
+    titles_by_source={"AniList": {"english": "Smoke test"}},
+    staff_by_source={"AniList": [PersonCredit(name="Test Person")]},
+    voices_by_source={"AniList": [PersonCredit(name="Test Voice")]},
+)
+for section in ("titles", "staff", "voices"):
+    if _source_section_sources(sample, section) != ["AniList"]:
+        raise RuntimeError(f"Source provenance smoke test failed for {section}")
 
 SearchService(providers)
 AnimeAggregator(sources)
 print("Python imports and service wiring: OK")
 print("Multilingual canonicalization: OK")
 print("Original seiyuu filtering: OK")
+print("Source-selectable metadata sections: OK")
 print("Default search providers:", ", ".join(provider.name for provider in providers))
 print("Selectable search providers:", ", ".join(all_provider_map))
 print("Metadata sources:", ", ".join(source.name for source in sources))
@@ -198,6 +213,7 @@ info "Default search: Shikimori + MyAnimeList, merged by MAL ID."
 info "Selectable /search providers include MAL, Shikimori and AniList."
 info "Metadata sources: Shikimori + AniList + MyAnimeList."
 info "Equivalent metadata fields are multilingual-canonicalized and merged without duplicates."
+info "Titles, staff and seiyuu keep source provenance for inline source switching."
 info "Anime cards use sendRichMessage (up to 32768 UTF-8 chars) in both modes."
 
 mkdir -p "$LOG_DIR"
