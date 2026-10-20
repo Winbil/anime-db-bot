@@ -1,10 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections import Counter
 
+from core.canonicalization import (
+    canonical_genre,
+    canonical_role,
+    normalize_key,
+    person_identity_keys,
+    preferred_person_name,
+)
 from core.contracts import AnimeSource
 from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate
+
+
+PAREN_NAME_RE = re.compile(r"^(.*?)\s*\((.*)\)\s*$")
 
 
 def _clean(value: str) -> str:
@@ -23,22 +34,85 @@ def _dedupe_strings(values: list[str]) -> list[str]:
     return result
 
 
+def _person_names(person: PersonCredit) -> list[str]:
+    """Return all names usable for cross-source identity matching.
+
+    Older Shikimori records used a display string like
+    ``Русское имя (Romanized, 日本語)``. Parse that form too so existing source
+    adapters already benefit from multilingual merging.
+    """
+
+    names = [person.name, *person.aliases]
+    parsed: list[str] = []
+    for value in list(names):
+        value = _clean(value)
+        match = PAREN_NAME_RE.match(value)
+        if not match:
+            continue
+        base = _clean(match.group(1))
+        if base:
+            parsed.append(base)
+        parsed.extend(_clean(part) for part in match.group(2).split(","))
+    return _dedupe_strings([*names, *parsed])
+
+
 def _merge_people(groups: list[list[PersonCredit]]) -> list[PersonCredit]:
-    merged: dict[str, PersonCredit] = {}
+    merged: list[PersonCredit] = []
+    identity_sets: list[set[str]] = []
+
     for group in groups:
         for person in group:
-            key = _clean(person.name).casefold()
-            if not key:
-                continue
-            current = merged.get(key)
-            if current is None:
-                merged[key] = PersonCredit(
-                    name=_clean(person.name),
-                    roles=_dedupe_strings(person.roles),
+            names = _person_names(person)
+            keys = person_identity_keys(names)
+            roles = _dedupe_strings(
+                [canonical_role(role) for role in person.roles if canonical_role(role)]
+            )
+
+            match_index: int | None = None
+            if keys:
+                for index, existing_keys in enumerate(identity_sets):
+                    if keys & existing_keys:
+                        match_index = index
+                        break
+
+            if match_index is None:
+                preferred = preferred_person_name(names)
+                aliases = [
+                    value
+                    for value in names
+                    if normalize_key(value) != normalize_key(preferred)
+                ]
+                merged.append(
+                    PersonCredit(
+                        name=preferred,
+                        roles=roles,
+                        aliases=_dedupe_strings(aliases),
+                        external_ids=dict(person.external_ids),
+                    )
                 )
-            else:
-                current.roles = _dedupe_strings([*current.roles, *person.roles])
-    return list(merged.values())
+                identity_sets.append(keys)
+                continue
+
+            current = merged[match_index]
+            all_names = _dedupe_strings(
+                [current.name, *current.aliases, *names]
+            )
+            preferred = preferred_person_name(all_names)
+            current.name = preferred
+            current.aliases = _dedupe_strings(
+                [
+                    value
+                    for value in all_names
+                    if normalize_key(value) != normalize_key(preferred)
+                ]
+            )
+            current.roles = _dedupe_strings([*current.roles, *roles])
+            current.external_ids.update(
+                {key: value for key, value in person.external_ids.items() if value}
+            )
+            identity_sets[match_index] |= keys
+
+    return merged
 
 
 def _consensus_text(records: list[AnimeRecord], field_name: str) -> str | None:
@@ -135,9 +209,9 @@ def _merge_source_text(
 class AnimeAggregator:
     """Fetch and semantically merge one anime from all metadata sources.
 
-    Equivalent metadata fields are merged into one source-independent result.
-    Fields where provenance matters to the user (scores, descriptions and URLs)
-    retain their source labels in addition to the aggregate representation.
+    Metadata whose meaning is language-independent is canonicalized before
+    merging. Provenance-sensitive fields such as scores, descriptions and URLs
+    still retain source labels.
     """
 
     def __init__(self, sources: tuple[AnimeSource, ...] | list[AnimeSource]) -> None:
@@ -218,7 +292,14 @@ class AnimeAggregator:
             or candidate.title
         )
 
-        score_average = _average_score(scores)
+        canonical_genres = _dedupe_strings(
+            [
+                canonical_genre(value)
+                for record in records
+                for value in record.genres
+                if canonical_genre(value)
+            ]
+        )
 
         return AggregatedAnime(
             title=title,
@@ -242,16 +323,14 @@ class AnimeAggregator:
             released_on=_consensus_text(records, "released_on"),
             next_episode_at=_consensus_text(records, "next_episode_at"),
             scores=scores,
-            score_average=score_average,
+            score_average=_average_score(scores),
             score_sources_count=len(scores),
             rank=_min_positive_int(records, "rank"),
             popularity_rank=_min_positive_int(records, "popularity_rank"),
             list_users=_max_int(records, "list_users"),
             scoring_users=_max_int(records, "scoring_users"),
             favorites=_max_int(records, "favorites"),
-            genres=_dedupe_strings(
-                [value for record in records for value in record.genres]
-            ),
+            genres=canonical_genres,
             studios=_dedupe_strings(
                 [value for record in records for value in record.studios]
             ),
@@ -265,7 +344,6 @@ class AnimeAggregator:
                 [value for record in records for value in record.broadcasts]
             ),
             descriptions=descriptions,
-            description=_best_text(list(descriptions.values())),
             background=_best_text(background_values),
             posters=_dedupe_strings(
                 [value for record in records for value in record.posters]
