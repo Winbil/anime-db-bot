@@ -117,7 +117,12 @@ import httpx
 import dotenv
 from aiogram.types import InputRichMessage
 from bots.search_ui import register_search_handlers
-from core.canonicalization import canonical_genre, canonical_role, person_identity_keys
+from core.canonicalization import (
+    canonical_genre,
+    canonical_role,
+    is_primary_voice_role,
+    person_identity_keys,
+)
 from core.contracts import AnimeSearchProvider, AnimeSource
 from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate, SearchPage
 from search.providers.anilist import AniListSearchProvider
@@ -147,11 +152,16 @@ if canonical_role("Director") != canonical_role("Режиссёр"):
     raise RuntimeError("Role canonicalization smoke test failed")
 if not (person_identity_keys(["Fuse"]) & person_identity_keys(["Фусэ", "Fuse"])):
     raise RuntimeError("Person alias canonicalization smoke test failed")
+if not is_primary_voice_role("Сэйю"):
+    raise RuntimeError("Primary seiyuu role smoke test failed")
+if is_primary_voice_role("Сэйю (EN)"):
+    raise RuntimeError("Foreign dub seiyuu filter smoke test failed")
 
 SearchService(providers)
 AnimeAggregator(sources)
 print("Python imports and service wiring: OK")
 print("Multilingual canonicalization: OK")
+print("Original seiyuu filtering: OK")
 print("Default search providers:", ", ".join(provider.name for provider in providers))
 print("Selectable search providers:", ", ".join(all_provider_map))
 print("Metadata sources:", ", ".join(source.name for source in sources))
