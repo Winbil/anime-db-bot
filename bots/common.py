@@ -178,6 +178,12 @@ def _dedupe_strings(values: list[str]) -> list[str]:
     return result
 
 
+def _format_number(value: int | None) -> str | None:
+    if value is None:
+        return None
+    return f"{value:,}".replace(",", " ")
+
+
 def _format_people(title: str, people) -> str:
     if not people:
         return f"{title}:\nНет данных."
@@ -227,25 +233,42 @@ def _anime_sections(anime: AggregatedAnime) -> dict[str, str]:
         )
     if anime.next_episode_at:
         release.append(f"Следующая серия: {anime.next_episode_at}")
-    if anime.franchise:
-        release.append(f"Франшиза: {anime.franchise}")
+    if anime.broadcasts:
+        release.append(f"Расписание: {', '.join(anime.broadcasts)}")
     _append_block(main, "Выход", release)
 
     production: list[str] = []
+    if anime.source_materials:
+        production.append(f"Первоисточник: {', '.join(anime.source_materials)}")
     if anime.genres:
         production.append(f"Жанры: {', '.join(anime.genres)}")
     if anime.studios:
         production.append(f"Студии: {', '.join(anime.studios)}")
     if anime.licensors:
         production.append(f"Лицензиаты: {', '.join(anime.licensors)}")
+    if anime.franchise:
+        production.append(f"Франшиза: {anime.franchise}")
     _append_block(main, "Производство", production)
 
-    if anime.scores:
-        _append_block(
-            main,
-            "Оценки",
-            [f"{source}: {score:g}" for source, score in anime.scores.items()],
+    audience: list[str] = []
+    if anime.score_average is not None:
+        suffix = (
+            f" ({anime.score_sources_count} источника)"
+            if anime.score_sources_count > 1
+            else ""
         )
+        audience.append(f"Средняя оценка: {anime.score_average:g}{suffix}")
+    if anime.rank:
+        audience.append(f"Рейтинг: #{anime.rank}")
+    if anime.popularity_rank:
+        audience.append(f"Популярность: #{anime.popularity_rank}")
+    if anime.list_users is not None:
+        audience.append(f"В списках пользователей: {_format_number(anime.list_users)}")
+    if anime.scoring_users is not None:
+        audience.append(f"Поставили оценку: {_format_number(anime.scoring_users)}")
+    if anime.favorites is not None:
+        audience.append(f"В избранном: {_format_number(anime.favorites)}")
+    _append_block(main, "Оценка и популярность", audience)
 
     source_lines: list[str] = []
     if anime.sources:
@@ -284,19 +307,14 @@ def _anime_sections(anime: AggregatedAnime) -> dict[str, str]:
     if synonyms:
         titles.append("• Синонимы: " + "; ".join(synonyms))
 
-    descriptions = ["Описание:"]
-    if not anime.descriptions:
-        descriptions.append("Нет данных.")
-    elif len(anime.descriptions) == 1:
-        descriptions.append(next(iter(anime.descriptions.values())))
-    else:
-        for source, value in anime.descriptions.items():
-            descriptions.extend([f"[{source}]", value, ""])
+    description_lines = ["Описание:", anime.description or "Нет данных."]
+    if anime.background:
+        description_lines.extend(["", "Дополнительная информация:", anime.background])
 
     return {
         "main": "\n".join(main),
         "titles": "\n".join(titles),
-        "description": "\n".join(descriptions).strip(),
+        "description": "\n".join(description_lines).strip(),
         "staff": _format_people("Авторы и команда", anime.staff),
         "voices": _format_people("Сэйю / актёры озвучки", anime.voices),
     }
@@ -534,11 +552,12 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
         await message.answer(
             "Привет! Это anime-db-bot.\n\n"
             f"Режим Telegram: {mode_name}\n"
-            f"Поиск: {SEARCH_SERVICE.provider_name}\n"
+            f"Основной поиск: {SEARCH_SERVICE.provider_name}\n"
             f"Источники данных: {source_names}\n\n"
-            "Поисковики возвращают MAL ID, после выбора он вместе с уже найденными cross-ID передаётся источникам данных.\n\n"
+            "После выбора MAL ID бот собирает и объединяет метаданные всех доступных источников без повторений.\n\n"
             "Команды:\n"
-            "/anime <название> — найти аниме\n"
+            "/anime <название> — общий поиск\n"
+            "/search <название> — выбрать конкретные поисковики\n"
             "/ping — проверить, что бот работает"
         )
 
@@ -551,7 +570,8 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
         query = (command.args or "").strip()
         if not query:
             await message.answer(
-                "Использование: /anime <название>\nНапример: /anime о моем перерождении в слизь"
+                "Использование: /anime <название>\n"
+                "Например: /anime о моем перерождении в слизь"
             )
             return
 
