@@ -73,7 +73,7 @@ query AnimeDetails($idMal: Int!) {
       pageInfo { hasNextPage }
       edges {
         node { id name { full native } }
-        voiceActors {
+        voiceActors(language: JAPANESE) {
           id
           name { full native alternative }
         }
@@ -104,7 +104,7 @@ query AnimeCharacters($id: Int!, $page: Int!) {
       pageInfo { hasNextPage }
       edges {
         node { id name { full native } }
-        voiceActors {
+        voiceActors(language: JAPANESE) {
           id
           name { full native alternative }
         }
