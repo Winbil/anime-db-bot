@@ -9,36 +9,54 @@ WORD_RE = re.compile(r"[^a-zа-яё0-9]+", re.IGNORECASE)
 TRAILING_DETAILS_RE = re.compile(r"^(.*?)(\s*\([^)]*\))$")
 
 
-# A deliberately small, explicit vocabulary is safer than trying to machine-
-# translate metadata at runtime. Unknown values are preserved as-is.
+# Explicit metadata vocabulary is safer than runtime machine translation.
+# Unknown values are preserved as-is.
 GENRE_ALIASES = {
     "action": "Экшен",
     "экшен": "Экшен",
     "боевик": "Экшен",
     "adventure": "Приключения",
     "приключения": "Приключения",
+    "avant garde": "Авангард",
+    "авангард": "Авангард",
+    "award winning": "Отмеченное наградами",
+    "отмеченное наградами": "Отмеченное наградами",
+    "boys love": "Сёнэн-ай",
+    "boy's love": "Сёнэн-ай",
+    "shounen ai": "Сёнэн-ай",
+    "сёнэн-ай": "Сёнэн-ай",
     "comedy": "Комедия",
     "комедия": "Комедия",
     "drama": "Драма",
     "драма": "Драма",
     "ecchi": "Этти",
     "этти": "Этти",
+    "erotica": "Эротика",
+    "эротика": "Эротика",
     "fantasy": "Фэнтези",
     "фэнтези": "Фэнтези",
+    "girls love": "Сёдзё-ай",
+    "girl's love": "Сёдзё-ай",
+    "shoujo ai": "Сёдзё-ай",
+    "сёдзё-ай": "Сёдзё-ай",
+    "gourmet": "Гурман",
+    "гурман": "Гурман",
+    "hentai": "Хентай",
+    "хентай": "Хентай",
     "horror": "Ужасы",
     "ужасы": "Ужасы",
     "mahou shoujo": "Махо-сёдзё",
     "mahou shojo": "Махо-сёдзё",
-    "магия": "Магия",
+    "махо-сёдзё": "Махо-сёдзё",
     "magic": "Магия",
+    "магия": "Магия",
     "mecha": "Меха",
     "меха": "Меха",
     "music": "Музыка",
     "музыка": "Музыка",
     "mystery": "Детектив",
+    "detective": "Детектив",
     "детектив": "Детектив",
-    "mystery": "Мистика",
-    "мистика": "Мистика",
     "psychological": "Психологическое",
     "психологическое": "Психологическое",
     "romance": "Романтика",
@@ -53,22 +71,26 @@ GENRE_ALIASES = {
     "спорт": "Спорт",
     "supernatural": "Сверхъестественное",
     "сверхъестественное": "Сверхъестественное",
-    "thriller": "Триллер",
-    "триллер": "Триллер",
-    "gourmet": "Гурман",
-    "гурман": "Гурман",
-    "boys love": "Сёнэн-ай",
-    "boy's love": "Сёнэн-ай",
-    "shounen ai": "Сёнэн-ай",
-    "сёнэн-ай": "Сёнэн-ай",
-    "girls love": "Сёдзё-ай",
-    "girl's love": "Сёдзё-ай",
-    "shoujo ai": "Сёдзё-ай",
-    "сёдзё-ай": "Сёдзё-ай",
-    "award winning": "Отмеченное наградами",
-    "отмеченное наградами": "Отмеченное наградами",
     "suspense": "Саспенс",
     "саспенс": "Саспенс",
+    "thriller": "Триллер",
+    "триллер": "Триллер",
+    "historical": "Историческое",
+    "историческое": "Историческое",
+    "military": "Военное",
+    "военное": "Военное",
+    "martial arts": "Боевые искусства",
+    "боевые искусства": "Боевые искусства",
+    "school": "Школа",
+    "школа": "Школа",
+    "isekai": "Исекай",
+    "исекай": "Исекай",
+    "vampire": "Вампиры",
+    "вампиры": "Вампиры",
+    "workplace": "Работа",
+    "работа": "Работа",
+    "time travel": "Путешествие во времени",
+    "путешествие во времени": "Путешествие во времени",
 }
 
 
@@ -200,7 +222,6 @@ def canonical_role(value: str) -> str:
     if not cleaned:
         return ""
 
-    # Preserve useful episode/OP/ED qualifiers while translating the role itself.
     suffix = ""
     base = cleaned
     match = TRAILING_DETAILS_RE.match(cleaned)
