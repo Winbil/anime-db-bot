@@ -15,3 +15,8 @@ def get_search_providers() -> tuple[AnimeSearchProvider, ...]:
         ShikimoriSearchProvider(),
         MALSearchProvider(),
     )
+
+
+def get_search_provider() -> tuple[AnimeSearchProvider, ...]:
+    """Backward-compatible alias for older bot wiring."""
+    return get_search_providers()
