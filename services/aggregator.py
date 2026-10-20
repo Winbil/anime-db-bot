@@ -326,19 +326,41 @@ class AnimeAggregator:
         descriptions: dict[str, str] = {}
         urls: dict[str, str] = {}
         background_values: list[str] = []
+        titles_by_source: dict[str, dict[str, str]] = {}
+        synonyms_by_source: dict[str, list[str]] = {}
+        staff_by_source: dict[str, list[PersonCredit]] = {}
+        voices_by_source: dict[str, list[PersonCredit]] = {}
 
         for record in records:
-            for key, value in record.titles.items():
-                value = _clean(value)
-                if not value:
-                    continue
+            source_titles = {
+                key: value
+                for key, raw_value in record.titles.items()
+                if (value := _clean(raw_value))
+            }
+            source_synonyms = _dedupe_strings(record.synonyms)
+            if source_titles or source_synonyms:
+                titles_by_source[record.source] = source_titles
+                synonyms_by_source[record.source] = source_synonyms
+
+            source_staff = _merge_people(
+                [record.staff],
+                drop_localization_roles=True,
+            )
+            if source_staff:
+                staff_by_source[record.source] = source_staff
+
+            source_voices = _merge_people([record.voices])
+            if source_voices:
+                voices_by_source[record.source] = source_voices
+
+            for key, value in source_titles.items():
                 existing = titles.get(key)
                 if existing is None:
                     titles[key] = value
                 elif existing.casefold() != value.casefold():
                     synonyms.append(value)
 
-            synonyms.extend(record.synonyms)
+            synonyms.extend(source_synonyms)
             external_ids.update({k: v for k, v in record.external_ids.items() if v})
 
             if record.score is not None:
@@ -411,6 +433,10 @@ class AnimeAggregator:
             broadcasts=_dedupe_strings(
                 [value for record in records for value in record.broadcasts]
             ),
+            titles_by_source=titles_by_source,
+            synonyms_by_source=synonyms_by_source,
+            staff_by_source=staff_by_source,
+            voices_by_source=voices_by_source,
             descriptions=descriptions,
             background=_best_text(background_values),
             posters=_dedupe_strings(
