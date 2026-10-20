@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 
+from core.canonicalization import is_primary_voice_role, normalize_key
 from core.models import AnimeRecord, PersonCredit
 
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
@@ -148,17 +149,36 @@ def _format_datetime(value: str | None) -> str | None:
         return value
 
 
-def _person_name(person: dict[str, Any]) -> str:
+def _person_credit(person: dict[str, Any], roles: list[str]) -> PersonCredit | None:
     russian = _clean_text(person.get("russian"))
     name = _clean_text(person.get("name"))
     japanese = _clean_text(person.get("japanese"))
-    preferred = russian or name or japanese or "Неизвестно"
-    extras = [
-        item
-        for item in _dedupe([name, japanese])
-        if item.casefold() != preferred.casefold()
-    ]
-    return f"{preferred} ({', '.join(extras)})" if extras else preferred
+    names = _dedupe([russian, name, japanese])
+    if not names:
+        return None
+
+    preferred = russian or name or japanese
+    source_id = str(person.get("id") or "").strip()
+    return PersonCredit(
+        name=preferred,
+        roles=_dedupe(roles),
+        aliases=[item for item in names if item.casefold() != preferred.casefold()],
+        external_ids={"shikimori": source_id} if source_id else {},
+    )
+
+
+def _is_any_voice_role(value: str) -> bool:
+    key = normalize_key(value)
+    return (
+        key == "сейю"
+        or key.startswith("сейю ")
+        or key == "seiyuu"
+        or key.startswith("seiyuu ")
+        or key == "voice actor"
+        or key.startswith("voice actor ")
+        or key == "voice acting"
+        or key.startswith("voice acting ")
+    )
 
 
 def _best_poster_url(poster: dict[str, Any]) -> str | None:
@@ -177,7 +197,7 @@ def _best_poster_url(poster: dict[str, Any]) -> str | None:
 
 async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
     headers = {
-        "User-Agent": "anime-db-bot/0.7 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": "anime-db-bot/0.9 (https://github.com/Winbil/anime-db-bot)",
         "Accept": "application/json",
     }
 
@@ -222,18 +242,37 @@ def _credits(raw: dict[str, Any], *, voices: bool) -> list[PersonCredit]:
     result: list[PersonCredit] = []
     seen: set[tuple[str, tuple[str, ...]]] = set()
 
-    for role in raw.get("personRoles") or []:
-        person = role.get("person") or {}
-        if bool(person.get("isSeyu")) != voices:
+    for entry in raw.get("personRoles") or []:
+        person = entry.get("person") or {}
+        # Prefer the already localized Russian roles. Fall back to English only
+        # when Shikimori has no Russian label for this entry.
+        all_roles = _dedupe(entry.get("rolesRu") or entry.get("rolesEn") or [])
+
+        if voices:
+            # Shikimori marks a person globally as isSeyu, which is not enough:
+            # a seiyuu can also be a scriptwriter/director on the same anime.
+            # Keep only explicit original/Japanese voice roles and reject
+            # foreign dub roles such as "Сэйю (EN)".
+            roles = [role for role in all_roles if is_primary_voice_role(role)]
+        else:
+            # Production staff must not contain any voice-actor role, including
+            # foreign dub variants.
+            roles = [role for role in all_roles if not _is_any_voice_role(role)]
+
+        if not roles:
             continue
 
-        roles = _dedupe(role.get("rolesRu") or role.get("rolesEn") or [])
-        name = _person_name(person)
-        key = (name.casefold(), tuple(item.casefold() for item in roles))
+        credit = _person_credit(person, roles)
+        if credit is None:
+            continue
+        key = (
+            credit.name.casefold(),
+            tuple(item.casefold() for item in credit.roles),
+        )
         if key in seen:
             continue
         seen.add(key)
-        result.append(PersonCredit(name=name, roles=roles))
+        result.append(credit)
 
     return result
 
