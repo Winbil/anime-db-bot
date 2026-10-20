@@ -66,14 +66,17 @@ query AnimeDetails($idMal: Int!) {
       pageInfo { hasNextPage }
       edges {
         role
-        node { id name { full native } }
+        node { id name { full native alternative } }
       }
     }
     characters(page: 1, perPage: 25) {
       pageInfo { hasNextPage }
       edges {
         node { id name { full native } }
-        voiceActors { id name { full native } }
+        voiceActors(language: JAPANESE) {
+          id
+          name { full native alternative }
+        }
       }
     }
   }
@@ -87,7 +90,7 @@ query AnimeStaff($id: Int!, $page: Int!) {
       pageInfo { hasNextPage }
       edges {
         role
-        node { id name { full native } }
+        node { id name { full native alternative } }
       }
     }
   }
@@ -101,7 +104,10 @@ query AnimeCharacters($id: Int!, $page: Int!) {
       pageInfo { hasNextPage }
       edges {
         node { id name { full native } }
-        voiceActors { id name { full native } }
+        voiceActors(language: JAPANESE) {
+          id
+          name { full native alternative }
+        }
       }
     }
   }
@@ -175,7 +181,31 @@ def _format_timestamp(value: Any) -> str | None:
         return None
 
 
-def _person_name(value: dict[str, Any] | None) -> str:
+def _name_parts(value: dict[str, Any] | None) -> list[str]:
+    value = value or {}
+    name = value.get("name") or {}
+    return _dedupe([
+        _clean_text(name.get("full")),
+        _clean_text(name.get("native")),
+        *[_clean_text(item) for item in name.get("alternative") or []],
+    ])
+
+
+def _person_credit(value: dict[str, Any] | None, roles: list[str]) -> PersonCredit | None:
+    value = value or {}
+    names = _name_parts(value)
+    if not names:
+        return None
+    source_id = str(value.get("id") or "").strip()
+    return PersonCredit(
+        name=names[0],
+        roles=_dedupe(roles),
+        aliases=names[1:],
+        external_ids={"anilist": source_id} if source_id else {},
+    )
+
+
+def _character_name(value: dict[str, Any] | None) -> str:
     value = value or {}
     name = value.get("name") or {}
     return _clean_text(name.get("full")) or _clean_text(name.get("native")) or "Неизвестно"
@@ -199,7 +229,7 @@ def _headers() -> dict[str, str]:
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "User-Agent": "anime-db-bot/0.7 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": "anime-db-bot/0.9 (https://github.com/Winbil/anime-db-bot)",
     }
     access_token = os.getenv("ANILIST_ACCESS_TOKEN", "").strip()
     if access_token:
@@ -240,22 +270,22 @@ async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
 def _staff_from_connection(connection: dict[str, Any] | None) -> list[PersonCredit]:
     result: list[PersonCredit] = []
     for edge in (connection or {}).get("edges") or []:
-        name = _person_name(edge.get("node"))
         role = _clean_text(edge.get("role"))
-        if name:
-            result.append(PersonCredit(name=name, roles=[role] if role else []))
+        credit = _person_credit(edge.get("node"), [role] if role else [])
+        if credit is not None:
+            result.append(credit)
     return result
 
 
 def _voices_from_connection(connection: dict[str, Any] | None) -> list[PersonCredit]:
     result: list[PersonCredit] = []
     for edge in (connection or {}).get("edges") or []:
-        character = _person_name(edge.get("node"))
-        role = f"Озвучка: {character}" if character and character != "Неизвестно" else "Озвучка"
+        character = _character_name(edge.get("node"))
+        role = f"Озвучка: {character}" if character and character != "Неизвестно" else "Сэйю"
         for actor in edge.get("voiceActors") or []:
-            name = _person_name(actor)
-            if name:
-                result.append(PersonCredit(name=name, roles=[role]))
+            credit = _person_credit(actor, [role])
+            if credit is not None:
+                result.append(credit)
     return result
 
 
@@ -288,12 +318,18 @@ async def _all_voices(media_id: int, first: dict[str, Any]) -> list[PersonCredit
 def _dedupe_people(values: list[PersonCredit]) -> list[PersonCredit]:
     merged: dict[str, PersonCredit] = {}
     for person in values:
-        key = person.name.casefold()
+        key = person.external_ids.get("anilist") or person.name.casefold()
         existing = merged.get(key)
         if existing is None:
-            merged[key] = PersonCredit(name=person.name, roles=_dedupe(person.roles))
+            merged[key] = PersonCredit(
+                name=person.name,
+                roles=_dedupe(person.roles),
+                aliases=_dedupe(person.aliases),
+                external_ids=dict(person.external_ids),
+            )
         else:
             existing.roles = _dedupe([*existing.roles, *person.roles])
+            existing.aliases = _dedupe([*existing.aliases, *person.aliases])
     return list(merged.values())
 
 
