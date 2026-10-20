@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
+from typing import Any
 
 from core.contracts import AnimeSource
 from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate
+
+
+def _clean(value: str) -> str:
+    return " ".join((value or "").split()).strip()
 
 
 def _dedupe_strings(values: list[str]) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
     for value in values:
-        value = (value or "").strip()
+        value = _clean(value)
         key = value.casefold()
         if value and key not in seen:
             seen.add(key)
@@ -22,17 +28,104 @@ def _merge_people(groups: list[list[PersonCredit]]) -> list[PersonCredit]:
     merged: dict[str, PersonCredit] = {}
     for group in groups:
         for person in group:
-            key = person.name.casefold()
+            key = _clean(person.name).casefold()
+            if not key:
+                continue
             current = merged.get(key)
             if current is None:
-                merged[key] = PersonCredit(person.name, _dedupe_strings(person.roles))
+                merged[key] = PersonCredit(
+                    name=_clean(person.name),
+                    roles=_dedupe_strings(person.roles),
+                )
             else:
                 current.roles = _dedupe_strings([*current.roles, *person.roles])
     return list(merged.values())
 
 
+def _consensus_text(records: list[AnimeRecord], field_name: str) -> str | None:
+    values: list[str] = []
+    for record in records:
+        value = getattr(record, field_name)
+        if isinstance(value, str) and _clean(value):
+            values.append(_clean(value))
+    if not values:
+        return None
+
+    counts = Counter(value.casefold() for value in values)
+    best_count = max(counts.values())
+    for value in values:
+        if counts[value.casefold()] == best_count:
+            return value
+    return values[0]
+
+
+def _consensus_int(
+    records: list[AnimeRecord],
+    field_name: str,
+    *,
+    prefer_max_on_tie: bool = False,
+) -> int | None:
+    values: list[int] = []
+    for record in records:
+        value = getattr(record, field_name)
+        if isinstance(value, int) and not isinstance(value, bool):
+            values.append(value)
+    if not values:
+        return None
+
+    counts = Counter(values)
+    best_count = max(counts.values())
+    candidates = [value for value, count in counts.items() if count == best_count]
+    if prefer_max_on_tie:
+        return max(candidates)
+    for value in values:
+        if value in candidates:
+            return value
+    return values[0]
+
+
+def _max_int(records: list[AnimeRecord], field_name: str) -> int | None:
+    values = [
+        getattr(record, field_name)
+        for record in records
+        if isinstance(getattr(record, field_name), int)
+        and not isinstance(getattr(record, field_name), bool)
+    ]
+    return max(values) if values else None
+
+
+def _min_positive_int(records: list[AnimeRecord], field_name: str) -> int | None:
+    values = [
+        getattr(record, field_name)
+        for record in records
+        if isinstance(getattr(record, field_name), int)
+        and not isinstance(getattr(record, field_name), bool)
+        and getattr(record, field_name) > 0
+    ]
+    return min(values) if values else None
+
+
+def _best_text(values: list[str]) -> str | None:
+    unique = _dedupe_strings(values)
+    if not unique:
+        return None
+    return max(unique, key=lambda value: (len(value), value.casefold()))
+
+
+def _average_score(scores: dict[str, float]) -> float | None:
+    values = [value for value in scores.values() if isinstance(value, (int, float))]
+    if not values:
+        return None
+    return round(sum(float(value) for value in values) / len(values), 2)
+
+
 class AnimeAggregator:
-    """Fetch and merge one anime from all metadata sources using one MAL ID."""
+    """Fetch and semantically merge one anime from all metadata sources.
+
+    Sources are implementation details. Equivalent fields are merged into one
+    source-independent result instead of being exposed as separate metadata
+    sections for Shikimori, AniList, MAL, etc.
+    """
 
     def __init__(self, sources: tuple[AnimeSource, ...] | list[AnimeSource]) -> None:
         self._sources = tuple(sources)
@@ -69,30 +162,43 @@ class AnimeAggregator:
         if not records:
             raise RuntimeError("No metadata source could provide details for this MAL ID")
 
-        def first(field_name: str):
-            for record in records:
-                value = getattr(record, field_name)
-                if value not in (None, "", [], {}):
-                    return value
-            return None
-
         titles: dict[str, str] = {}
-        synonyms: list[str] = list(candidate.aliases)
+        synonyms: list[str] = [candidate.title, *candidate.aliases]
         external_ids = dict(known_ids)
         scores = dict(candidate.scores)
-        descriptions: dict[str, str] = {}
         urls: dict[str, str] = {}
+        description_values: list[str] = []
+        background_values: list[str] = []
 
         for record in records:
             for key, value in record.titles.items():
-                if value and key not in titles:
+                value = _clean(value)
+                if not value:
+                    continue
+                existing = titles.get(key)
+                if existing is None:
                     titles[key] = value
+                elif existing.casefold() != value.casefold():
+                    synonyms.append(value)
+
             synonyms.extend(record.synonyms)
             external_ids.update({k: v for k, v in record.external_ids.items() if v})
+
             if record.score is not None:
-                scores[record.source] = record.score
-            descriptions.update(record.descriptions)
+                scores[record.source] = float(record.score)
+
+            description_values.extend(record.descriptions.values())
+            background_values.extend(record.backgrounds)
             urls.update(record.urls)
+
+        # Any discovered title that was not selected as the canonical value for
+        # its title category remains searchable as a synonym.
+        chosen_titles = {value.casefold() for value in titles.values() if value}
+        synonyms = [
+            value
+            for value in _dedupe_strings(synonyms)
+            if value.casefold() not in chosen_titles
+        ]
 
         title = (
             titles.get("russian")
@@ -101,29 +207,57 @@ class AnimeAggregator:
             or candidate.title
         )
 
+        score_average = _average_score(scores)
+
         return AggregatedAnime(
             title=title,
             titles=titles,
-            synonyms=_dedupe_strings(synonyms),
+            synonyms=synonyms,
             external_ids=external_ids,
-            sources=[record.source for record in records],
-            kind=first("kind"),
-            status=first("status"),
-            rating=first("rating"),
-            season=first("season"),
-            franchise=first("franchise"),
-            episodes_total=first("episodes_total"),
-            episodes_aired=first("episodes_aired"),
-            duration_minutes=first("duration_minutes"),
-            aired_on=first("aired_on"),
-            released_on=first("released_on"),
-            next_episode_at=first("next_episode_at"),
+            sources=_dedupe_strings([record.source for record in records]),
+            kind=_consensus_text(records, "kind"),
+            status=_consensus_text(records, "status"),
+            rating=_consensus_text(records, "rating"),
+            season=_consensus_text(records, "season"),
+            franchise=_consensus_text(records, "franchise"),
+            episodes_total=_consensus_int(
+                records,
+                "episodes_total",
+                prefer_max_on_tie=True,
+            ),
+            episodes_aired=_max_int(records, "episodes_aired"),
+            duration_minutes=_consensus_int(records, "duration_minutes"),
+            aired_on=_consensus_text(records, "aired_on"),
+            released_on=_consensus_text(records, "released_on"),
+            next_episode_at=_consensus_text(records, "next_episode_at"),
             scores=scores,
-            genres=_dedupe_strings([value for record in records for value in record.genres]),
-            studios=_dedupe_strings([value for record in records for value in record.studios]),
-            licensors=_dedupe_strings([value for record in records for value in record.licensors]),
-            descriptions=descriptions,
-            posters=_dedupe_strings([value for record in records for value in record.posters]),
+            score_average=score_average,
+            score_sources_count=len(scores),
+            rank=_min_positive_int(records, "rank"),
+            popularity_rank=_min_positive_int(records, "popularity_rank"),
+            list_users=_max_int(records, "list_users"),
+            scoring_users=_max_int(records, "scoring_users"),
+            favorites=_max_int(records, "favorites"),
+            genres=_dedupe_strings(
+                [value for record in records for value in record.genres]
+            ),
+            studios=_dedupe_strings(
+                [value for record in records for value in record.studios]
+            ),
+            licensors=_dedupe_strings(
+                [value for record in records for value in record.licensors]
+            ),
+            source_materials=_dedupe_strings(
+                [value for record in records for value in record.source_materials]
+            ),
+            broadcasts=_dedupe_strings(
+                [value for record in records for value in record.broadcasts]
+            ),
+            description=_best_text(description_values),
+            background=_best_text(background_values),
+            posters=_dedupe_strings(
+                [value for record in records for value in record.posters]
+            ),
             urls=urls,
             staff=_merge_people([record.staff for record in records]),
             voices=_merge_people([record.voices for record in records]),
