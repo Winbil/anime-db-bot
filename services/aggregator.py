@@ -8,7 +8,6 @@ from core.canonicalization import (
     canonical_genre,
     canonical_role,
     canonical_studio,
-    is_localization_role,
     normalize_key,
     person_identity_keys,
     preferred_person_name,
@@ -59,30 +58,22 @@ def _person_names(person: PersonCredit) -> list[str]:
     return _dedupe_strings([*names, *parsed])
 
 
-def _merge_people(
-    groups: list[list[PersonCredit]],
-    *,
-    drop_localization_roles: bool = False,
-) -> list[PersonCredit]:
+def _merge_people(groups: list[list[PersonCredit]]) -> list[PersonCredit]:
+    """Merge people using all names/aliases from every language/source.
+
+    No localization or dub credits are discarded here. English, Japanese,
+    Russian and other variants are intentionally kept as matching evidence.
+    """
+
     merged: list[PersonCredit] = []
     identity_sets: list[set[str]] = []
 
     for group in groups:
         for person in group:
             names = _person_names(person)
-            raw_roles = [
-                role
-                for role in person.roles
-                if role and not (drop_localization_roles and is_localization_role(role))
-            ]
             roles = _dedupe_strings(
-                [canonical_role(role) for role in raw_roles if canonical_role(role)]
+                [canonical_role(role) for role in person.roles if canonical_role(role)]
             )
-
-            # If a credit only consisted of localization/ADR roles, do not keep
-            # an empty person entry in the main production team.
-            if drop_localization_roles and person.roles and not roles:
-                continue
 
             keys = person_identity_keys(names)
             match_index: int | None = None
@@ -380,10 +371,7 @@ class AnimeAggregator:
                 [value for record in records for value in record.posters]
             ),
             urls=urls,
-            staff=_merge_people(
-                [record.staff for record in records],
-                drop_localization_roles=True,
-            ),
+            staff=_merge_people([record.staff for record in records]),
             voices=_merge_people([record.voices for record in records]),
             errors=errors,
         )
