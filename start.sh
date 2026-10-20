@@ -24,6 +24,7 @@ command -v tmux >/dev/null 2>&1 || fail "tmux is not installed. Install it first
 required_files=(
     "requirements.txt"
     "bots/common.py"
+    "bots/people_portraits.py"
     "bots/runner.py"
     "bots/search_ui.py"
     "bots/official.py"
@@ -116,7 +117,8 @@ import aiogram
 import httpx
 import dotenv
 from aiogram.types import InputRichMessage
-from bots.common import SOURCE_SELECTABLE_SECTIONS, _source_section_sources
+from bots import common as common_bot
+from bots.people_portraits import install as install_people_portraits
 from bots.search_ui import register_search_handlers
 from core.canonicalization import (
     canonical_genre,
@@ -130,7 +132,7 @@ from search.providers.anilist import AniListSearchProvider
 from search.providers.mal import MALSearchProvider
 from search.providers.shikimori import ShikimoriSearchProvider
 from search.registry import get_search_provider_map, get_search_providers
-from services.aggregator import AnimeAggregator
+from services.aggregator import AnimeAggregator, _merge_people
 from services.search import SearchService
 from sources.anilist import AniListSource
 from sources.mal import MALSource
@@ -157,18 +159,46 @@ if not is_primary_voice_role("Сэйю"):
     raise RuntimeError("Primary seiyuu role smoke test failed")
 if is_primary_voice_role("Сэйю (EN)"):
     raise RuntimeError("Foreign dub seiyuu filter smoke test failed")
-if SOURCE_SELECTABLE_SECTIONS != {"titles", "staff", "voices"}:
+if common_bot.SOURCE_SELECTABLE_SECTIONS != {"titles", "staff", "voices"}:
     raise RuntimeError("Source-selectable section registry smoke test failed")
 
+portrait_merge = _merge_people([
+    [PersonCredit(
+        name="Test Person",
+        portraits={"AniList": ["https://example.invalid/anilist.jpg"]},
+    )],
+    [PersonCredit(
+        name="Test Person",
+        portraits={"Shikimori": ["https://example.invalid/shikimori.jpg"]},
+    )],
+])
+if len(portrait_merge) != 1 or set(portrait_merge[0].portraits) != {"AniList", "Shikimori"}:
+    raise RuntimeError("Cross-source portrait merge smoke test failed")
+
+install_people_portraits(common_bot)
 sample = AggregatedAnime(
     title="Smoke test",
     sources=["AniList"],
     titles_by_source={"AniList": {"english": "Smoke test"}},
-    staff_by_source={"AniList": [PersonCredit(name="Test Person")]},
-    voices_by_source={"AniList": [PersonCredit(name="Test Voice")]},
+    staff=[PersonCredit(
+        name="Test Person",
+        portraits={"AniList": ["https://example.invalid/staff.jpg"]},
+    )],
+    voices=[PersonCredit(
+        name="Test Voice",
+        portraits={"AniList": ["https://example.invalid/voice.jpg"]},
+    )],
+    staff_by_source={"AniList": [PersonCredit(
+        name="Test Person",
+        portraits={"AniList": ["https://example.invalid/staff.jpg"]},
+    )]},
+    voices_by_source={"AniList": [PersonCredit(
+        name="Test Voice",
+        portraits={"AniList": ["https://example.invalid/voice.jpg"]},
+    )]},
 )
 for section in ("titles", "staff", "voices"):
-    if _source_section_sources(sample, section) != ["AniList"]:
+    if common_bot._source_section_sources(sample, section) != ["AniList"]:
         raise RuntimeError(f"Source provenance smoke test failed for {section}")
 
 SearchService(providers)
@@ -177,6 +207,8 @@ print("Python imports and service wiring: OK")
 print("Multilingual canonicalization: OK")
 print("Original seiyuu filtering: OK")
 print("Source-selectable metadata sections: OK")
+print("Cross-source person portraits: OK")
+print("Portrait pagination UI: OK")
 print("Default search providers:", ", ".join(provider.name for provider in providers))
 print("Selectable search providers:", ", ".join(all_provider_map))
 print("Metadata sources:", ", ".join(source.name for source in sources))
@@ -214,6 +246,7 @@ info "Selectable /search providers include MAL, Shikimori and AniList."
 info "Metadata sources: Shikimori + AniList + MyAnimeList."
 info "Equivalent metadata fields are multilingual-canonicalized and merged without duplicates."
 info "Titles, staff and seiyuu keep source provenance for inline source switching."
+info "Staff and seiyuu portraits are source-keyed and paginated one person per rich page."
 info "Anime cards use sendRichMessage (up to 32768 UTF-8 chars) in both modes."
 
 mkdir -p "$LOG_DIR"
