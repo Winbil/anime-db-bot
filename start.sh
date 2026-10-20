@@ -30,6 +30,7 @@ required_files=(
     "bots/tgapi.py"
     "core/models.py"
     "core/contracts.py"
+    "core/canonicalization.py"
     "services/search.py"
     "services/aggregator.py"
     "search/registry.py"
@@ -116,8 +117,9 @@ import httpx
 import dotenv
 from aiogram.types import InputRichMessage
 from bots.search_ui import register_search_handlers
+from core.canonicalization import canonical_genre, canonical_role, person_identity_keys
 from core.contracts import AnimeSearchProvider, AnimeSource
-from core.models import AggregatedAnime, AnimeRecord, SearchCandidate, SearchPage
+from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate, SearchPage
 from search.providers.anilist import AniListSearchProvider
 from search.providers.mal import MALSearchProvider
 from search.providers.shikimori import ShikimoriSearchProvider
@@ -139,9 +141,17 @@ if not all_provider_map:
 if not sources:
     raise RuntimeError("No anime metadata sources are enabled in sources/registry.py")
 
+if canonical_genre("Fantasy") != canonical_genre("Фэнтези"):
+    raise RuntimeError("Genre canonicalization smoke test failed")
+if canonical_role("Director") != canonical_role("Режиссёр"):
+    raise RuntimeError("Role canonicalization smoke test failed")
+if not (person_identity_keys(["Fuse"]) & person_identity_keys(["Фусэ", "Fuse"])):
+    raise RuntimeError("Person alias canonicalization smoke test failed")
+
 SearchService(providers)
 AnimeAggregator(sources)
 print("Python imports and service wiring: OK")
+print("Multilingual canonicalization: OK")
 print("Default search providers:", ", ".join(provider.name for provider in providers))
 print("Selectable search providers:", ", ".join(all_provider_map))
 print("Metadata sources:", ", ".join(source.name for source in sources))
@@ -177,7 +187,7 @@ fi
 info "Default search: Shikimori + MyAnimeList, merged by MAL ID."
 info "Selectable /search providers include MAL, Shikimori and AniList."
 info "Metadata sources: Shikimori + AniList + MyAnimeList."
-info "Equivalent metadata fields are semantically merged without duplicates."
+info "Equivalent metadata fields are multilingual-canonicalized and merged without duplicates."
 info "Anime cards use sendRichMessage (up to 32768 UTF-8 chars) in both modes."
 
 mkdir -p "$LOG_DIR"
