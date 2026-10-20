@@ -66,7 +66,11 @@ query AnimeDetails($idMal: Int!) {
       pageInfo { hasNextPage }
       edges {
         role
-        node { id name { full native alternative } }
+        node {
+          id
+          name { full native alternative }
+          image { large medium }
+        }
       }
     }
     characters(page: 1, perPage: 25) {
@@ -76,6 +80,7 @@ query AnimeDetails($idMal: Int!) {
         voiceActors(language: JAPANESE) {
           id
           name { full native alternative }
+          image { large medium }
         }
       }
     }
@@ -90,7 +95,11 @@ query AnimeStaff($id: Int!, $page: Int!) {
       pageInfo { hasNextPage }
       edges {
         role
-        node { id name { full native alternative } }
+        node {
+          id
+          name { full native alternative }
+          image { large medium }
+        }
       }
     }
   }
@@ -107,6 +116,7 @@ query AnimeCharacters($id: Int!, $page: Int!) {
         voiceActors(language: JAPANESE) {
           id
           name { full native alternative }
+          image { large medium }
         }
       }
     }
@@ -191,17 +201,24 @@ def _name_parts(value: dict[str, Any] | None) -> list[str]:
     ])
 
 
+def _portrait_url(value: dict[str, Any] | None) -> str | None:
+    image = (value or {}).get("image") or {}
+    return _clean_text(image.get("large")) or _clean_text(image.get("medium")) or None
+
+
 def _person_credit(value: dict[str, Any] | None, roles: list[str]) -> PersonCredit | None:
     value = value or {}
     names = _name_parts(value)
     if not names:
         return None
     source_id = str(value.get("id") or "").strip()
+    portrait = _portrait_url(value)
     return PersonCredit(
         name=names[0],
         roles=_dedupe(roles),
         aliases=names[1:],
         external_ids={"anilist": source_id} if source_id else {},
+        portraits={"AniList": [portrait]} if portrait else {},
     )
 
 
@@ -229,7 +246,7 @@ def _headers() -> dict[str, str]:
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "User-Agent": "anime-db-bot/0.9 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": "anime-db-bot/1.0 (https://github.com/Winbil/anime-db-bot)",
     }
     access_token = os.getenv("ANILIST_ACCESS_TOKEN", "").strip()
     if access_token:
@@ -315,6 +332,11 @@ async def _all_voices(media_id: int, first: dict[str, Any]) -> list[PersonCredit
     return result
 
 
+def _merge_portraits(target: dict[str, list[str]], values: dict[str, list[str]]) -> None:
+    for source, urls in values.items():
+        target[source] = _dedupe([*target.get(source, []), *(urls or [])])
+
+
 def _dedupe_people(values: list[PersonCredit]) -> list[PersonCredit]:
     merged: dict[str, PersonCredit] = {}
     for person in values:
@@ -326,10 +348,16 @@ def _dedupe_people(values: list[PersonCredit]) -> list[PersonCredit]:
                 roles=_dedupe(person.roles),
                 aliases=_dedupe(person.aliases),
                 external_ids=dict(person.external_ids),
+                portraits={
+                    source: _dedupe(urls)
+                    for source, urls in person.portraits.items()
+                    if _dedupe(urls)
+                },
             )
         else:
             existing.roles = _dedupe([*existing.roles, *person.roles])
             existing.aliases = _dedupe([*existing.aliases, *person.aliases])
+            _merge_portraits(existing.portraits, person.portraits)
     return list(merged.values())
 
 
