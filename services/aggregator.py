@@ -40,6 +40,24 @@ def _dedupe_strings(values: list[str]) -> list[str]:
     return result
 
 
+def _normalized_portraits(values: dict[str, list[str]]) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    for source, urls in values.items():
+        source = _clean(source)
+        cleaned = _dedupe_strings(list(urls or []))
+        if source and cleaned:
+            result[source] = cleaned
+    return result
+
+
+def _merge_portraits(
+    target: dict[str, list[str]],
+    values: dict[str, list[str]],
+) -> None:
+    for source, urls in _normalized_portraits(values).items():
+        target[source] = _dedupe_strings([*target.get(source, []), *urls])
+
+
 def _person_names(person: PersonCredit) -> list[str]:
     names = [person.name, *person.aliases]
     parsed: list[str] = []
@@ -60,7 +78,7 @@ def _display_person_name(person: PersonCredit) -> str:
 
     Identity matching still uses ``person.name`` and ``person.aliases`` before
     this final presentation step. The aliases remain untouched afterwards so
-    future portrait/cross-ID work can keep using the raw name variants.
+    portrait/cross-ID work can keep using the raw name variants.
     """
 
     primary = _clean(person.name)
@@ -150,6 +168,7 @@ def _merge_people(
                         roles=roles,
                         aliases=_dedupe_strings(aliases),
                         external_ids=dict(person.external_ids),
+                        portraits=_normalized_portraits(person.portraits),
                     )
                 )
                 identity_sets.append(keys)
@@ -170,6 +189,7 @@ def _merge_people(
             current.external_ids.update(
                 {key: value for key, value in person.external_ids.items() if value}
             )
+            _merge_portraits(current.portraits, person.portraits)
             identity_sets[match_index] |= keys
 
     for person in merged:
