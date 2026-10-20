@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime
 from typing import Any
@@ -71,6 +72,21 @@ query AnimeById($ids: String!) {{
 {DETAIL_FIELDS}
   }}
 }}
+"""
+
+PEOPLE_POSTERS_QUERY = """
+query PeoplePosters($ids: [ID!]) {
+  people(ids: $ids, limit: 50) {
+    id
+    poster {
+      originalUrl
+      main2xUrl
+      mainUrl
+      preview2xUrl
+      previewUrl
+    }
+  }
+}
 """
 
 STATUS_NAMES = {
@@ -287,6 +303,55 @@ def _credits(raw: dict[str, Any], *, voices: bool) -> list[PersonCredit]:
     return result
 
 
+def _attach_person_posters(
+    credits: list[PersonCredit],
+    raw_people: list[dict[str, Any]],
+) -> int:
+    by_id = {
+        str(person.get("id") or "").strip(): person
+        for person in raw_people
+        if str(person.get("id") or "").strip()
+    }
+    attached = 0
+    for credit in credits:
+        if credit.portraits.get("Shikimori"):
+            continue
+        person_id = str(credit.external_ids.get("shikimori") or "").strip()
+        person = by_id.get(person_id)
+        if not person:
+            continue
+        poster = person.get("poster") or {}
+        portrait = _best_poster_url(poster) if isinstance(poster, dict) else None
+        if not portrait:
+            continue
+        credit.portraits["Shikimori"] = [portrait]
+        attached += 1
+    return attached
+
+
+async def _enrich_missing_voice_portraits(credits: list[PersonCredit]) -> None:
+    missing_ids = _dedupe([
+        str(credit.external_ids.get("shikimori") or "").strip()
+        for credit in credits
+        if not credit.portraits.get("Shikimori")
+    ])
+    if not missing_ids:
+        return
+
+    try:
+        for offset in range(0, len(missing_ids), 50):
+            ids = missing_ids[offset:offset + 50]
+            data = await _graphql(PEOPLE_POSTERS_QUERY, {"ids": ids})
+            _attach_person_posters(credits, data.get("people") or [])
+    except Exception:
+        # Portraits are optional enrichment. A temporary people-query failure
+        # must not make the whole Shikimori anime metadata source unavailable.
+        logging.warning(
+            "Could not backfill Shikimori seiyuu portraits",
+            exc_info=True,
+        )
+
+
 def _record(raw: dict[str, Any]) -> AnimeRecord:
     russian = _clean_text(raw.get("russian"))
     romaji = _clean_text(raw.get("name"))
@@ -375,4 +440,7 @@ class ShikimoriSource:
             return None
         if str(raw.get("malId") or "") != mal_id:
             return None
-        return _record(raw)
+
+        record = _record(raw)
+        await _enrich_missing_voice_portraits(record.voices)
+        return record
