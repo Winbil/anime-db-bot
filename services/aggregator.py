@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
-from typing import Any
 
 from core.contracts import AnimeSource
 from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate
@@ -119,12 +118,26 @@ def _average_score(scores: dict[str, float]) -> float | None:
     return round(sum(float(value) for value in values) / len(values), 2)
 
 
+def _merge_source_text(
+    target: dict[str, str],
+    values: dict[str, str],
+) -> None:
+    for source, value in values.items():
+        source = _clean(source)
+        value = _clean(value)
+        if not source or not value:
+            continue
+        existing = target.get(source)
+        if existing is None or len(value) > len(existing):
+            target[source] = value
+
+
 class AnimeAggregator:
     """Fetch and semantically merge one anime from all metadata sources.
 
-    Sources are implementation details. Equivalent fields are merged into one
-    source-independent result instead of being exposed as separate metadata
-    sections for Shikimori, AniList, MAL, etc.
+    Equivalent metadata fields are merged into one source-independent result.
+    Fields where provenance matters to the user (scores, descriptions and URLs)
+    retain their source labels in addition to the aggregate representation.
     """
 
     def __init__(self, sources: tuple[AnimeSource, ...] | list[AnimeSource]) -> None:
@@ -166,8 +179,8 @@ class AnimeAggregator:
         synonyms: list[str] = [candidate.title, *candidate.aliases]
         external_ids = dict(known_ids)
         scores = dict(candidate.scores)
+        descriptions: dict[str, str] = {}
         urls: dict[str, str] = {}
-        description_values: list[str] = []
         background_values: list[str] = []
 
         for record in records:
@@ -187,12 +200,10 @@ class AnimeAggregator:
             if record.score is not None:
                 scores[record.source] = float(record.score)
 
-            description_values.extend(record.descriptions.values())
+            _merge_source_text(descriptions, record.descriptions)
             background_values.extend(record.backgrounds)
             urls.update(record.urls)
 
-        # Any discovered title that was not selected as the canonical value for
-        # its title category remains searchable as a synonym.
         chosen_titles = {value.casefold() for value in titles.values() if value}
         synonyms = [
             value
@@ -253,7 +264,8 @@ class AnimeAggregator:
             broadcasts=_dedupe_strings(
                 [value for record in records for value in record.broadcasts]
             ),
-            description=_best_text(description_values),
+            descriptions=descriptions,
+            description=_best_text(list(descriptions.values())),
             background=_best_text(background_values),
             posters=_dedupe_strings(
                 [value for record in records for value in record.posters]
