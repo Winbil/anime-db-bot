@@ -327,7 +327,7 @@ def is_primary_voice_role(value: str) -> bool:
     Those should not be mixed into the main seiyuu list.
     """
     normalized = normalize_key(value)
-    return normalized in {"сейю", "seiyuu", "voice actor", "voice acting"}
+    return normalized in {"сэйю", "сейю", "seiyuu", "voice actor", "voice acting"}
 
 
 def person_identity_keys(names: list[str]) -> set[str]:
