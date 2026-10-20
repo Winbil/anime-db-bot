@@ -42,9 +42,16 @@ class AnimeAggregator:
         if not mal_id:
             raise RuntimeError("Search result does not contain a MAL ID")
 
+        known_ids = {
+            key: str(value)
+            for key, value in candidate.external_ids.items()
+            if value is not None and str(value).strip()
+        }
+        known_ids["mal"] = mal_id
+
         async def run(source: AnimeSource):
             try:
-                record = await source.get_details(mal_id)
+                record = await source.get_details(mal_id, known_ids)
                 return source.name, record, None
             except Exception as exc:
                 return source.name, None, f"{type(exc).__name__}: {exc}"
@@ -71,7 +78,7 @@ class AnimeAggregator:
 
         titles: dict[str, str] = {}
         synonyms: list[str] = list(candidate.aliases)
-        external_ids = dict(candidate.external_ids)
+        external_ids = dict(known_ids)
         scores = dict(candidate.scores)
         descriptions: dict[str, str] = {}
         urls: dict[str, str] = {}
