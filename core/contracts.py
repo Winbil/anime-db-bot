@@ -21,9 +21,17 @@ class AnimeSearchProvider(Protocol):
 
 
 class AnimeSource(Protocol):
-    """Metadata source. Sources receive a MAL ID and do not implement text search."""
+    """Metadata source.
+
+    Sources never perform text search. They receive the selected MAL ID plus any
+    cross-database IDs that search providers already discovered.
+    """
 
     name: str
 
-    async def get_details(self, mal_id: str) -> AnimeRecord | None:
+    async def get_details(
+        self,
+        mal_id: str,
+        known_ids: dict[str, str],
+    ) -> AnimeRecord | None:
         ...
