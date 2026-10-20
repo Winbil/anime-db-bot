@@ -126,6 +126,14 @@ class AggregatedAnime:
     source_materials: list[str] = field(default_factory=list)
     broadcasts: list[str] = field(default_factory=list)
 
+    # The merged values above remain the default UI representation. These
+    # source-preserving buckets make it possible to switch the same section to
+    # one database without re-fetching or losing the semantically merged view.
+    titles_by_source: dict[str, dict[str, str]] = field(default_factory=dict)
+    synonyms_by_source: dict[str, list[str]] = field(default_factory=dict)
+    staff_by_source: dict[str, list[PersonCredit]] = field(default_factory=dict)
+    voices_by_source: dict[str, list[PersonCredit]] = field(default_factory=dict)
+
     # Some fields are intentionally kept by source because the distinction is
     # useful in the UI (for example descriptions and links).
     descriptions: dict[str, str] = field(default_factory=dict)
