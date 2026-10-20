@@ -22,8 +22,9 @@ GENRE_ALIASES = {
     "award winning": "Отмеченное наградами",
     "отмеченное наградами": "Отмеченное наградами",
     "boys love": "Сёнэн-ай",
-    "boy's love": "Сёнэн-ай",
+    "boy s love": "Сёнэн-ай",
     "shounen ai": "Сёнэн-ай",
+    "shonen ai": "Сёнэн-ай",
     "сёнэн-ай": "Сёнэн-ай",
     "comedy": "Комедия",
     "комедия": "Комедия",
@@ -36,8 +37,9 @@ GENRE_ALIASES = {
     "fantasy": "Фэнтези",
     "фэнтези": "Фэнтези",
     "girls love": "Сёдзё-ай",
-    "girl's love": "Сёдзё-ай",
+    "girl s love": "Сёдзё-ай",
     "shoujo ai": "Сёдзё-ай",
+    "shojo ai": "Сёдзё-ай",
     "сёдзё-ай": "Сёдзё-ай",
     "gourmet": "Гурман",
     "гурман": "Гурман",
@@ -47,7 +49,7 @@ GENRE_ALIASES = {
     "ужасы": "Ужасы",
     "mahou shoujo": "Махо-сёдзё",
     "mahou shojo": "Махо-сёдзё",
-    "махо-сёдзё": "Махо-сёдзё",
+    "махо сёдзё": "Махо-сёдзё",
     "magic": "Магия",
     "магия": "Магия",
     "mecha": "Меха",
@@ -59,12 +61,16 @@ GENRE_ALIASES = {
     "детектив": "Детектив",
     "psychological": "Психологическое",
     "психологическое": "Психологическое",
+    "reincarnation": "Реинкарнация",
+    "реинкарнация": "Реинкарнация",
     "romance": "Романтика",
     "романтика": "Романтика",
-    "sci-fi": "Фантастика",
     "sci fi": "Фантастика",
     "science fiction": "Фантастика",
     "фантастика": "Фантастика",
+    "shounen": "Сёнэн",
+    "shonen": "Сёнэн",
+    "сёнэн": "Сёнэн",
     "slice of life": "Повседневность",
     "повседневность": "Повседневность",
     "sports": "Спорт",
@@ -99,14 +105,20 @@ ROLE_ALIASES = {
     "режиссер": "Режиссёр",
     "режиссёр": "Режиссёр",
     "assistant director": "Ассистент режиссёра",
+    "assistant episode director": "Ассистент режиссёра",
     "ассистент режиссера": "Ассистент режиссёра",
     "ассистент режиссёра": "Ассистент режиссёра",
-    "episode director": "Режиссёр эпизода",
-    "режиссер эпизода": "Режиссёр эпизода",
-    "режиссёр эпизода": "Режиссёр эпизода",
+    "помощник режиссера": "Ассистент режиссёра",
+    "помощник режиссёра": "Ассистент режиссёра",
+    "episode director": "Режиссёр эпизодов",
+    "режиссер эпизода": "Режиссёр эпизодов",
+    "режиссёр эпизода": "Режиссёр эпизодов",
+    "режиссер эпизодов": "Режиссёр эпизодов",
+    "режиссёр эпизодов": "Режиссёр эпизодов",
     "series composition": "Композиция сериала",
     "series composer": "Композиция сериала",
     "композиция сериала": "Композиция сериала",
+    "компоновка серий": "Композиция сериала",
     "original creator": "Автор оригинала",
     "original story": "Автор оригинала",
     "автор оригинала": "Автор оригинала",
@@ -120,9 +132,15 @@ ROLE_ALIASES = {
     "character design": "Дизайн персонажей",
     "character designer": "Дизайн персонажей",
     "дизайн персонажей": "Дизайн персонажей",
+    "original character design": "Оригинальный дизайн персонажей",
+    "original character designer": "Оригинальный дизайн персонажей",
+    "оригинальный дизайн персонажей": "Оригинальный дизайн персонажей",
+    "оригинал дизайн персонажей": "Оригинальный дизайн персонажей",
     "chief animation director": "Главный режиссёр анимации",
     "главный режиссер анимации": "Главный режиссёр анимации",
     "главный режиссёр анимации": "Главный режиссёр анимации",
+    "chief animator": "Главный аниматор",
+    "главный аниматор": "Главный аниматор",
     "animation director": "Режиссёр анимации",
     "режиссер анимации": "Режиссёр анимации",
     "режиссёр анимации": "Режиссёр анимации",
@@ -131,51 +149,94 @@ ROLE_ALIASES = {
     "2nd key animation": "Вторая ключевая анимация",
     "second key animation": "Вторая ключевая анимация",
     "вторая ключевая анимация": "Вторая ключевая анимация",
-    "in-between animation": "Промежуточная анимация",
+    "второстепен анимация": "Вторая ключевая анимация",
     "in between animation": "Промежуточная анимация",
     "промежуточная анимация": "Промежуточная анимация",
+    "промежуточ анимация": "Промежуточная анимация",
     "music": "Музыка",
     "музыка": "Музыка",
     "sound director": "Звукорежиссёр",
     "звукорежиссер": "Звукорежиссёр",
     "звукорежиссёр": "Звукорежиссёр",
+    "sound effects": "Звуковые эффекты",
+    "звуковые эффекты": "Звуковые эффекты",
     "art director": "Арт-директор",
-    "арт-директор": "Арт-директор",
+    "арт директор": "Арт-директор",
     "director of photography": "Оператор-постановщик",
     "photography director": "Оператор-постановщик",
-    "оператор-постановщик": "Оператор-постановщик",
+    "оператор постановщик": "Оператор-постановщик",
     "editing": "Монтаж",
     "editor": "Монтаж",
     "монтаж": "Монтаж",
     "producer": "Продюсер",
     "продюсер": "Продюсер",
+    "assistant producer": "Ассистент продюсера",
+    "ассистент продюсера": "Ассистент продюсера",
     "executive producer": "Исполнительный продюсер",
     "исполнительный продюсер": "Исполнительный продюсер",
+    "исполнительн продюсер": "Исполнительный продюсер",
     "associate producer": "Ассоциированный продюсер",
     "animation producer": "Продюсер анимации",
     "production assistant": "Ассистент производства",
     "production manager": "Менеджер производства",
+    "assistant production manager": "Ассистент менеджера производства",
     "planning": "Планирование",
     "mechanical design": "Механический дизайн",
     "mecha design": "Механический дизайн",
     "prop design": "Дизайн реквизита",
-    "color design": "Цветовой дизайн",
-    "color setting": "Цветовой дизайн",
+    "color design": "Дизайн цвета",
+    "color setting": "Дизайн цвета",
+    "дизайн цвета": "Дизайн цвета",
     "cg director": "CG-режиссёр",
     "3d director": "3D-режиссёр",
     "special effects": "Спецэффекты",
-    "background art": "Фоны",
+    "спецэффекты": "Спецэффекты",
+    "background art": "Фоновая рисовка",
+    "фоновая рисовка": "Фоновая рисовка",
     "theme song performance": "Исполнение темы",
+    "исполнение гл муз темы": "Исполнение темы",
     "theme song composition": "Композитор темы",
+    "композитор гл муз темы": "Композитор темы",
     "theme song lyrics": "Текст темы",
     "theme song arrangement": "Аранжировка темы",
+    "аранжировка гл муз темы": "Аранжировка темы",
     "insert song performance": "Исполнение вставной песни",
+    "insert song lyrics": "Текст вставной песни",
     "voice actor": "Сэйю",
     "voice acting": "Сэйю",
     "seiyuu": "Сэйю",
     "сейю": "Сэйю",
     "сэйю": "Сэйю",
 }
+
+
+STUDIO_ALIASES = {
+    "8bit": "8bit",
+}
+
+
+LOCALIZATION_ROLE_MARKERS = (
+    "adr",
+    "dub director",
+    "dub script",
+    "dubbing",
+    "mix engineer",
+    "script supervisor",
+)
+
+LOCALIZATION_LANGUAGE_MARKERS = (
+    "english",
+    "brazilian portuguese",
+    "latin american spanish",
+    "portuguese",
+    "spanish",
+    "german",
+    "italian",
+    "french",
+    "indonesian",
+    "korean",
+    "chinese",
+)
 
 
 RU_TO_LATIN = {
@@ -235,6 +296,40 @@ def canonical_role(value: str) -> str:
     return cleaned
 
 
+def studio_identity_key(value: str) -> str:
+    # Studio names frequently differ only by punctuation: 8bit / 8-bit,
+    # A-1 Pictures / A1 Pictures, etc.
+    return normalize_key(value).replace(" ", "")
+
+
+def canonical_studio(value: str) -> str:
+    cleaned = clean_text(value)
+    if not cleaned:
+        return ""
+    return STUDIO_ALIASES.get(studio_identity_key(cleaned), cleaned)
+
+
+def is_localization_role(value: str) -> bool:
+    normalized = normalize_key(value)
+    if not normalized:
+        return False
+    if any(marker in normalized for marker in LOCALIZATION_ROLE_MARKERS):
+        return True
+    # AniList often annotates localization credits with the language in the
+    # role text, e.g. "ADR Director (English)".
+    return any(marker in normalized for marker in LOCALIZATION_LANGUAGE_MARKERS)
+
+
+def is_primary_voice_role(value: str) -> bool:
+    """Return True only for original/Japanese voice acting roles.
+
+    Shikimori distinguishes foreign dubs as "Сэйю (EN)", "Сэйю (DE)", etc.
+    Those should not be mixed into the main seiyuu list.
+    """
+    normalized = normalize_key(value)
+    return normalized in {"сейю", "seiyuu", "voice actor", "voice acting"}
+
+
 def person_identity_keys(names: list[str]) -> set[str]:
     keys: set[str] = set()
     for name in names:
@@ -271,10 +366,14 @@ def preferred_person_name(names: list[str]) -> str:
     if not unique:
         return "Неизвестно"
 
-    for value in unique:
-        if contains_cyrillic(value):
-            return value
-    for value in unique:
-        if value.isascii():
-            return value
-    return unique[0]
+    # Prefer a clean Russian display name over an old combined Shikimori string
+    # like "Ёхэй Ито (Youhei Itou, 伊藤 洋平)".
+    cyrillic = [value for value in unique if contains_cyrillic(value)]
+    if cyrillic:
+        return min(cyrillic, key=lambda value: (len(value), value.casefold()))
+
+    ascii_names = [value for value in unique if value.isascii()]
+    if ascii_names:
+        return min(ascii_names, key=lambda value: (len(value), value.casefold()))
+
+    return min(unique, key=lambda value: (len(value), value.casefold()))
