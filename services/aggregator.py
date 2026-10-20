@@ -19,6 +19,9 @@ from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandid
 
 
 PAREN_NAME_RE = re.compile(r"^(.*?)\s*\((.*)\)\s*$")
+CYRILLIC_NAME_RE = re.compile(r"[А-Яа-яЁё]")
+LATIN_NAME_RE = re.compile(r"[A-Za-z]")
+JAPANESE_NAME_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]")
 
 
 def _clean(value: str) -> str:
@@ -50,6 +53,57 @@ def _person_names(person: PersonCredit) -> list[str]:
             parsed.append(base)
         parsed.extend(_clean(part) for part in match.group(2).split(","))
     return _dedupe_strings([*names, *parsed])
+
+
+def _display_person_name(person: PersonCredit) -> str:
+    """Render Russian + romaji/English + Japanese names when available.
+
+    Identity matching still uses ``person.name`` and ``person.aliases`` before
+    this final presentation step. The aliases remain untouched afterwards so
+    future portrait/cross-ID work can keep using the raw name variants.
+    """
+
+    primary = _clean(person.name)
+    names = _dedupe_strings([primary, *person.aliases])
+    if not primary:
+        return "Неизвестно"
+
+    extras: list[str] = []
+
+    latin = next(
+        (
+            value
+            for value in names
+            if normalize_key(value) != normalize_key(primary)
+            and LATIN_NAME_RE.search(value)
+            and not CYRILLIC_NAME_RE.search(value)
+            and not JAPANESE_NAME_RE.search(value)
+        ),
+        None,
+    )
+    japanese = next(
+        (
+            value
+            for value in names
+            if normalize_key(value) != normalize_key(primary)
+            and JAPANESE_NAME_RE.search(value)
+        ),
+        None,
+    )
+
+    if CYRILLIC_NAME_RE.search(primary):
+        if latin:
+            extras.append(latin)
+        if japanese:
+            extras.append(japanese)
+    elif LATIN_NAME_RE.search(primary):
+        if japanese:
+            extras.append(japanese)
+    elif JAPANESE_NAME_RE.search(primary):
+        if latin:
+            extras.append(latin)
+
+    return f"{primary} ({', '.join(extras)})" if extras else primary
 
 
 def _merge_people(
@@ -117,6 +171,9 @@ def _merge_people(
                 {key: value for key, value in person.external_ids.items() if value}
             )
             identity_sets[match_index] |= keys
+
+    for person in merged:
+        person.name = _display_person_name(person)
 
     return merged
 
