@@ -43,6 +43,7 @@ SECTION_LABELS = {
     "main": "Основное",
     "titles": "Названия",
     "description": "Описание",
+    "links": "Ссылки",
     "staff": "Команда",
     "voices": "Сэйю",
 }
@@ -140,13 +141,15 @@ def _main_rich(token: str, anime: AggregatedAnime, text: str) -> InputRichMessag
     links = (
         "<p><b>Подробная информация</b><br>"
         f'<tg-button type="callback_data" style="link" data="av:{token}:description:0">Описание</tg-button>'
-        " — нажмите, чтобы открыть<br>"
+        " — выбрать источник<br>"
         f'<tg-button type="callback_data" style="link" data="av:{token}:titles:0">Все названия</tg-button>'
         " — нажмите, чтобы открыть<br>"
         f'<tg-button type="callback_data" style="link" data="av:{token}:staff:0">Авторы и команда</tg-button>'
         " — нажмите, чтобы открыть<br>"
         f'<tg-button type="callback_data" style="link" data="av:{token}:voices:0">Сэйю</tg-button>'
-        " — нажмите, чтобы открыть</p>"
+        " — нажмите, чтобы открыть<br>"
+        f'<tg-button type="callback_data" style="link" data="av:{token}:links:0">Ссылки</tg-button>'
+        " — выбрать базу</p>"
     )
     return InputRichMessage(
         html=_poster_html(anime) + _plain_text_to_rich_html(text) + links
@@ -204,6 +207,22 @@ def _append_block(target: list[str], title: str, lines: list[str]) -> None:
     target.extend(lines)
 
 
+def _ordered_mapping_items(
+    mapping: dict[str, object],
+    source_order: list[str],
+) -> list[tuple[str, object]]:
+    result: list[tuple[str, object]] = []
+    seen: set[str] = set()
+    for source in source_order:
+        if source in mapping:
+            result.append((source, mapping[source]))
+            seen.add(source)
+    for source, value in mapping.items():
+        if source not in seen:
+            result.append((source, value))
+    return result
+
+
 def _anime_sections(anime: AggregatedAnime) -> dict[str, str]:
     total = anime.episodes_total or 0
     aired = anime.episodes_aired or 0
@@ -252,12 +271,12 @@ def _anime_sections(anime: AggregatedAnime) -> dict[str, str]:
 
     audience: list[str] = []
     if anime.score_average is not None:
-        suffix = (
-            f" ({anime.score_sources_count} источника)"
-            if anime.score_sources_count > 1
-            else ""
+        audience.append(
+            f"Средняя оценка: {anime.score_average:g} "
+            f"(источников: {anime.score_sources_count})"
         )
-        audience.append(f"Средняя оценка: {anime.score_average:g}{suffix}")
+    for source, score in _ordered_mapping_items(anime.scores, anime.sources):
+        audience.append(f"{source}: {float(score):g}")
     if anime.rank:
         audience.append(f"Рейтинг: #{anime.rank}")
     if anime.popularity_rank:
@@ -278,8 +297,6 @@ def _anime_sections(anime: AggregatedAnime) -> dict[str, str]:
             f"{name.upper()}: {value}" for name, value in anime.external_ids.items()
         )
         source_lines.append(f"ID: {ids}")
-    if anime.urls:
-        source_lines.extend(f"{source}: {url}" for source, url in anime.urls.items())
     if anime.errors:
         source_lines.append("Недоступны: " + ", ".join(anime.errors))
     _append_block(main, "Источники", source_lines)
@@ -307,14 +324,22 @@ def _anime_sections(anime: AggregatedAnime) -> dict[str, str]:
     if synonyms:
         titles.append("• Синонимы: " + "; ".join(synonyms))
 
-    description_lines = ["Описание:", anime.description or "Нет данных."]
-    if anime.background:
-        description_lines.extend(["", "Дополнительная информация:", anime.background])
+    description_text = (
+        "Описание:\nВыбери источник кнопкой ниже."
+        if anime.descriptions
+        else "Описание:\nНет доступных описаний."
+    )
+    links_text = (
+        "Ссылки:\nВыбери базу кнопкой ниже."
+        if anime.urls
+        else "Ссылки:\nНет доступных ссылок."
+    )
 
     return {
         "main": "\n".join(main),
         "titles": "\n".join(titles),
-        "description": "\n".join(description_lines).strip(),
+        "description": description_text,
+        "links": links_text,
         "staff": _format_people("Авторы и команда", anime.staff),
         "voices": _format_people("Сэйю / актёры озвучки", anime.voices),
     }
@@ -327,13 +352,50 @@ def _view_pages(anime: AggregatedAnime, section: str) -> list[str]:
     )
 
 
+def _description_sources(anime: AggregatedAnime) -> list[str]:
+    return [
+        source
+        for source, _ in _ordered_mapping_items(anime.descriptions, anime.sources)
+    ]
+
+
+def _description_selection_rows(
+    token: str,
+    anime: AggregatedAnime,
+) -> list[list[InlineKeyboardButton]]:
+    buttons = [
+        InlineKeyboardButton(
+            text=source,
+            callback_data=f"ad:{token}:{index}:0",
+        )
+        for index, source in enumerate(_description_sources(anime))
+    ]
+    return [buttons[index:index + 2] for index in range(0, len(buttons), 2)]
+
+
+def _link_rows(anime: AggregatedAnime) -> list[list[InlineKeyboardButton]]:
+    buttons = [
+        InlineKeyboardButton(text=source, url=str(url))
+        for source, url in _ordered_mapping_items(anime.urls, anime.sources)
+        if str(url).strip()
+    ]
+    return [buttons[index:index + 2] for index in range(0, len(buttons), 2)]
+
+
 def _navigation_keyboard(
     token: str,
+    anime: AggregatedAnime,
     current_section: str,
     page: int,
     page_count: int,
 ) -> InlineKeyboardMarkup | None:
     rows: list[list[InlineKeyboardButton]] = []
+
+    if current_section == "description":
+        rows.extend(_description_selection_rows(token, anime))
+    elif current_section == "links":
+        rows.extend(_link_rows(anime))
+
     if current_section != "main":
         rows.append([
             InlineKeyboardButton(
@@ -342,7 +404,7 @@ def _navigation_keyboard(
             )
         ])
 
-    if page_count > 1:
+    if page_count > 1 and current_section not in {"description", "links"}:
         nav: list[InlineKeyboardButton] = []
         if page > 0:
             nav.append(InlineKeyboardButton(
@@ -361,6 +423,44 @@ def _navigation_keyboard(
         rows.append(nav)
 
     return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
+
+
+def _description_keyboard(
+    token: str,
+    source_index: int,
+    page: int,
+    page_count: int,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if page_count > 1:
+        nav: list[InlineKeyboardButton] = []
+        if page > 0:
+            nav.append(InlineKeyboardButton(
+                text="◀️",
+                callback_data=f"ad:{token}:{source_index}:{page - 1}",
+            ))
+        nav.append(InlineKeyboardButton(
+            text=f"{page + 1}/{page_count}",
+            callback_data="noop",
+        ))
+        if page + 1 < page_count:
+            nav.append(InlineKeyboardButton(
+                text="▶️",
+                callback_data=f"ad:{token}:{source_index}:{page + 1}",
+            ))
+        rows.append(nav)
+
+    rows.append([
+        InlineKeyboardButton(
+            text="← Источники",
+            callback_data=f"av:{token}:description:0",
+        ),
+        InlineKeyboardButton(
+            text="← Назад",
+            callback_data=f"av:{token}:main:0",
+        ),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _fallback_main_keyboard(token: str) -> InlineKeyboardMarkup:
@@ -384,6 +484,12 @@ def _fallback_main_keyboard(token: str) -> InlineKeyboardMarkup:
                 text="Сэйю",
                 callback_data=f"av:{token}:voices:0",
             ),
+        ],
+        [
+            InlineKeyboardButton(
+                text="Ссылки",
+                callback_data=f"av:{token}:links:0",
+            )
         ],
     ])
 
@@ -468,7 +574,7 @@ async def _send_anime_view(
 ) -> None:
     pages = _view_pages(anime, section)
     page = max(0, min(page, len(pages) - 1))
-    keyboard = _navigation_keyboard(token, section, page, len(pages))
+    keyboard = _navigation_keyboard(token, anime, section, page, len(pages))
     text = pages[page]
 
     try:
@@ -491,7 +597,7 @@ async def _edit_anime_view(
 ) -> None:
     pages = _view_pages(anime, section)
     page = max(0, min(page, len(pages) - 1))
-    keyboard = _navigation_keyboard(token, section, page, len(pages))
+    keyboard = _navigation_keyboard(token, anime, section, page, len(pages))
     text = pages[page]
 
     try:
@@ -505,6 +611,40 @@ async def _edit_anime_view(
         await message.edit_text(
             text=_split_text(text, STANDARD_MESSAGE_LIMIT)[0],
             reply_markup=fallback,
+        )
+
+
+async def _edit_description_view(
+    message: Message,
+    token: str,
+    anime: AggregatedAnime,
+    source_index: int,
+    page: int,
+) -> None:
+    sources = _description_sources(anime)
+    if source_index < 0 or source_index >= len(sources):
+        raise ValueError("Description source index is out of range")
+
+    source = sources[source_index]
+    description = anime.descriptions[source]
+    text = f"Описание — {source}\n\n{description}"
+    if source == "MyAnimeList" and anime.background:
+        text += f"\n\nДополнительная информация:\n{anime.background}"
+
+    pages = _split_text(text, RICH_MESSAGE_LIMIT)
+    page = max(0, min(page, len(pages) - 1))
+    keyboard = _description_keyboard(token, source_index, page, len(pages))
+
+    try:
+        await message.edit_text(
+            rich_message=_rich(pages[page]),
+            reply_markup=keyboard,
+        )
+    except Exception:
+        logging.exception("Rich description edit failed; falling back to standard text edit")
+        await message.edit_text(
+            text=_split_text(pages[page], STANDARD_MESSAGE_LIMIT)[0],
+            reply_markup=keyboard,
         )
 
 
@@ -694,6 +834,43 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
         except Exception:
             logging.debug("Could not remove search keyboard", exc_info=True)
         await _aggregate_and_send(callback.message, candidate)
+
+    @dp.callback_query(F.data.startswith("ad:"))
+    async def description_source_callback_handler(callback: CallbackQuery) -> None:
+        data = (callback.data or "").split(":")
+        if (
+            len(data) != 4
+            or not data[2].isdigit()
+            or not data[3].isdigit()
+        ):
+            await callback.answer("Некорректное описание.", show_alert=True)
+            return
+
+        _, token, source_index_text, page_text = data
+        anime = ANIME_SESSIONS.get(token)
+        if anime is None:
+            await callback.answer(
+                "Карточка устарела. Выполни поиск ещё раз.",
+                show_alert=True,
+            )
+            return
+        if callback.message is None:
+            await callback.answer()
+            return
+
+        source_index = int(source_index_text)
+        if source_index >= len(_description_sources(anime)):
+            await callback.answer("Источник описания больше недоступен.", show_alert=True)
+            return
+
+        await callback.answer()
+        await _edit_description_view(
+            callback.message,
+            token,
+            anime,
+            source_index=source_index,
+            page=int(page_text),
+        )
 
     @dp.callback_query(F.data.startswith("av:"))
     async def anime_view_callback_handler(callback: CallbackQuery) -> None:
