@@ -172,14 +172,15 @@ def _posters(raw: dict[str, Any]) -> list[str]:
 
     def add_picture(picture: dict[str, Any] | None) -> None:
         picture = picture or {}
-        for key in ("large", "medium"):
-            value = _clean(picture.get(key))
-            if value:
-                urls.append(value)
+        # large/medium are sizes of the same artwork, not separate posters.
+        value = _clean(picture.get("large")) or _clean(picture.get("medium"))
+        if value:
+            urls.append(value)
 
     add_picture(raw.get("main_picture"))
     for picture in raw.get("pictures") or []:
-        add_picture(picture)
+        if isinstance(picture, dict):
+            add_picture(picture)
     return _dedupe(urls)
 
 
@@ -189,14 +190,16 @@ async def _get_raw(mal_id: str) -> dict[str, Any] | None:
         "User-Agent": "anime-db-bot/0.8 (https://github.com/Winbil/anime-db-bot)",
         "X-MAL-CLIENT-ID": client_id(),
     }
-    params = {"fields": DETAIL_FIELDS}
 
     async with httpx.AsyncClient(
         timeout=20.0,
         headers=headers,
         follow_redirects=True,
     ) as client:
-        response = await client.get(f"{api_url()}/anime/{mal_id}", params=params)
+        response = await client.get(
+            f"{api_url()}/anime/{mal_id}",
+            params={"fields": DETAIL_FIELDS},
+        )
 
     if response.status_code == 404:
         return None
@@ -241,17 +244,23 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
             japanese,
         ]
     )
-    title_keys = {value.casefold() for value in titles.values() if value}
-    synonyms = [value for value in synonyms if value.casefold() not in title_keys]
+    chosen_titles = {value.casefold() for value in titles.values() if value}
+    synonyms = [value for value in synonyms if value.casefold() not in chosen_titles]
 
     duration_seconds = _int(raw.get("average_episode_duration"))
     duration_minutes = (
-        max(1, round(duration_seconds / 60)) if duration_seconds and duration_seconds > 0 else None
+        max(1, round(duration_seconds / 60))
+        if duration_seconds and duration_seconds > 0
+        else None
     )
 
     episodes_total = _int(raw.get("num_episodes"))
     status_raw = _clean(raw.get("status")).casefold()
-    episodes_aired = episodes_total if status_raw == "finished_airing" and episodes_total else None
+    episodes_aired = (
+        episodes_total
+        if status_raw == "finished_airing" and episodes_total
+        else None
+    )
 
     source_raw = _clean(raw.get("source")).casefold()
     source_material = SOURCE_NAMES.get(
@@ -259,16 +268,20 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         source_raw.replace("_", " ").title() if source_raw else "",
     )
 
-    genre_names = [
-        _clean(item.get("name"))
-        for item in raw.get("genres") or []
-        if isinstance(item, dict)
-    ]
-    studio_names = [
-        _clean(item.get("name"))
-        for item in raw.get("studios") or []
-        if isinstance(item, dict)
-    ]
+    genres = _dedupe(
+        [
+            _clean(item.get("name"))
+            for item in raw.get("genres") or []
+            if isinstance(item, dict)
+        ]
+    )
+    studios = _dedupe(
+        [
+            _clean(item.get("name"))
+            for item in raw.get("studios") or []
+            if isinstance(item, dict)
+        ]
+    )
 
     synopsis = _clean(raw.get("synopsis"))
     background = _clean(raw.get("background"))
@@ -300,14 +313,16 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         list_users=_int(raw.get("num_list_users")),
         scoring_users=_int(raw.get("num_scoring_users")),
         favorites=_int(raw.get("num_favorites")),
-        genres=_dedupe(genre_names),
-        studios=_dedupe(studio_names),
+        genres=genres,
+        studios=studios,
         source_materials=[source_material] if source_material else [],
         broadcasts=_broadcast(raw.get("broadcast")),
         descriptions={"MyAnimeList": synopsis} if synopsis else {},
         backgrounds=[background] if background else [],
         posters=_posters(raw),
-        urls={"MyAnimeList": f"https://myanimelist.net/anime/{mal_id}"} if mal_id else {},
+        urls={
+            "MyAnimeList": f"https://myanimelist.net/anime/{mal_id}"
+        } if mal_id else {},
     )
 
 
