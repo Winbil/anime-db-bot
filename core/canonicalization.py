@@ -147,12 +147,24 @@ def canonical_role_key(value: str) -> str | None:
     return None
 
 
+def _dynamic_voice_character(value: str) -> str | None:
+    cleaned = clean_text(value)
+    if cleaned.startswith(VOICE_OF_PREFIX):
+        return clean_text(cleaned.removeprefix(VOICE_OF_PREFIX))
+    folded = cleaned.casefold()
+    for prefix in ("озвучка:", "voice:"):
+        if folded.startswith(prefix):
+            return clean_text(cleaned[len(prefix):])
+    return None
+
+
 def canonical_role_token(value: str) -> str:
     cleaned = clean_text(value)
     if not cleaned:
         return ""
-    if cleaned.startswith(VOICE_OF_PREFIX):
-        return cleaned
+    character = _dynamic_voice_character(cleaned)
+    if character is not None:
+        return voice_role_token(character)
     base, suffix = _role_base_and_suffix(cleaned)
     key = canonical_role_key(base)
     return f"{key}{suffix}" if key else cleaned
@@ -167,8 +179,8 @@ def localize_role_token(value: str, *, locale: str = DEFAULT_LOCALE) -> str:
     cleaned = clean_text(value)
     if not cleaned:
         return ""
-    if cleaned.startswith(VOICE_OF_PREFIX):
-        character = cleaned.removeprefix(VOICE_OF_PREFIX)
+    character = _dynamic_voice_character(cleaned)
+    if character is not None:
         return text("common", "voice_of", locale=locale, name=character)
 
     base, suffix = _role_base_and_suffix(cleaned)
