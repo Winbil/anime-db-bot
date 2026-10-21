@@ -11,6 +11,7 @@ import httpx
 from core.canonicalization import is_primary_voice_role, normalize_key
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord, PersonCredit
+from localization import localize_source_value
 
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
 DEFAULT_SHIKIMORI_SITE_URL = "https://shikimori.io"
@@ -89,34 +90,6 @@ query AnimeStaff($ids: String!) {{
 }}
 """
 
-STATUS_NAMES = {
-    "anons": "анонсировано",
-    "ongoing": "выходит",
-    "released": "вышло",
-}
-
-KIND_NAMES = {
-    "tv": "TV",
-    "movie": "фильм",
-    "ova": "OVA",
-    "ona": "ONA",
-    "special": "спешл",
-    "tv_special": "TV-спешл",
-    "music": "клип",
-    "pv": "PV",
-    "cm": "реклама",
-}
-
-RATING_NAMES = {
-    "none": "без рейтинга",
-    "g": "G",
-    "pg": "PG",
-    "pg_13": "PG-13",
-    "r": "R-17+",
-    "r_plus": "R+",
-    "rx": "Rx",
-}
-
 _BBCODE_WRAPPED_RE = re.compile(
     r"\[(?P<tag>character|anime|manga|ranobe|person|club|url)"
     r"(?:=[^\]]*)?\](?P<body>.*?)\[/\s*(?P=tag)\s*\]",
@@ -161,31 +134,31 @@ def _clean_description(value: Any) -> str:
     if value is None:
         return ""
 
-    text = str(value).replace("\r", "")
-    if not text:
+    text_value = str(value).replace("\r", "")
+    if not text_value:
         return ""
 
-    text = html.unescape(text)
-    text = _HTML_BREAK_RE.sub("\n", text)
-    text = _BBCODE_BREAK_RE.sub("\n", text)
+    text_value = html.unescape(text_value)
+    text_value = _HTML_BREAK_RE.sub("\n", text_value)
+    text_value = _BBCODE_BREAK_RE.sub("\n", text_value)
 
     # Entity/link wrappers such as [character=171572]Cid[/character] should
     # keep their visible caption while dropping Shikimori-specific markup.
     for _ in range(6):
-        text, count = _BBCODE_WRAPPED_RE.subn(
+        text_value, count = _BBCODE_WRAPPED_RE.subn(
             lambda match: match.group("body"),
-            text,
+            text_value,
         )
         if not count:
             break
 
-    text = _BBCODE_DECORATION_RE.sub("", text)
-    text = _BBCODE_REMAINING_RE.sub("", text)
-    text = _HTML_TAG_RE.sub("", text)
+    text_value = _BBCODE_DECORATION_RE.sub("", text_value)
+    text_value = _BBCODE_REMAINING_RE.sub("", text_value)
+    text_value = _HTML_TAG_RE.sub("", text_value)
 
     lines = [
         re.sub(r"[ \t]+", " ", line).strip()
-        for line in text.split("\n")
+        for line in text_value.split("\n")
     ]
     normalized: list[str] = []
     blank = False
@@ -409,6 +382,9 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         pass
 
     description = _clean_description(raw.get("description"))
+    kind_raw = raw.get("kind") or ""
+    status_raw = raw.get("status") or ""
+    rating_raw = raw.get("rating") or ""
 
     return AnimeRecord(
         source="Shikimori",
@@ -416,9 +392,24 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         titles=titles,
         synonyms=_dedupe(raw.get("synonyms") or []),
         external_ids=external_ids,
-        kind=KIND_NAMES.get(raw.get("kind"), raw.get("kind") or None),
-        status=STATUS_NAMES.get(raw.get("status"), raw.get("status") or None),
-        rating=RATING_NAMES.get(raw.get("rating"), raw.get("rating") or None),
+        kind=localize_source_value(
+            "shikimori",
+            "kind",
+            kind_raw,
+            default=str(kind_raw) or None,
+        ),
+        status=localize_source_value(
+            "shikimori",
+            "status",
+            status_raw,
+            default=str(status_raw) or None,
+        ),
+        rating=localize_source_value(
+            "shikimori",
+            "rating",
+            rating_raw,
+            default=str(rating_raw) or None,
+        ),
         season=_clean_text(raw.get("season")) or None,
         franchise=_clean_text(raw.get("franchise")) or None,
         episodes_total=raw.get("episodes") or None,
