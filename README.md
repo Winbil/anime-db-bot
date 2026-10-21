@@ -2,54 +2,32 @@
 
 Telegram-бот для поиска аниме и сборки одной общей карточки из нескольких баз данных.
 
-Главный принцип проекта: **поиск, metadata sources, агрегирование и UI конкретной платформы — отдельные слои**. Канонический ID между слоями сейчас — MAL ID.
+Главный принцип проекта: **поиск, metadata sources, агрегирование, локализация и UI конкретной платформы — отдельные слои**. Канонический ID между интеграциями пока остаётся MAL ID.
 
 ## Что подключено
 
 ### Поиск
 
-Обычный `/anime` использует параллельно:
+Обычный `/anime <название>` параллельно использует Shikimori Search и MyAnimeList Search. Результаты объединяются по MAL ID.
 
-- Shikimori Search;
-- MyAnimeList Search.
+Legacy-команда `/search` пока позволяет явно выбрать MAL, Shikimori, AniList, несколько providers или все сразу. В roadmap она будет удалена, а выбор поисковых источников перейдёт в `/anime`.
 
-Результаты объединяются строго по MAL ID. `/search` позволяет явно выбрать MAL, Shikimori, AniList, несколько источников или все сразу.
+После выбора результата metadata собирается из всех доступных источников, независимо от того, какой provider нашёл результат.
 
-`/anime` и `/search` теперь используют один `SearchSession`, одну пагинацию и один набор callback namespaces (`xs/xp/xk`). Разница только в UX: `/anime` сразу запускает основной набор поисковиков, а `/search` без указанного scope сначала предлагает выбрать источники.
-
-Если у выбранного результата нет Shikimori ID, `AnimeAggregator` вызывает `services/id_resolver.py`. Resolver выполняет отдельный Shikimori search и принимает запись только при **точном совпадении MAL ID**. Поэтому cross-ID восстановление одинаково работает для единственного результата `/anime`, MAL-only и AniList-only поиска, а metadata source сам не выполняет скрытый текстовый поиск.
-
-### Метаданные
-
-После выбора аниме используются:
+### Metadata sources
 
 - Shikimori;
 - AniList;
 - MyAnimeList.
 
-`AnimeAggregator` объединяет семантически одинаковые данные: названия, жанры, студии, даты, статусы, оценки, персонал и другие поля. Источник сохраняется там, где provenance действительно нужен: внешние ID/URL, описания, варианты названий, staff/voices и портреты.
-
-## Ленивая загрузка персонала
-
-Главная карточка **metadata-only** и не ждёт тяжёлые списки людей ни от Shikimori, ни от AniList.
-
-- Shikimori staff загружается при первом открытии `Авторы и команда`.
-- AniList staff загружается при первом открытии `Авторы и команда`.
-- AniList Japanese voice actors загружаются при первом открытии `Сэйю`.
-- Shikimori character-backed seiyuu (`anime roles -> character -> seyu`) загружаются при первом открытии `Сэйю`.
-- Источники одного раздела загружаются параллельно.
-- Данные вливаются в уже существующую `AggregatedAnime`; основная metadata карточки повторно не запрашивается.
-- Повторные открытия используют данные карточки и RAM-кеши источников там, где они предусмотрены adapter-слоем.
-
-Для Shikimori REST есть общий для процесса rate limiter и до трёх попыток после HTTP 429 с учётом `Retry-After`. Это защищает тяжёлую character→seyu цепочку при одновременных запросах нескольких пользователей.
-
-Retry-обёртка `sources/resilient.py` больше не реализует собственную Shikimori business logic: она только повторяет временно упавшие операции и сохраняет реальные capabilities исходного adapter-а.
+`AnimeAggregator` объединяет названия, жанры, студии, даты, статусы, оценки, персонал и другие поля. Provenance сохраняется там, где он действительно нужен: внешние ID/URL, описания, source-specific варианты названий, staff/voices и портреты.
 
 ## Команды
 
 ```text
 /start
 /ping
+/settings
 /anime <название>
 /search <название>
 /search mal <название>
@@ -59,19 +37,127 @@ Retry-обёртка `sources/resilient.py` больше не реализует
 /search mal,shikimori <название>
 ```
 
+## Локализация и `/settings`
+
+Интерфейс поддерживает ровно два языка:
+
+- `ru` — Русский;
+- `en` — English.
+
+`/settings` открывает настройки пользователя. Сейчас там есть один пункт — **язык интерфейса**. Внутри доступны inline-кнопки `🇷🇺 Русский` и `🇬🇧 English`.
+
+Выбор хранится по Telegram user ID в SQLite и переживает перезапуск процесса. По умолчанию используется:
+
+```text
+data/user_settings.sqlite3
+```
+
+Путь можно переопределить:
+
+```env
+USER_SETTINGS_DB_PATH=/data/user_settings.sqlite3
+```
+
+Это первый рабочий кусок будущей пользовательской БД. Repository читает только запись нужного пользователя и не загружает настройки всех пользователей в RAM.
+
+### Locale-neutral domain model
+
+Source adapters больше не записывают в `AnimeRecord` русские display-строки вроде `выходит`, `Весна`, `Фэнтези`. Вместо этого хранятся canonical values:
+
+```text
+status = airing
+kind = tv
+season = spring
+genres = [fantasy, isekai]
+source_materials = [light_novel]
+```
+
+Одна и та же `AggregatedAnime` затем может быть показана как:
+
+```text
+RU:
+Статус: выходит
+Сезон: Весна
+Жанры: Фэнтези, Исекай
+```
+
+или:
+
+```text
+EN:
+Status: Airing
+Season: Spring
+Genres: Fantasy, Isekai
+```
+
+без повторного обращения к metadata API.
+
+Каталоги находятся в:
+
+```text
+localization/
+├── catalog.py
+├── data/
+│   ├── aliases.json
+│   └── source_values.json
+└── locales/
+    ├── ru.json
+    └── en.json
+```
+
+`source_values.json` переводит enum конкретного API в canonical key. `aliases.json` отвечает за нормализацию жанров/ролей/studios. `ru.json` и `en.json` содержат UI и display labels.
+
+Свободный текст источника, например описание аниме, **не переводится машинно**. Он остаётся в том языке, который отдал выбранный source.
+
+## Имена людей и роли
+
+`PersonCredit` хранит raw name variants и canonical роли, а не готовую строку для интерфейса. Renderer выбирает display-name под язык пользователя:
+
+```text
+RU: Дзюн Фукуяма (Jun Fukuyama, 福山 潤)
+EN: Jun Fukuyama (福山 潤)
+```
+
+Это также предотвращает повторное вложенное форматирование имён при merge.
+
+Динамические voice credits хранятся locale-neutral, например:
+
+```text
+voice_of::Rimuru Tempest
+```
+
+и превращаются в:
+
+```text
+RU: Озвучка: Rimuru Tempest
+EN: Voice: Rimuru Tempest
+```
+
+## Ленивая загрузка персонала
+
+Главная карточка metadata-only и не ждёт тяжёлые списки людей.
+
+- Shikimori staff — при первом открытии staff-раздела;
+- AniList staff — при первом открытии staff-раздела;
+- AniList Japanese voice actors — при первом открытии voice-раздела;
+- Shikimori original Japanese seiyuu — `anime roles -> character -> seyu`, тоже только по запросу UI.
+
+Данные вливаются в уже существующую `AggregatedAnime`, поэтому основная metadata карточки повторно не запрашивается.
+
+Для Shikimori REST действует общий process-wide rate limiter и retry после HTTP 429 с `Retry-After`.
+
 ## Архитектура
 
 ```text
 anime-db-bot/
-├── .github/workflows/ci.yml
 ├── bots/
-│   ├── __init__.py
 │   ├── session_store.py
 │   └── telegram/
-│       ├── __init__.py
 │       ├── bot.py
+│       ├── settings.py
+│       ├── search_ui.py
+│       ├── people_portraits.py
 │       ├── card/
-│       │   ├── __init__.py
 │       │   ├── constants.py
 │       │   ├── handlers.py
 │       │   ├── keyboards.py
@@ -79,10 +165,7 @@ anime-db-bot/
 │       │   ├── selectors.py
 │       │   ├── service.py
 │       │   └── state.py
-│       ├── people_portraits.py
-│       ├── search_ui.py
 │       └── transports/
-│           ├── __init__.py
 │           ├── official.py
 │           └── tgapi.py
 ├── core/
@@ -90,249 +173,142 @@ anime-db-bot/
 │   ├── contracts.py
 │   ├── http_config.py
 │   └── models.py
+├── localization/
+│   ├── catalog.py
+│   ├── data/
+│   └── locales/
 ├── search/
 │   ├── registry.py
 │   └── providers/
-│       ├── anilist.py
-│       ├── mal.py
-│       └── shikimori.py
 ├── services/
 │   ├── aggregator.py
 │   ├── id_resolver.py
-│   └── search.py
+│   ├── search.py
+│   └── user_settings.py
 ├── sources/
-│   ├── anilist.py
-│   ├── mal.py
-│   ├── registry.py
-│   ├── resilient.py
-│   ├── shikimori.py
-│   └── shikimori_people.py
 ├── tests/
-│   ├── test_aggregator.py
-│   ├── test_anilist_lazy.py
-│   ├── test_resilient_sources.py
-│   ├── test_search.py
-│   ├── test_search_ui.py
-│   ├── test_session_store.py
-│   ├── test_shikimori_description.py
-│   ├── test_shikimori_people.py
-│   ├── test_startup_wiring.py
-│   └── test_telegram_transports.py
-├── .env.example
-├── .gitignore
-├── requirements.txt
-├── requirements.lock
 ├── start.sh
 └── README.md
 ```
 
-### Платформенный слой ботов
+### Telegram platform layer
 
-`bots/` больше не считается синонимом Telegram. Это контейнер для реализаций разных платформ.
+`bots/telegram/bot.py` — composition root и lifecycle Telegram implementation.
 
-- `bots/telegram/bot.py` — composition root и lifecycle Telegram-бота: transport, dispatcher, middleware, polling и shutdown.
-- `bots/telegram/search_ui.py` — весь `/anime` + `/search` flow и search callback state.
-- `bots/telegram/card/` — изолированный пакет обычной anime-card логики.
-- `card/state.py` — callback/session state карточек.
-- `card/selectors.py` — чистые функции выбора source-specific данных.
-- `card/keyboards.py` — inline keyboards и навигация карточки.
-- `card/renderer.py` — текст, rich HTML и send/edit rendering.
-- `card/service.py` — общие search/source/aggregator instances и aggregate→send use-case.
-- `card/handlers.py` — `/start`, `/ping` и callback handlers обычных разделов карточки.
-- `bots/telegram/people_portraits.py` — lazy staff/seiyuu + rich portrait UI; использует явные зависимости из `card/`, а не module-sized service locator.
-- `bots/telegram/transports/official.py` и `tgapi.py` — реальные backend-реализации official Bot API и локального `tg-bot-api`; каждая сама создаёт Bot/session, участвует в health-check и shutdown lifecycle.
-- `bots/session_store.py` — общий platform-neutral helper для callback/session state.
+`bots/telegram/transports/official.py` и `tgapi.py` — реальные backend-реализации official Bot API и локального `tg-bot-api`. Они создают Bot/session, участвуют в health-check и shutdown lifecycle.
 
-Для следующей платформы можно добавить отдельный package, например `bots/discord/`, не смешивая Discord handlers/runtime с Telegram-кодом и не меняя `core/`, `search/`, `services/` и `sources/`.
+`bots/telegram/card/` — обычная anime-card логика. `people_portraits.py` содержит lazy people/portrait UI. `settings.py` отвечает за Telegram settings UI.
 
-`start.sh` всегда запускает один модуль `bots.telegram.bot`. Сам `bot.py` выбирает transport: official API по умолчанию или локальный `tg-bot-api`, если задан `TELEGRAM_BOT_API_URL`.
-
-Старый монолитный `bots/telegram/common.py` и верхнеуровневый `bots/telegram/card_handlers.py` удалены. Более ранние верхнеуровневые Telegram entrypoints `bots/runner.py`, `bots/official.py`, `bots/tgapi.py` и старые Telegram-модули в корне `bots/` также удалены.
+`bots/` не считается синонимом Telegram: будущий Discord implementation можно добавить отдельным `bots/discord/`, не меняя `core/`, `localization/`, `search/`, `services/` и `sources/`.
 
 ## Поток данных
 
 ```text
-/anime или /search
-        │
-        ▼
- bots/telegram/search_ui.py
-        │
-        ▼
- Search providers
-        │
-        ▼
-SearchCandidate (MAL ID + известные cross-ID)
-        │
-        ├── при необходимости: MAL -> Shikimori ID resolver
-        │
-        ▼
- metadata-only sources
- Shikimori + AniList + MAL
-        │
-        ▼
- AnimeAggregator
-        │
-        ▼
- AggregatedAnime
-        │
-        ▼
- bots/telegram/card/service.py
-        │
-        ▼
- Telegram rich card
-        │
-        ├── Авторы и команда -> Shikimori + AniList lazy staff
-        └── Сэйю             -> Shikimori + AniList lazy voices
+Search provider
+      │
+      ▼
+SearchCandidate
+      │
+      ▼
+metadata sources
+      │
+      ▼
+AnimeAggregator
+      │
+      ▼
+AggregatedAnime
+(locale-neutral canonical values)
+      │
+      ├── locale=ru
+      │      ▼
+      │   Russian renderer
+      │
+      └── locale=en
+             ▼
+          English renderer
 ```
 
-People callbacks подключены через явный aiogram middleware в `bots/telegram/bot.py`. Portrait UI берёт session state, renderer и source services напрямую из `bots/telegram/card/`; runtime monkeypatch и `common: Any` service locator не используются.
+Карточки и search sessions привязаны к владельцу по Telegram user ID. Другой пользователь не может продолжить чужой callback flow.
 
-## SearchService
+## Кеши и runtime state
 
-`services/search.py`:
-
-1. нормализует запрос;
-2. параллельно вызывает выбранные поисковики;
-3. изолирует ошибку одного провайдера;
-4. объединяет записи по MAL ID;
-5. объединяет aliases, cross-ID и оценки;
-6. для кириллического запроса предпочитает русское название Shikimori;
-7. ограничивает объединённую страницу реальным `page_size`;
-8. использует RAM LRU-кеш успешных страниц.
-
-Частично сломанная страница с ошибкой одного провайдера **не кешируется**, поэтому временный сбой не остаётся в памяти на весь TTL.
+Search и anime-card callback sessions используют bounded in-memory storage со sliding TTL и LRU.
 
 ```env
+TELEGRAM_SESSION_TTL_SECONDS=3600
 SEARCH_CACHE_TTL_SECONDS=21600
 SEARCH_CACHE_MAX_ENTRIES=500
-```
-
-## Metadata contracts
-
-Search provider:
-
-```python
-async def search(query: str, *, page: int, limit: int) -> SearchPage: ...
-```
-
-Metadata source:
-
-```python
-async def get_details(
-    mal_id: str,
-    known_ids: dict[str, str],
-) -> AnimeRecord | None: ...
-```
-
-Тяжёлые источники людей дополнительно могут предоставлять:
-
-```python
-async def load_staff(mal_id: str, known_ids: dict[str, str]) -> list[PersonCredit]: ...
-async def load_voices(mal_id: str, known_ids: dict[str, str]) -> list[PersonCredit]: ...
-```
-
-Retry-proxy не добавляет эти capabilities metadata-only источникам: lazy people loader видит только операции, которые реально поддерживает исходный adapter.
-
-## Персонал и портреты
-
-`PersonCredit` хранит имя, aliases, роли, source-local external IDs и source-keyed portraits.
-
-```python
-{
-    "AniList": ["..."],
-    "Shikimori": ["..."],
-}
-```
-
-Внешний ID используется как сильный сигнал идентичности. Если два одноимённых человека имеют конфликтующие ID одной базы, они не объединяются только по имени. Локализационные/dub credits удаляются из оригинального staff целиком. Для сэйю используются оригинальные японские связи источников.
-
-В Telegram страница `0` показывает людей без портрета, затем идёт один человек на страницу. Несколько портретов выводятся rich slideshow; кнопка конкретного источника появляется только при наличии его портрета.
-
-## RAM-кеши и callback-сессии
-
-Shikimori:
-
-```env
+ANILIST_PEOPLE_MAX_PAGES=4
+ANILIST_PEOPLE_CACHE_TTL_SECONDS=21600
 SHIKIMORI_PEOPLE_CACHE_TTL_SECONDS=21600
 SHIKIMORI_REST_MIN_INTERVAL_SECONDS=0.24
 ```
 
-AniList:
+Краткоживущий callback/cache state очищается после restart. Пользовательский `locale` хранится отдельно в SQLite и сохраняется.
 
-```env
-ANILIST_PEOPLE_MAX_PAGES=4
-ANILIST_PEOPLE_CACHE_TTL_SECONDS=21600
+## Telegram transport
+
+`start.sh` всегда запускает:
+
+```text
+bots.telegram.bot
 ```
 
-Telegram callback state:
+Сам `bot.py` выбирает transport:
 
-```env
-TELEGRAM_SESSION_TTL_SECONDS=3600
+- без `TELEGRAM_BOT_API_URL` — official `api.telegram.org`;
+- с `TELEGRAM_BOT_API_URL` — локальный/self-hosted `tg-bot-api`.
+
+Оба транспорта имеют общий lifecycle:
+
+```text
+create_bot()
+check_health()
+close()
 ```
 
-Search и anime-card sessions используют ограниченное in-memory хранилище со sliding TTL и настоящим LRU-порядком: активная карточка продлевается и становится most-recently-used, заброшенный callback token удаляется после периода бездействия. Служебное lazy-people состояние ограничено тем же TTL-подходом. После перезапуска процесса RAM-кеши очищаются.
+## Зависимости и запуск
 
-## Зависимости
-
-`requirements.txt` содержит прямые runtime-зависимости проекта. `requirements.lock` содержит **полностью разрешённый набор прямых и транзитивных версий**, который устанавливают `start.sh` и CI. Поэтому обычный перезапуск сервера не должен неожиданно получить новую версию транзитивной библиотеки без коммита в репозиторий.
-
-Все HTTP-адаптеры используют единый `USER_AGENT` и версию приложения из `core/http_config.py`.
-
-## Тесты и CI
-
-GitHub Actions запускает на Python 3.11, 3.12 и 3.13:
+`requirements.lock` используется и локальным запуском, и CI.
 
 ```bash
-python -m compileall -q bots core search services sources tests
-python -m unittest discover -s tests -v
-```
-
-Regression-тесты покрывают в том числе:
-
-- ограничение объединённой поисковой страницы;
-- кеширование успешных и повторный запрос ошибочных search pages;
-- единый `/anime` + `/search` UI flow;
-- wiring нового `bots/telegram/card/` package;
-- выбор и lifecycle official/local Telegram transport;
-- cross-ID enrichment до запуска metadata sources;
-- идентичность персонала по source IDs;
-- фильтрацию localization staff;
-- source-keyed portrait merge;
-- Shikimori `character -> seyu` parsing;
-- отсутствие `personRoles` Shikimori и people pagination AniList в initial metadata path;
-- source capability preservation в retry proxy;
-- callback session TTL, LRU и ограничение размера session store;
-- import/wiring smoke checks, которые раньше находились прямо внутри `start.sh`.
-
-`start.sh` перед запуском процесса устанавливает lock-файл, выполняет `pip check`, compile check и тот же полный unit-test suite. Отдельного вручную поддерживаемого embedded smoke-script больше нет.
-
-## Запуск
-
-```bash
-cp .env.example .env
-nano .env
-./start.sh
-```
-
-Минимально нужен:
-
-```env
-BOT_TOKEN=...
-```
-
-Для MAL Search/metadata нужен:
-
-```env
-MAL_CLIENT_ID=...
-```
-
-Если `TELEGRAM_BOT_API_URL` не задан, Telegram-бот использует официальный `api.telegram.org`. Если URL задан, `bots.telegram.bot` выбирает local `tg-bot-api` transport; `TELEGRAM_BOT_API_LOCAL` продолжает управлять режимом локального Bot API server.
-
-При обычном обновлении сервера достаточно:
-
-```bash
+cd anime-db-bot
 git pull
 ./start.sh
 ```
 
-`start.sh` создаёт/проверяет `.venv`, устанавливает `requirements.lock`, запускает проверки и тесты, затем запускает `bots.telegram.bot` в `tmux`. Runtime-лог пишется в `logs/bot.log`; `logs/` исключён из Git.
+`start.sh` создаёт/проверяет venv, устанавливает locked dependencies, запускает compile/test checks и затем стартует `bots.telegram.bot` в tmux.
+
+## Тесты и CI
+
+GitHub Actions проверяет Python 3.11, 3.12 и 3.13:
+
+```bash
+python -m compileall -q bots core localization search services sources tests
+python -m unittest discover -s tests -v
+```
+
+Regression coverage включает:
+
+- поиск, cache и pagination contracts;
+- cross-ID enrichment;
+- source resilience/capability preservation;
+- Shikimori `character -> seyu` parsing;
+- lazy people loading;
+- source-keyed portraits;
+- Telegram transport lifecycle;
+- canonical RU/EN localization;
+- одну domain model, рендерящуюся на RU и EN;
+- raw person-name rendering без повторного вложения;
+- persistent SQLite user locale settings.
+
+## Известные архитектурные ограничения
+
+Главные ещё не закрытые ограничения находятся во внешнем refactor-audit. Среди них:
+
+- MAL ID пока остаётся обязательной общей identity;
+- fused search pagination может терять overflow;
+- нет typed capabilities/source errors/shared HTTP lifecycle;
+- нет общего source-health/circuit breaker;
+- кроме interface locale, остальное пользовательское состояние ещё не перенесено в persistent DB;
+- legacy `/search` ещё не удалён.
