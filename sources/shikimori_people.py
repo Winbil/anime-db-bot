@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
+import os
+import time
 from typing import Any
 
 import httpx
@@ -33,6 +36,27 @@ query PeopleDetails($ids: [ID!]) {
   }
 }
 """
+
+_REST_RATE_LOCK = asyncio.Lock()
+_NEXT_REST_REQUEST_AT = 0.0
+_CHARACTER_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_VOICE_CACHE: dict[str, tuple[float, list[PersonCredit]]] = {}
+
+
+def _cache_ttl_seconds() -> int:
+    raw = os.getenv("SHIKIMORI_PEOPLE_CACHE_TTL_SECONDS", "21600").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 21600
+
+
+def _rest_spacing_seconds() -> float:
+    raw = os.getenv("SHIKIMORI_REST_MIN_INTERVAL_SECONDS", "0.24").strip()
+    try:
+        return max(0.20, float(raw))
+    except ValueError:
+        return 0.24
 
 
 def _clean_text(value: Any) -> str:
@@ -86,22 +110,42 @@ def _rest_person_credit(
     )
 
 
+async def _rate_limited_get(
+    client: httpx.AsyncClient,
+    url: str,
+) -> httpx.Response:
+    global _NEXT_REST_REQUEST_AT
+
+    async with _REST_RATE_LOCK:
+        now = time.monotonic()
+        delay = _NEXT_REST_REQUEST_AT - now
+        if delay > 0:
+            await asyncio.sleep(delay)
+        _NEXT_REST_REQUEST_AT = time.monotonic() + _rest_spacing_seconds()
+
+    return await client.get(url)
+
+
 async def _rest_get_json(
     client: httpx.AsyncClient,
     path: str,
 ) -> Any:
     url = f"{site_url()}{path}"
-    response = await client.get(url)
 
-    if response.status_code == 429:
+    response: httpx.Response | None = None
+    for attempt in range(3):
+        response = await _rate_limited_get(client, url)
+        if response.status_code != 429:
+            break
+
         retry_after = response.headers.get("Retry-After")
         try:
             delay = max(float(retry_after or "1.2"), 1.2)
         except ValueError:
             delay = 1.2
-        await asyncio.sleep(delay)
-        response = await client.get(url)
+        await asyncio.sleep(delay * (attempt + 1))
 
+    assert response is not None
     if response.is_error:
         preview = response.text.replace("\n", " ")[:800]
         raise RuntimeError(
@@ -119,7 +163,7 @@ async def _rest_get_json(
 
 async def _rest_anime_roles(anime_id: str) -> list[dict[str, Any]]:
     headers = {
-        "User-Agent": "anime-db-bot/1.0 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": "anime-db-bot/1.1 (https://github.com/Winbil/anime-db-bot)",
         "Accept": "application/json",
     }
     async with httpx.AsyncClient(
@@ -154,53 +198,69 @@ def _character_ids_from_roles(entries: list[dict[str, Any]]) -> list[str]:
 async def _rest_character_details(
     character_ids: list[str],
 ) -> list[dict[str, Any]]:
-    """Load characters and their original Japanese `seyu` lists.
+    """Load characters and their original Japanese ``seyu`` lists.
 
-    `/api/animes/:id/roles` contains character rows and staff rows separately;
-    it does not contain a person↔character voice link. Shikimori exposes that
-    relation on `/api/characters/:id` through the `seyu` field instead.
+    Requests are globally rate-limited across concurrent Telegram users and
+    character payloads are cached, because the same popular cast is reused by
+    many anime and changes very rarely.
     """
     if not character_ids:
         return []
 
-    headers = {
-        "User-Agent": "anime-db-bot/1.0 (https://github.com/Winbil/anime-db-bot)",
-        "Accept": "application/json",
-    }
-    result: list[dict[str, Any]] = []
+    ttl = _cache_ttl_seconds()
+    now = time.monotonic()
+    result_by_id: dict[str, dict[str, Any]] = {}
+    missing: list[str] = []
 
-    async with httpx.AsyncClient(
-        timeout=20.0,
-        headers=headers,
-        follow_redirects=True,
-    ) as client:
-        # Shikimori allows 5 rps. Use four requests per batch so the anime
-        # roles request/other metadata traffic still has headroom.
-        for offset in range(0, len(character_ids), 4):
-            batch = character_ids[offset:offset + 4]
+    for character_id in character_ids:
+        cached = _CHARACTER_CACHE.get(character_id)
+        if cached is not None and cached[0] > now:
+            result_by_id[character_id] = copy.deepcopy(cached[1])
+        else:
+            if cached is not None:
+                _CHARACTER_CACHE.pop(character_id, None)
+            missing.append(character_id)
+
+    if missing:
+        headers = {
+            "User-Agent": "anime-db-bot/1.1 (https://github.com/Winbil/anime-db-bot)",
+            "Accept": "application/json",
+        }
+        async with httpx.AsyncClient(
+            timeout=20.0,
+            headers=headers,
+            follow_redirects=True,
+        ) as client:
             responses = await asyncio.gather(
                 *(
                     _rest_get_json(client, f"/api/characters/{character_id}")
-                    for character_id in batch
+                    for character_id in missing
                 ),
                 return_exceptions=True,
             )
 
-            for character_id, response in zip(batch, responses):
-                if isinstance(response, Exception):
-                    logging.warning(
-                        "Could not load Shikimori character %s for seiyuu lookup: %s",
-                        character_id,
-                        response,
+        expires_at = time.monotonic() + ttl
+        for character_id, response in zip(missing, responses):
+            if isinstance(response, Exception):
+                logging.warning(
+                    "Could not load Shikimori character %s for seiyuu lookup: %s",
+                    character_id,
+                    response,
+                )
+                continue
+            if isinstance(response, dict):
+                result_by_id[character_id] = response
+                if ttl > 0:
+                    _CHARACTER_CACHE[character_id] = (
+                        expires_at,
+                        copy.deepcopy(response),
                     )
-                    continue
-                if isinstance(response, dict):
-                    result.append(response)
 
-            if offset + 4 < len(character_ids):
-                await asyncio.sleep(1.05)
-
-    return result
+    return [
+        result_by_id[character_id]
+        for character_id in character_ids
+        if character_id in result_by_id
+    ]
 
 
 def _voices_from_character_details(
@@ -251,7 +311,7 @@ def _voices_from_character_details(
 
 
 def _rest_voice_credits(entries: list[dict[str, Any]]) -> list[PersonCredit]:
-    """Compatibility helper for the existing startup smoke test.
+    """Compatibility helper for the startup smoke test.
 
     Real Shikimori anime-role rows do not contain person and character in the
     same row. This helper converts synthetic paired rows into the same
@@ -321,6 +381,15 @@ async def _refresh_people(people: list[PersonCredit]) -> None:
 
 
 async def _load_shikimori_voices(anime_id: str) -> list[PersonCredit]:
+    ttl = _cache_ttl_seconds()
+    now = time.monotonic()
+    cached = _VOICE_CACHE.get(anime_id)
+    if cached is not None and cached[0] > now:
+        logging.info("Shikimori seiyuu cache hit for anime %s", anime_id)
+        return copy.deepcopy(cached[1])
+    if cached is not None:
+        _VOICE_CACHE.pop(anime_id, None)
+
     raw_roles = await _rest_anime_roles(anime_id)
     character_ids = _character_ids_from_roles(raw_roles)
     characters = await _rest_character_details(character_ids)
@@ -345,11 +414,17 @@ async def _load_shikimori_voices(anime_id: str) -> list[PersonCredit]:
         len(voices),
         _portrait_count(voices),
     )
+
+    if ttl > 0:
+        _VOICE_CACHE[anime_id] = (
+            time.monotonic() + ttl,
+            copy.deepcopy(voices),
+        )
     return voices
 
 
 class ShikimoriSource(BaseShikimoriSource):
-    """Shikimori metadata with character-backed original Japanese seiyuu."""
+    """Shikimori metadata with on-demand original Japanese seiyuu."""
 
     async def get_details(
         self,
@@ -360,30 +435,26 @@ class ShikimoriSource(BaseShikimoriSource):
         if record is None:
             return None
 
+        # Character -> seyu is intentionally deferred. It can require dozens
+        # of REST requests and should never delay the main anime card.
+        record.voices = []
         anime_id = _clean_text(known_ids.get("shikimori") or record.source_id)
-        if not anime_id.isdigit():
-            return record
-
-        try:
-            voices = await _load_shikimori_voices(anime_id)
-            if voices:
-                record.voices = voices
-        except Exception:
-            # Seiyuu portraits are enrichment. Do not make all Shikimori
-            # metadata unavailable if character details fail temporarily.
-            logging.warning(
-                "Could not load Shikimori character-backed seiyuu for anime %s",
-                anime_id,
-                exc_info=True,
-            )
-
         logging.info(
-            "Shikimori people for anime %s: staff=%d (portraits=%d), "
-            "voices=%d (portraits=%d)",
-            anime_id,
+            "Shikimori people for anime %s: staff=%d (portraits=%d), voices=deferred",
+            anime_id or "?",
             len(record.staff),
             _portrait_count(record.staff),
-            len(record.voices),
-            _portrait_count(record.voices),
         )
         return record
+
+    async def load_voices(
+        self,
+        mal_id: str,
+        known_ids: dict[str, str],
+    ) -> list[PersonCredit]:
+        """Load original Japanese seiyuu only when the Telegram UI asks for them."""
+        mal_id = _clean_text(mal_id)
+        anime_id = _clean_text(known_ids.get("shikimori"))
+        if not mal_id.isdigit() or not anime_id.isdigit():
+            return []
+        return await _load_shikimori_voices(anime_id)
