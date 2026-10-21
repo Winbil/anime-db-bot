@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from bots import common as common_bot
-from bots import search_ui
+from bots.telegram import common as common_bot
+from bots.telegram import search_ui
 from core.models import SearchPage
 from services.search import SearchService
 
