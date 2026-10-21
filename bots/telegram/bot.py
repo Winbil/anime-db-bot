@@ -93,21 +93,27 @@ async def run_bot(transport: TelegramTransport | None = None) -> None:
     logging.info("Metadata sources: %s", ", ".join(source.name for source in common_bot.SOURCES))
     logging.info("Selectable /search providers are enabled")
 
-    bot = common_bot.create_bot(use_custom_api=transport.use_custom_api)
-    dp = build_dispatcher(mode_name=transport.mode_name)
-
-    dp.callback_query.outer_middleware(_CallbackRoutingMiddleware())
-
-    register_search_handlers(
-        dp,
-        aggregate_callback=_aggregate_and_cleanup_search,
-        default_service=common_bot.SEARCH_SERVICE,
-    )
-
+    bot = transport.create_bot()
     try:
+        health = await transport.check_health(bot)
+        if health.healthy:
+            identity = f" @{health.bot_username}" if health.bot_username else ""
+            logging.info("Telegram transport health: healthy%s — %s", identity, health.detail)
+        else:
+            logging.warning("Telegram transport health: degraded — %s", health.detail)
+
+        dp = build_dispatcher(mode_name=transport.mode_name)
+        dp.callback_query.outer_middleware(_CallbackRoutingMiddleware())
+
+        register_search_handlers(
+            dp,
+            aggregate_callback=_aggregate_and_cleanup_search,
+            default_service=common_bot.SEARCH_SERVICE,
+        )
+
         await dp.start_polling(bot)
     finally:
-        await bot.session.close()
+        await transport.close(bot)
 
 
 def main() -> None:
