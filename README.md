@@ -15,7 +15,7 @@ Telegram-бот для поиска аниме и сборки одной общ
 
 Результаты объединяются строго по MAL ID. `/search` позволяет явно выбрать MAL, Shikimori, AniList, несколько источников или все сразу.
 
-Если результат пришёл только из MAL/AniList и в нём нет Shikimori ID, `services/id_resolver.py` выполняет отдельное разрешение cross-ID. Результат принимается только если найденная запись Shikimori имеет **тот же MAL ID**, поэтому metadata source не выполняет скрытый поиск сам.
+Если у выбранного результата нет Shikimori ID, `AnimeAggregator` вызывает `services/id_resolver.py`. Resolver выполняет отдельный Shikimori search и принимает запись только при **точном совпадении MAL ID**. Поэтому cross-ID восстановление одинаково работает для единственного результата `/anime`, MAL-only и AniList-only поиска, а metadata source сам не выполняет скрытый текстовый поиск.
 
 ### Метаданные
 
@@ -29,16 +29,17 @@ Telegram-бот для поиска аниме и сборки одной общ
 
 ## Ленивая загрузка персонала
 
-Главная карточка **не ждёт тяжёлые списки людей**.
+Главная карточка теперь **metadata-only** и не ждёт тяжёлые списки людей ни от Shikimori, ни от AniList.
 
+- Shikimori staff загружается при первом открытии `Авторы и команда`.
 - AniList staff загружается при первом открытии `Авторы и команда`.
 - AniList Japanese voice actors загружаются при первом открытии `Сэйю`.
 - Shikimori character-backed seiyuu (`anime roles -> character -> seyu`) загружаются при первом открытии `Сэйю`.
-- Уже загруженные данные вливаются в текущую `AggregatedAnime` без повторного запроса MAL/AniList/Shikimori основной метадаты.
-- Одновременные загрузки источников запускаются параллельно.
-- Повторные открытия используют данные текущей карточки и RAM-кеши источников.
+- Источники одного раздела загружаются параллельно.
+- Данные вливаются в уже существующую `AggregatedAnime`; основная metadata карточки повторно не запрашивается.
+- Повторные открытия используют данные карточки и RAM-кеши источников.
 
-Для Shikimori REST есть общий для процесса rate limiter и повторные попытки после HTTP 429. Это не даёт нескольким пользователям одновременно превысить лимит запросов при загрузке большого каста.
+Для Shikimori REST есть общий для процесса rate limiter и до трёх попыток после HTTP 429 с учётом `Retry-After`. Это защищает тяжёлую character→seyu цепочку при одновременных запросах нескольких пользователей.
 
 ## Команды
 
@@ -54,28 +55,18 @@ Telegram-бот для поиска аниме и сборки одной общ
 /search mal,shikimori <название>
 ```
 
-Примеры:
-
-```text
-/anime о моем перерождении в слизь
-/search shikimori о моем перерождении в слизь
-/search mal slime
-/search mal,anilist slime
-```
-
 ## Архитектура
 
 ```text
 anime-db-bot/
-├── .github/
-│   └── workflows/
-│       └── ci.yml
+├── .github/workflows/ci.yml
 ├── bots/
 │   ├── common.py
 │   ├── official.py
 │   ├── people_portraits.py
 │   ├── runner.py
 │   ├── search_ui.py
+│   ├── session_store.py
 │   └── tgapi.py
 ├── core/
 │   ├── canonicalization.py
@@ -102,10 +93,12 @@ anime-db-bot/
 │   ├── test_aggregator.py
 │   ├── test_anilist_lazy.py
 │   ├── test_search.py
+│   ├── test_session_store.py
 │   └── test_shikimori_people.py
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt
+├── requirements.lock
 ├── start.sh
 └── README.md
 ```
@@ -124,7 +117,7 @@ SearchCandidate (MAL ID + известные cross-ID)
         ├── при необходимости: MAL -> Shikimori ID resolver
         │
         ▼
- metadata sources
+ metadata-only sources
  Shikimori + AniList + MAL
         │
         ▼
@@ -136,9 +129,11 @@ SearchCandidate (MAL ID + известные cross-ID)
         ▼
  Telegram rich card
         │
-        ├── Авторы и команда -> lazy people loaders
-        └── Сэйю             -> lazy people loaders
+        ├── Авторы и команда -> Shikimori + AniList lazy staff
+        └── Сэйю             -> Shikimori + AniList lazy voices
 ```
+
+People callbacks подключены через явный aiogram middleware в `bots/runner.py`; runtime monkeypatch функций `bots.common` не используется.
 
 ## SearchService
 
@@ -155,8 +150,6 @@ SearchCandidate (MAL ID + известные cross-ID)
 
 Частично сломанная страница с ошибкой одного провайдера **не кешируется**, поэтому временный сбой не остаётся в памяти на весь TTL.
 
-Настройки:
-
 ```env
 SEARCH_CACHE_TTL_SECONDS=21600
 SEARCH_CACHE_MAX_ENTRIES=500
@@ -167,8 +160,7 @@ SEARCH_CACHE_MAX_ENTRIES=500
 Search provider:
 
 ```python
-async def search(query: str, *, page: int, limit: int) -> SearchPage:
-    ...
+async def search(query: str, *, page: int, limit: int) -> SearchPage: ...
 ```
 
 Metadata source:
@@ -177,8 +169,7 @@ Metadata source:
 async def get_details(
     mal_id: str,
     known_ids: dict[str, str],
-) -> AnimeRecord | None:
-    ...
+) -> AnimeRecord | None: ...
 ```
 
 Тяжёлые источники людей дополнительно могут предоставлять:
@@ -188,19 +179,9 @@ async def load_staff(mal_id: str, known_ids: dict[str, str]) -> list[PersonCredi
 async def load_voices(mal_id: str, known_ids: dict[str, str]) -> list[PersonCredit]: ...
 ```
 
-Metadata source сам не должен выполнять текстовый поиск.
-
 ## Персонал и портреты
 
-`PersonCredit` хранит:
-
-- предпочтительное имя;
-- aliases на других языках;
-- роли;
-- source-local external IDs;
-- source-keyed portraits.
-
-Пример provenance:
+`PersonCredit` хранит имя, aliases, роли, source-local external IDs и source-keyed portraits.
 
 ```python
 {
@@ -209,17 +190,11 @@ Metadata source сам не должен выполнять текстовый �
 }
 ```
 
-При слиянии внешний ID используется как сильный сигнал идентичности. Если два человека имеют одинаковое имя, но конфликтующие ID одной базы, они не объединяются только по имени.
+Внешний ID используется как сильный сигнал идентичности. Если два одноимённых человека имеют конфликтующие ID одной базы, они не объединяются только по имени. Локализационные/dub credits удаляются из оригинального staff целиком. Для сэйю используются оригинальные японские связи источников.
 
-Локализационные/dub credits удаляются из оригинального staff целиком. Для сэйю сохраняется только оригинальная японская озвучка из соответствующих связей источника.
+В Telegram страница `0` показывает людей без портрета, затем идёт один человек на страницу. Несколько портретов выводятся rich slideshow; кнопка конкретного источника появляется только при наличии его портрета.
 
-В Telegram страница `0` показывает людей без портрета, затем идёт один человек на страницу; при наличии нескольких портретов используется rich slideshow. Кнопки конкретного источника появляются только если у этого источника действительно есть портреты.
-
-## Описания и названия
-
-Названия, staff и voices сохраняют source buckets для переключения источника. Описания также сохраняются по источнику и выбираются пользователем в UI — бот не заменяет их одним «самым длинным» текстом.
-
-## Кеши персонала
+## RAM-кеши и callback-сессии
 
 Shikimori:
 
@@ -235,11 +210,19 @@ ANILIST_PEOPLE_MAX_PAGES=4
 ANILIST_PEOPLE_CACHE_TTL_SECONDS=21600
 ```
 
-Кеши находятся в RAM и очищаются при перезапуске процесса.
+Telegram callback state:
+
+```env
+TELEGRAM_SESSION_TTL_SECONDS=3600
+```
+
+Search и anime-card sessions используют ограниченное in-memory хранилище со sliding TTL: активная карточка продлевается при использовании, заброшенный callback token удаляется после периода бездействия. Служебное lazy-people состояние ограничено тем же TTL-подходом. После перезапуска процесса RAM-кеши очищаются.
 
 ## Зависимости
 
-Прямые runtime-зависимости закреплены точными версиями в `requirements.txt`, чтобы обычный `./start.sh` не подтягивал неожиданно новую minor/patch-версию основного пакета.
+`requirements.txt` содержит прямые runtime-зависимости проекта. `requirements.lock` содержит **полностью разрешённый набор прямых и транзитивных версий**, который устанавливают `start.sh` и CI. Поэтому обычный перезапуск сервера не должен неожиданно получить новую версию транзитивной библиотеки без коммита в репозиторий.
+
+Все HTTP-адаптеры используют единый `USER_AGENT` и версию приложения из `core/http_config.py`.
 
 ## Тесты и CI
 
@@ -250,17 +233,19 @@ python -m compileall -q bots core search services sources tests
 python -m unittest discover -s tests -v
 ```
 
-Regression-тесты покрывают:
+Regression-тесты покрывают в том числе:
 
 - ограничение объединённой поисковой страницы;
 - кеширование успешных и повторный запрос ошибочных search pages;
+- cross-ID enrichment до запуска metadata sources;
 - идентичность персонала по source IDs;
 - фильтрацию localization staff;
 - source-keyed portrait merge;
 - Shikimori `character -> seyu` parsing;
-- отсутствие AniList people pagination в initial metadata path.
+- отсутствие `personRoles` Shikimori и people pagination AniList в initial metadata path;
+- callback session TTL и ограничение размера session store.
 
-`start.sh` дополнительно выполняет быстрые smoke checks перед запуском процесса.
+`start.sh` перед запуском процесса выполняет те же unit tests, compile check, `pip check` и быстрый wiring smoke test.
 
 ## Запуск
 
@@ -282,13 +267,11 @@ BOT_TOKEN=...
 MAL_CLIENT_ID=...
 ```
 
-`start.sh`:
+При обычном обновлении сервера достаточно:
 
-1. проверяет файлы и системные команды;
-2. создаёт/проверяет `.venv`;
-3. устанавливает закреплённые зависимости;
-4. выполняет `pip check` и smoke checks;
-5. запускает бота в `tmux`;
-6. пишет runtime-лог в `logs/bot.log` (`logs/` исключён из Git).
+```bash
+git pull
+./start.sh
+```
 
-Если `TELEGRAM_BOT_API_URL` пуст, используется официальный Bot API. Если указан — запускается transport для custom/self-hosted Telegram Bot API.
+`start.sh` проверяет файлы, создаёт/проверяет `.venv`, устанавливает `requirements.lock`, запускает тесты и smoke checks, затем запускает бота в `tmux`. Runtime-лог пишется в `logs/bot.log`; `logs/` исключён из Git.
