@@ -10,6 +10,7 @@ from aiogram.filters import Command
 from aiogram.filters.command import CommandObject
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+from bots.session_store import ExpiringSessionStore
 from core.models import SearchCandidate, SearchPage
 from search.registry import DEFAULT_SEARCH_PROVIDER_KEYS, get_search_provider_map
 from services.search import SearchService
@@ -55,7 +56,9 @@ class SearchSession:
     pages: dict[int, SearchPage] = field(default_factory=dict)
 
 
-SESSIONS: dict[str, SearchSession] = {}
+SESSIONS: ExpiringSessionStore[SearchSession] = ExpiringSessionStore(
+    max_entries=MAX_SEARCH_SESSIONS,
+)
 SERVICES: dict[tuple[str, ...], SearchService] = {}
 
 
@@ -106,8 +109,6 @@ def _parse_scope(value: str) -> tuple[str, ...] | None:
 def _remember(query: str, provider_keys: tuple[str, ...] = ()) -> str:
     token = secrets.token_urlsafe(6)
     SESSIONS[token] = SearchSession(query=query, provider_keys=provider_keys)
-    while len(SESSIONS) > MAX_SEARCH_SESSIONS:
-        SESSIONS.pop(next(iter(SESSIONS)), None)
     return token
 
 
@@ -331,6 +332,7 @@ def register_search_handlers(
             await callback.answer()
             return
 
+        SESSIONS.refresh(token)
         session.provider_keys = _normalize_provider_keys(provider_keys)
         session.pages.clear()
         await callback.answer()
@@ -359,6 +361,7 @@ def register_search_handlers(
             await callback.answer()
             return
 
+        SESSIONS.refresh(token)
         try:
             page = await _load_page(session, int(page_text), default_service)
         except Exception:
@@ -392,6 +395,7 @@ def register_search_handlers(
             await callback.answer()
             return
 
+        SESSIONS.refresh(token)
         try:
             page = await _load_page(session, int(page_text), default_service)
         except Exception:
