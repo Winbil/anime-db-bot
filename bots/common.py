@@ -20,6 +20,7 @@ from aiogram.types import (
 )
 from dotenv import load_dotenv
 
+from bots.session_store import ExpiringSessionStore
 from core.models import AggregatedAnime, SearchCandidate, SearchPage
 from search.registry import get_search_providers
 from services.aggregator import AnimeAggregator
@@ -61,8 +62,12 @@ class SearchSession:
     pages: dict[int, SearchPage] = field(default_factory=dict)
 
 
-SEARCH_SESSIONS: dict[str, SearchSession] = {}
-ANIME_SESSIONS: dict[str, AggregatedAnime] = {}
+SEARCH_SESSIONS: ExpiringSessionStore[SearchSession] = ExpiringSessionStore(
+    max_entries=MAX_SEARCH_SESSIONS,
+)
+ANIME_SESSIONS: ExpiringSessionStore[AggregatedAnime] = ExpiringSessionStore(
+    max_entries=MAX_ANIME_SESSIONS,
+)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -317,7 +322,6 @@ def _anime_sections(anime: AggregatedAnime) -> dict[str, str]:
     episodes = f"{aired}/{total}" if total else str(aired or "—")
 
     main = [anime.title]
-
     basic: list[str] = []
     if anime.kind:
         basic.append(f"Тип: {anime.kind}")
@@ -650,16 +654,12 @@ def _remember_search(query: str, first_page: SearchPage) -> str:
         query=query,
         pages={first_page.page: first_page},
     )
-    while len(SEARCH_SESSIONS) > MAX_SEARCH_SESSIONS:
-        SEARCH_SESSIONS.pop(next(iter(SEARCH_SESSIONS)), None)
     return token
 
 
 def _remember_anime(anime: AggregatedAnime) -> str:
     token = secrets.token_urlsafe(6)
     ANIME_SESSIONS[token] = anime
-    while len(ANIME_SESSIONS) > MAX_ANIME_SESSIONS:
-        ANIME_SESSIONS.pop(next(iter(ANIME_SESSIONS)), None)
     return token
 
 
