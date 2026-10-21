@@ -1,30 +1,40 @@
 # Localization layer
 
-`localization/` separates canonical vocabulary, source-specific API enums and human-readable labels from Python business logic.
+`localization/` separates canonical vocabulary, source-specific API enums and human-readable interface labels from Python business logic.
 
 ## Files
 
 - `data/aliases.json` — aliases used to recognize equivalent genres, roles and studios. Aliases map input text to stable canonical keys and are independent from the UI language.
 - `data/source_values.json` — mappings from external API enum values (AniList, MyAnimeList, Shikimori) to stable canonical keys.
-- `locales/ru.json` — Russian labels for canonical keys.
-- `locales/en.json` — English labels for the same keys.
-- `catalog.py` — cached loader and lookup API.
+- `locales/ru.json` — Russian interface labels.
+- `locales/en.json` — English interface labels.
+- `catalog.py` — cached loader, source-enum normalization and translation API.
 
 ## Rules
 
-Source adapters should not own translated dictionaries such as `STATUS_NAMES` or `KIND_NAMES`. External values are mapped through `source_values.json`, then rendered through a locale catalog.
+Source adapters must not own translated dictionaries such as `STATUS_NAMES` or `KIND_NAMES`. External values are mapped through `source_values.json` to locale-neutral keys such as `airing`, `movie`, `spring`, `fantasy` and `light_novel`.
 
-Canonicalization aliases should live in `aliases.json`, while algorithms such as normalization, transliteration and identity matching stay in Python.
+`AnimeRecord` and `AggregatedAnime` keep these canonical values. Translation happens only in a platform renderer for the current user's locale. This means one aggregated card can be rendered in Russian or English without repeating metadata API requests.
 
-Unknown external values are preserved instead of being discarded. This keeps the bot forward-compatible when an upstream API introduces a new enum before the catalog is updated.
+Canonicalization aliases live in `aliases.json`, while algorithms such as normalization, transliteration, identity matching and raw person-name handling stay in Python.
 
-## Current migration stage
+Person names and aliases are stored as raw variants. `display_person_name()` selects and formats them at render time: Russian prefers a Cyrillic display name, English prefers a Latin display name, while Japanese/native aliases remain available. This prevents presentation strings from being recursively merged back into aliases.
 
-The default behavior remains Russian so the existing Telegram UI does not change unexpectedly. The catalog API already accepts an explicit locale, for example:
+Dynamic voice credits are stored as internal tokens such as `voice_of::Rimuru Tempest`; the renderer turns them into `Озвучка: Rimuru Tempest` or `Voice: Rimuru Tempest`.
 
-```python
-canonical_genre("Action", locale="en")
-localize_source_value("mal", "status", "currently_airing", locale="en")
-```
+Unknown upstream values are preserved instead of being discarded. This keeps the bot forward-compatible when an API introduces a new enum before the catalog is updated.
 
-The next localization stage is to keep canonical keys in the domain model and translate only in platform renderers using a per-user locale from persistent settings. That change is intentionally separate because it affects models, caches, persistence and every UI platform.
+## Supported interface languages
+
+The supported interface locales are intentionally limited to:
+
+- `ru` — Русский;
+- `en` — English.
+
+Telegram users change the locale through `/settings`. The choice is stored by Telegram user ID in the user-settings repository and therefore survives process restarts.
+
+Additional interface languages should only be added when there is a real product/source-data reason to maintain them; adding another JSON file alone is not treated as a complete localization.
+
+## Source-provided text
+
+The bot localizes its own UI and normalized metadata vocabulary. Free-form text supplied by a source, such as an anime description, is kept in the language returned by that source and is **not machine-translated**. Users can still switch the description source where the UI exposes source selection.
