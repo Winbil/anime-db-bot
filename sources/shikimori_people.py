@@ -425,7 +425,7 @@ async def _load_shikimori_voices(anime_id: str) -> list[PersonCredit]:
 
 
 class ShikimoriSource(BaseShikimoriSource):
-    """Shikimori metadata with on-demand original Japanese seiyuu."""
+    """Shikimori metadata with on-demand staff and original Japanese seiyuu."""
 
     async def get_details(
         self,
@@ -436,13 +436,10 @@ class ShikimoriSource(BaseShikimoriSource):
         if record is None:
             return None
 
-        record.voices = []
         anime_id = _clean_text(known_ids.get("shikimori") or record.source_id)
         logging.info(
-            "Shikimori people for anime %s: staff=%d (portraits=%d), voices=deferred",
+            "Shikimori people for anime %s: staff=deferred, voices=deferred",
             anime_id or "?",
-            len(record.staff),
-            _portrait_count(record.staff),
         )
         return record
 
