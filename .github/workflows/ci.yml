@@ -30,7 +30,7 @@ jobs:
           python -m pip check
 
       - name: Compile Python sources
-        run: python -m compileall -q bots core search services sources tests
+        run: python -m compileall -q bots core localization search services sources tests
 
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
