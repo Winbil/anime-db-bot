@@ -9,27 +9,9 @@ from bots import common as common_bot
 from bots.people_portraits import handle_people_callback
 from bots.search_ui import register_search_handlers
 from core.models import SearchCandidate
-from services.id_resolver import resolve_shikimori_id
 
 
 _RAW_AGGREGATE_AND_SEND = common_bot._aggregate_and_send
-
-
-async def _resolve_candidate_ids(candidate: SearchCandidate) -> None:
-    """Fill cross-IDs missing from explicit single-provider search results."""
-    if str(candidate.external_ids.get("shikimori") or "").strip():
-        return
-
-    mal_id = str(candidate.external_ids.get("mal") or "").strip()
-    if not mal_id:
-        return
-
-    shikimori_id = await resolve_shikimori_id(
-        mal_id,
-        [candidate.title, *candidate.aliases],
-    )
-    if shikimori_id:
-        candidate.external_ids["shikimori"] = shikimori_id
 
 
 async def _aggregate_and_cleanup_search(
@@ -51,15 +33,8 @@ async def _aggregate_and_cleanup_search(
                 exc_info=True,
             )
 
-    try:
-        await _resolve_candidate_ids(candidate)
-    except Exception:
-        logging.warning(
-            "Could not enrich cross-IDs for MAL %s",
-            candidate.external_ids.get("mal"),
-            exc_info=True,
-        )
-
+    # Cross-ID enrichment belongs to AnimeAggregator, so every entry path
+    # (single result, /anime selection and explicit /search) behaves the same.
     await _RAW_AGGREGATE_AND_SEND(message, candidate)
 
     if not is_bot_search_message:
@@ -84,11 +59,7 @@ async def _aggregate_and_cleanup_search(
 
 
 async def _handle_default_pick(callback: CallbackQuery) -> bool:
-    """Handle the legacy /anime result-selection callback explicitly.
-
-    bots.common keeps the basic handler as a safe fallback, while this middleware
-    routes the normal path through the shared aggregation/cleanup callback.
-    """
+    """Handle the default /anime result-selection callback explicitly."""
     raw = callback.data or ""
     if not raw.startswith("pick:"):
         return False
@@ -160,8 +131,6 @@ async def run_bot(*, use_custom_api: bool, mode_name: str) -> None:
     bot = common_bot.create_bot(use_custom_api=use_custom_api)
     dp = common_bot.build_dispatcher(mode_name=mode_name)
 
-    # Extension callbacks are intercepted explicitly before bots.common's
-    # generic handlers. No common module functions are replaced at runtime.
     dp.callback_query.outer_middleware(_CallbackRoutingMiddleware())
 
     register_search_handlers(
