@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 from core.models import AnimeRecord, PersonCredit
-from sources.resilient import AniListSourceProxy, RetryingSourceProxy
+from sources.resilient import (
+    AniListSourceProxy,
+    PeopleRetryingSourceProxy,
+    RetryingSourceProxy,
+    resilient_source,
+)
 
 
 class _FlakySource:
@@ -69,7 +74,7 @@ class ResilientSourceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_lazy_staff_delegates_to_source_and_is_retried(self) -> None:
         source = _FlakySource()
-        proxy = RetryingSourceProxy(source)
+        proxy = PeopleRetryingSourceProxy(source)
 
         with patch("sources.resilient.asyncio.sleep", new=AsyncMock()):
             people = await proxy.load_staff("48316", {"mal": "48316"})
@@ -77,17 +82,19 @@ class ResilientSourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(source.staff_calls, 2)
         self.assertEqual([person.name for person in people], ["Staff Person"])
 
-    async def test_missing_optional_people_loader_returns_empty_list(self) -> None:
+    def test_metadata_only_source_does_not_gain_people_capabilities(self) -> None:
         class _MetadataOnlySource:
             name = "MetadataOnly"
 
             async def get_details(self, mal_id: str, known_ids: dict[str, str]):
                 return None
 
-        proxy = RetryingSourceProxy(_MetadataOnlySource())
+        proxy = resilient_source(_MetadataOnlySource())
 
-        self.assertEqual(await proxy.load_staff("1", {"mal": "1"}), [])
-        self.assertEqual(await proxy.load_voices("1", {"mal": "1"}), [])
+        self.assertIsInstance(proxy, RetryingSourceProxy)
+        self.assertNotIsInstance(proxy, PeopleRetryingSourceProxy)
+        self.assertFalse(hasattr(proxy, "load_staff"))
+        self.assertFalse(hasattr(proxy, "load_voices"))
 
     async def test_anilist_lazy_people_recovers_missing_media_id(self) -> None:
         source = _AniListFake()
