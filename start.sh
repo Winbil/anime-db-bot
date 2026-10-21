@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$SCRIPT_DIR/.venv"
 LOG_DIR="${LOG_DIR:-$SCRIPT_DIR/logs}"
 LOG_FILE="$LOG_DIR/bot.log"
+BOT_MODULE="bots.telegram.bot"
 
 cd "$SCRIPT_DIR"
 
@@ -109,16 +110,8 @@ if [[ -z "$MAL_CLIENT_ID_VALUE" ]]; then
     info "Optional MAL setup: https://myanimelist.net/apiconfig"
 fi
 
-TG_API_URL_VALUE="$(sed -n 's/^[[:space:]]*TELEGRAM_BOT_API_URL[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
-
-if [[ -n "$TG_API_URL_VALUE" ]]; then
-    BOT_MODULE="bots.tgapi"
-    info "Selected Telegram transport: custom tg-bot-api."
-else
-    BOT_MODULE="bots.official"
-    info "Selected Telegram transport: official api.telegram.org."
-fi
-
+info "Telegram runtime: $BOT_MODULE"
+info "Telegram transport is selected inside bot.py from TELEGRAM_BOT_API_URL."
 info "Default search: Shikimori + MyAnimeList, merged by MAL ID."
 info "Selectable /search providers include MAL, Shikimori and AniList."
 info "Metadata sources: Shikimori + AniList + MyAnimeList."
