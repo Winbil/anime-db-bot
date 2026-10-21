@@ -6,8 +6,8 @@ from typing import Any
 import httpx
 
 from core.http_config import USER_AGENT
-from core.models import AnimeRecord
-from localization import localize_source_value
+from core.models import AnimeRecord, BroadcastSlot
+from localization import source_value_key
 
 DEFAULT_MAL_API_URL = "https://api.myanimelist.net/v2"
 
@@ -90,32 +90,20 @@ def _float(value: Any) -> float | None:
         return None
 
 
-def _season(value: dict[str, Any] | None) -> str | None:
+def _season(value: dict[str, Any] | None) -> tuple[str | None, int | None]:
     value = value or {}
-    season = _clean(value.get("season")).casefold()
+    raw = _clean(value.get("season")).casefold()
     year = _int(value.get("year"))
-    season_name = localize_source_value(
-        "mal",
-        "season",
-        season,
-        default=season.title() if season else "",
-    )
-    result = " ".join(part for part in (season_name, str(year) if year else "") if part)
-    return result or None
+    season = source_value_key("mal", "season", raw, default=raw or None)
+    return season, year
 
 
-def _broadcast(value: dict[str, Any] | None) -> list[str]:
+def _broadcast(value: dict[str, Any] | None) -> list[BroadcastSlot]:
     value = value or {}
-    day = _clean(value.get("day_of_the_week")).casefold()
-    time = _clean(value.get("start_time"))
-    day_name = localize_source_value(
-        "mal",
-        "weekday",
-        day,
-        default=day.title() if day else "",
-    )
-    text = " ".join(part for part in (day_name, time) if part)
-    return [text] if text else []
+    raw_day = _clean(value.get("day_of_the_week")).casefold()
+    start_time = _clean(value.get("start_time")) or None
+    weekday = source_value_key("mal", "weekday", raw_day, default=raw_day or None)
+    return [BroadcastSlot(weekday=weekday, time=start_time)] if weekday or start_time else []
 
 
 def _posters(raw: dict[str, Any]) -> list[str]:
@@ -213,11 +201,11 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
     )
 
     source_raw = _clean(raw.get("source")).casefold()
-    source_material = localize_source_value(
+    source_material = source_value_key(
         "mal",
         "source",
         source_raw,
-        default=source_raw.replace("_", " ").title() if source_raw else "",
+        default=source_raw or None,
     )
 
     genres = _dedupe(
@@ -239,6 +227,7 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
     background = _clean(raw.get("background"))
     media_type = _clean(raw.get("media_type")).casefold()
     rating_raw = _clean(raw.get("rating")).casefold()
+    season, season_year = _season(raw.get("start_season"))
 
     return AnimeRecord(
         source="MyAnimeList",
@@ -246,25 +235,11 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         titles=titles,
         synonyms=synonyms,
         external_ids={"mal": mal_id} if mal_id else {},
-        kind=localize_source_value(
-            "mal",
-            "media_type",
-            media_type,
-            default=media_type or None,
-        ),
-        status=localize_source_value(
-            "mal",
-            "status",
-            status_raw,
-            default=status_raw or None,
-        ),
-        rating=localize_source_value(
-            "mal",
-            "rating",
-            rating_raw,
-            default=rating_raw or None,
-        ),
-        season=_season(raw.get("start_season")),
+        kind=source_value_key("mal", "media_type", media_type, default=media_type or None),
+        status=source_value_key("mal", "status", status_raw, default=status_raw or None),
+        rating=source_value_key("mal", "rating", rating_raw, default=rating_raw or None),
+        season=season,
+        season_year=season_year,
         episodes_total=episodes_total,
         episodes_aired=episodes_aired,
         duration_minutes=duration_minutes,
