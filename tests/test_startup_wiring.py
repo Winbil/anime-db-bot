@@ -23,6 +23,7 @@ from core.canonicalization import (
     canonical_genre,
     canonical_role,
     is_primary_voice_role,
+    localize_role_token,
     person_identity_keys,
 )
 from core.contracts import AnimeSearchProvider, AnimeSource
@@ -60,7 +61,6 @@ class StartupWiringTests(unittest.TestCase):
         SearchService(providers)
         AnimeAggregator(sources)
 
-        # Keep imports exercised so accidental module/file removals fail CI.
         for imported in (
             InputRichMessage,
             AnimeSearchProvider,
@@ -152,7 +152,15 @@ class StartupWiringTests(unittest.TestCase):
         }])
 
         self.assertEqual(len(voices), 1)
-        self.assertEqual(voices[0].roles, ["Озвучка: Тестовый персонаж"])
+        self.assertEqual(voices[0].roles, ["voice_of::Test Character"])
+        self.assertEqual(
+            localize_role_token(voices[0].roles[0], locale="ru"),
+            "Озвучка: Test Character",
+        )
+        self.assertEqual(
+            localize_role_token(voices[0].roles[0], locale="en"),
+            "Voice: Test Character",
+        )
 
     def test_cross_source_portrait_merge(self) -> None:
         people = _merge_people([
