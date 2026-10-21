@@ -74,7 +74,7 @@ async def _retry_call(
 
 
 class RetryingSourceProxy:
-    """Retry transient source failures without reimplementing source logic."""
+    """Retry transient metadata failures without changing source capabilities."""
 
     def __init__(self, source: Any) -> None:
         self._source = source
@@ -90,6 +90,13 @@ class RetryingSourceProxy:
             "metadata",
             lambda: self._source.get_details(mal_id, known_ids),
         )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._source, name)
+
+
+class PeopleRetryingSourceProxy(RetryingSourceProxy):
+    """Retry optional lazy people operations exposed by the wrapped source."""
 
     async def load_staff(
         self,
@@ -119,11 +126,8 @@ class RetryingSourceProxy:
             lambda: loader(mal_id, known_ids),
         )
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._source, name)
 
-
-class AniListSourceProxy(RetryingSourceProxy):
+class AniListSourceProxy(PeopleRetryingSourceProxy):
     async def _ensure_media_id(
         self,
         mal_id: str,
@@ -165,4 +169,8 @@ class AniListSourceProxy(RetryingSourceProxy):
 def resilient_source(source: Any) -> RetryingSourceProxy:
     if source.name == "AniList":
         return AniListSourceProxy(source)
+    if callable(getattr(source, "load_staff", None)) or callable(
+        getattr(source, "load_voices", None)
+    ):
+        return PeopleRetryingSourceProxy(source)
     return RetryingSourceProxy(source)
