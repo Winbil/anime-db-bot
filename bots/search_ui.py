@@ -54,6 +54,7 @@ class SearchSession:
     query: str
     provider_keys: tuple[str, ...] = ()
     pages: dict[int, SearchPage] = field(default_factory=dict)
+    show_scope_label: bool = True
 
 
 SESSIONS: ExpiringSessionStore[SearchSession] = ExpiringSessionStore(
@@ -106,9 +107,18 @@ def _parse_scope(value: str) -> tuple[str, ...] | None:
     return _normalize_provider_keys(keys)
 
 
-def _remember(query: str, provider_keys: tuple[str, ...] = ()) -> str:
+def _remember(
+    query: str,
+    provider_keys: tuple[str, ...] = (),
+    *,
+    show_scope_label: bool = True,
+) -> str:
     token = secrets.token_urlsafe(6)
-    SESSIONS[token] = SearchSession(query=query, provider_keys=provider_keys)
+    SESSIONS[token] = SearchSession(
+        query=query,
+        provider_keys=provider_keys,
+        show_scope_label=show_scope_label,
+    )
     return token
 
 
@@ -187,14 +197,19 @@ def _results_keyboard(page: SearchPage, token: str) -> InlineKeyboardMarkup:
 
 
 def _result_text(session: SearchSession, page: SearchPage) -> str:
-    scope = _scope_label(session.provider_keys)
-    text = (
-        f"Поиск только через: {scope}\n"
-        f"Запрос: «{session.query}»\n\n"
-        "Выбери нужное аниме:"
-    )
+    if session.show_scope_label:
+        text = (
+            f"Поиск только через: {_scope_label(session.provider_keys)}\n"
+            f"Запрос: «{session.query}»\n\n"
+            "Выбери нужное аниме:"
+        )
+        unavailable_label = "Недоступны"
+    else:
+        text = f"Результаты поиска по запросу «{session.query}». Выбери нужное аниме:"
+        unavailable_label = "Недоступны поисковики"
+
     if page.errors:
-        text += "\n\nНедоступны: " + ", ".join(page.errors)
+        text += f"\n\n{unavailable_label}: " + ", ".join(page.errors)
     return text
 
 
@@ -227,13 +242,15 @@ async def _show_results(
         page = await _load_page(session, 1, default_service)
     except Exception as exc:
         logging.error(
-            "Explicit search failed (%s): %s: %s",
+            "Search failed (%s): %s: %s",
             _scope_label(session.provider_keys),
             type(exc).__name__,
             exc,
             exc_info=True,
         )
         text = "Не удалось выполнить поиск через выбранные поисковики."
+        if not session.show_scope_label:
+            text = "Не удалось выполнить поиск. Причина записана в лог."
         if edit:
             await message.edit_text(text)
         else:
@@ -242,9 +259,18 @@ async def _show_results(
 
     if not page.items:
         if page.errors:
-            text = "Ничего не найдено. Недоступны: " + ", ".join(page.errors)
+            prefix = (
+                "Ничего не найдено. Недоступны: "
+                if session.show_scope_label
+                else "Не удалось получить результаты. Недоступны поисковики: "
+            )
+            text = prefix + ", ".join(page.errors)
         else:
-            text = "Ничего не найдено через выбранные поисковики."
+            text = (
+                "Ничего не найдено через выбранные поисковики."
+                if session.show_scope_label
+                else "Ничего не найдено по этому запросу."
+            )
         if edit:
             await message.edit_text(text)
         else:
@@ -256,7 +282,7 @@ async def _show_results(
             try:
                 await message.edit_reply_markup(reply_markup=None)
             except Exception:
-                pass
+                logging.debug("Could not clear single-result search keyboard", exc_info=True)
         await aggregate_callback(message, page.items[0])
         return
 
@@ -274,7 +300,31 @@ def register_search_handlers(
     aggregate_callback: Callable[[Message, SearchCandidate], Awaitable[None]],
     default_service: SearchService,
 ) -> None:
-    """Register /search and its callbacks on an existing dispatcher."""
+    """Register both /anime and /search on one shared search flow."""
+
+    @dp.message(Command("anime"))
+    async def anime_handler(message: Message, command: CommandObject) -> None:
+        query = (command.args or "").strip()
+        if not query:
+            await message.answer(
+                "Использование: /anime <название>\n"
+                "Например: /anime о моем перерождении в слизь"
+            )
+            return
+
+        token = _remember(
+            query,
+            DEFAULT_SEARCH_PROVIDER_KEYS,
+            show_scope_label=False,
+        )
+        await _show_results(
+            message,
+            token,
+            SESSIONS[token],
+            default_service,
+            aggregate_callback,
+            edit=False,
+        )
 
     @dp.message(Command("search"))
     async def search_handler(message: Message, command: CommandObject) -> None:
@@ -297,11 +347,10 @@ def register_search_handlers(
         if parsed_scope is not None and separator and rest.strip():
             query = rest.strip()
             token = _remember(query, parsed_scope)
-            session = SESSIONS[token]
             await _show_results(
                 message,
                 token,
-                session,
+                SESSIONS[token],
                 default_service,
                 aggregate_callback,
                 edit=False,
@@ -332,7 +381,6 @@ def register_search_handlers(
             await callback.answer()
             return
 
-        SESSIONS.refresh(token)
         session.provider_keys = _normalize_provider_keys(provider_keys)
         session.pages.clear()
         await callback.answer()
@@ -346,7 +394,7 @@ def register_search_handlers(
         )
 
     @dp.callback_query(F.data.startswith("xp:"))
-    async def explicit_search_page_callback(callback: CallbackQuery) -> None:
+    async def search_page_callback(callback: CallbackQuery) -> None:
         data = (callback.data or "").split(":")
         if len(data) != 3 or not data[2].isdigit():
             await callback.answer("Некорректная страница.", show_alert=True)
@@ -361,11 +409,10 @@ def register_search_handlers(
             await callback.answer()
             return
 
-        SESSIONS.refresh(token)
         try:
             page = await _load_page(session, int(page_text), default_service)
         except Exception:
-            logging.exception("Explicit search page failed")
+            logging.exception("Search page failed")
             await callback.answer("Не удалось загрузить страницу.", show_alert=True)
             return
 
@@ -380,7 +427,7 @@ def register_search_handlers(
         )
 
     @dp.callback_query(F.data.startswith("xk:"))
-    async def explicit_search_pick_callback(callback: CallbackQuery) -> None:
+    async def search_pick_callback(callback: CallbackQuery) -> None:
         data = (callback.data or "").split(":")
         if len(data) != 4 or not data[2].isdigit() or not data[3].isdigit():
             await callback.answer("Некорректный результат.", show_alert=True)
@@ -395,11 +442,10 @@ def register_search_handlers(
             await callback.answer()
             return
 
-        SESSIONS.refresh(token)
         try:
             page = await _load_page(session, int(page_text), default_service)
         except Exception:
-            logging.exception("Could not reload explicit search page")
+            logging.exception("Could not reload search page")
             await callback.answer("Не удалось получить результат.", show_alert=True)
             return
 
@@ -413,5 +459,5 @@ def register_search_handlers(
         try:
             await callback.message.edit_reply_markup(reply_markup=None)
         except Exception:
-            logging.debug("Could not remove explicit search keyboard", exc_info=True)
+            logging.debug("Could not remove search keyboard", exc_info=True)
         await aggregate_callback(callback.message, candidate)
