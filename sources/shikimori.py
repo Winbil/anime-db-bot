@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from core.canonicalization import is_primary_voice_role, normalize_key
+from core.http_config import USER_AGENT
 from core.models import AnimeRecord, PersonCredit
 
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
@@ -231,7 +232,7 @@ def _is_any_voice_role(value: str) -> bool:
 
 async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
     headers = {
-        "User-Agent": "anime-db-bot/1.1 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": USER_AGENT,
         "Accept": "application/json",
     }
 
@@ -440,7 +441,4 @@ class ShikimoriSource:
         if str(raw.get("malId") or "") != mal_id:
             return None
 
-        # The extended Shikimori source loads character-backed seiyuu only when
-        # the user opens the seiyuu section. Do not perform people enrichment
-        # during the fast metadata path.
         return _record(raw)
