@@ -4,12 +4,15 @@ import re
 import unicodedata
 from functools import lru_cache
 
-from localization.catalog import DEFAULT_LOCALE, aliases, text
+from localization.catalog import DEFAULT_LOCALE, aliases, normalize_locale, text
 
 
 CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
+LATIN_RE = re.compile(r"[A-Za-z]")
+JAPANESE_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]")
 WORD_RE = re.compile(r"[^a-zа-яё0-9]+", re.IGNORECASE)
 TRAILING_DETAILS_RE = re.compile(r"^(.*?)(\s*\([^)]*\))$")
+VOICE_OF_PREFIX = "voice_of::"
 
 
 LOCALIZATION_ROLE_MARKERS = (
@@ -52,10 +55,6 @@ def clean_text(value: str) -> str:
 def normalize_key(value: str) -> str:
     value = clean_text(value).casefold().replace("ё", "е")
 
-    # NFKD is useful for accent-insensitive Latin matching, but Cyrillic "й"
-    # decomposes into "и" + COMBINING BREVE. Dropping all combining marks would
-    # therefore silently turn "й" into "и" (for example "сэйю" -> "сэию").
-    # Preserve "й" explicitly while still stripping Latin diacritics.
     normalized_parts: list[str] = []
     for char in value:
         if char == "й":
@@ -81,6 +80,11 @@ def _normalized_aliases(section: str) -> dict[str, str]:
     }
 
 
+@lru_cache(maxsize=None)
+def _canonical_values(section: str) -> frozenset[str]:
+    return frozenset(_normalized_aliases(section).values())
+
+
 def transliterate_ru(value: str) -> str:
     result: list[str] = []
     for char in clean_text(value).casefold():
@@ -96,7 +100,20 @@ def canonical_genre_key(value: str) -> str | None:
     cleaned = clean_text(value)
     if not cleaned:
         return None
-    return _normalized_aliases("genres").get(normalize_key(cleaned))
+    normalized = normalize_key(cleaned)
+    direct = _normalized_aliases("genres").get(normalized)
+    if direct:
+        return direct
+    if cleaned in _canonical_values("genres"):
+        return cleaned
+    return None
+
+
+def canonical_genre_token(value: str) -> str:
+    cleaned = clean_text(value)
+    if not cleaned:
+        return ""
+    return canonical_genre_key(cleaned) or cleaned
 
 
 def canonical_genre(value: str, *, locale: str = DEFAULT_LOCALE) -> str:
@@ -121,7 +138,44 @@ def canonical_role_key(value: str) -> str | None:
     base, _ = _role_base_and_suffix(value)
     if not base:
         return None
-    return _normalized_aliases("roles").get(normalize_key(base))
+    normalized = normalize_key(base)
+    direct = _normalized_aliases("roles").get(normalized)
+    if direct:
+        return direct
+    if base in _canonical_values("roles"):
+        return base
+    return None
+
+
+def canonical_role_token(value: str) -> str:
+    cleaned = clean_text(value)
+    if not cleaned:
+        return ""
+    if cleaned.startswith(VOICE_OF_PREFIX):
+        return cleaned
+    base, suffix = _role_base_and_suffix(cleaned)
+    key = canonical_role_key(base)
+    return f"{key}{suffix}" if key else cleaned
+
+
+def voice_role_token(character_name: str | None = None) -> str:
+    character = clean_text(character_name or "")
+    return f"{VOICE_OF_PREFIX}{character}" if character else "voice_actor"
+
+
+def localize_role_token(value: str, *, locale: str = DEFAULT_LOCALE) -> str:
+    cleaned = clean_text(value)
+    if not cleaned:
+        return ""
+    if cleaned.startswith(VOICE_OF_PREFIX):
+        character = cleaned.removeprefix(VOICE_OF_PREFIX)
+        return text("common", "voice_of", locale=locale, name=character)
+
+    base, suffix = _role_base_and_suffix(cleaned)
+    if base in _canonical_values("roles"):
+        translated = text("roles", base, locale=locale, default=base)
+        return f"{translated}{suffix}"
+    return canonical_role(cleaned, locale=locale)
 
 
 def canonical_role(value: str, *, locale: str = DEFAULT_LOCALE) -> str:
@@ -138,8 +192,6 @@ def canonical_role(value: str, *, locale: str = DEFAULT_LOCALE) -> str:
 
 
 def studio_identity_key(value: str) -> str:
-    # Studio names frequently differ only by punctuation: 8bit / 8-bit,
-    # A-1 Pictures / A1 Pictures, etc.
     return normalize_key(value).replace(" ", "")
 
 
@@ -173,17 +225,10 @@ def is_localization_role(value: str) -> bool:
         return False
     if any(marker in normalized for marker in LOCALIZATION_ROLE_MARKERS):
         return True
-    # AniList often annotates localization credits with the language in the
-    # role text, e.g. "ADR Director (English)".
     return any(marker in normalized for marker in LOCALIZATION_LANGUAGE_MARKERS)
 
 
 def is_primary_voice_role(value: str) -> bool:
-    """Return True only for original/Japanese voice acting roles.
-
-    Shikimori distinguishes foreign dubs as "Сэйю (EN)", "Сэйю (DE)", etc.
-    Those should not be mixed into the main seiyuu list.
-    """
     base, suffix = _role_base_and_suffix(value)
     if suffix:
         return False
@@ -214,6 +259,7 @@ def person_identity_keys(names: list[str]) -> set[str]:
 
 
 def preferred_person_name(names: list[str], *, locale: str = DEFAULT_LOCALE) -> str:
+    locale = normalize_locale(locale)
     unique: list[str] = []
     seen: set[str] = set()
     for value in names:
@@ -226,14 +272,62 @@ def preferred_person_name(names: list[str], *, locale: str = DEFAULT_LOCALE) -> 
     if not unique:
         return text("common", "unknown", locale=locale, default="Unknown")
 
-    # Prefer a clean Russian display name over an old combined Shikimori string
-    # like "Ёхэй Ито (Youhei Itou, 伊藤 洋平)".
     cyrillic = [value for value in unique if contains_cyrillic(value)]
-    if cyrillic:
-        return min(cyrillic, key=lambda value: (len(value), value.casefold()))
+    latin = [
+        value
+        for value in unique
+        if LATIN_RE.search(value) and not CYRILLIC_RE.search(value) and not JAPANESE_RE.search(value)
+    ]
 
-    ascii_names = [value for value in unique if value.isascii()]
-    if ascii_names:
-        return min(ascii_names, key=lambda value: (len(value), value.casefold()))
+    preferred_groups = (latin, cyrillic) if locale == "en" else (cyrillic, latin)
+    for group in preferred_groups:
+        if group:
+            return min(group, key=lambda value: (len(value), value.casefold()))
 
     return min(unique, key=lambda value: (len(value), value.casefold()))
+
+
+def display_person_name(
+    name: str,
+    aliases_values: list[str],
+    *,
+    locale: str = DEFAULT_LOCALE,
+) -> str:
+    locale = normalize_locale(locale)
+    names = [name, *aliases_values]
+    primary = preferred_person_name(names, locale=locale)
+    if not primary:
+        return text("common", "unknown", locale=locale, default="Unknown")
+
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in names:
+        cleaned = clean_text(value)
+        key = normalize_key(cleaned)
+        if cleaned and key and key not in seen:
+            seen.add(key)
+            unique.append(cleaned)
+
+    extras: list[str] = []
+    japanese = next(
+        (value for value in unique if normalize_key(value) != normalize_key(primary) and JAPANESE_RE.search(value)),
+        None,
+    )
+    latin = next(
+        (
+            value
+            for value in unique
+            if normalize_key(value) != normalize_key(primary)
+            and LATIN_RE.search(value)
+            and not CYRILLIC_RE.search(value)
+            and not JAPANESE_RE.search(value)
+        ),
+        None,
+    )
+
+    if locale == "ru" and CYRILLIC_RE.search(primary) and latin:
+        extras.append(latin)
+    if japanese:
+        extras.append(japanese)
+
+    return f"{primary} ({', '.join(extras)})" if extras else primary
