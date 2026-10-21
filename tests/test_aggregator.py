@@ -1,9 +1,30 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import AsyncMock, patch
 
-from core.models import AggregatedAnime, PersonCredit
+from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate
 from services.aggregator import AnimeAggregator, _merge_people
+
+
+class FakeSource:
+    name = "Fake"
+
+    def __init__(self) -> None:
+        self.known_ids: dict[str, str] | None = None
+
+    async def get_details(
+        self,
+        mal_id: str,
+        known_ids: dict[str, str],
+    ) -> AnimeRecord | None:
+        self.known_ids = dict(known_ids)
+        return AnimeRecord(
+            source=self.name,
+            source_id="fake",
+            titles={"english": "Test"},
+            external_ids={"mal": mal_id},
+        )
 
 
 class AggregatorPeopleTests(unittest.TestCase):
@@ -72,6 +93,30 @@ class AggregatorPeopleTests(unittest.TestCase):
             anime.voices[0].external_ids,
             {"shikimori": "321", "anilist": "123"},
         )
+
+
+class AggregatorCrossIdTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_shikimori_id_is_resolved_before_sources_run(self) -> None:
+        source = FakeSource()
+        aggregator = AnimeAggregator((source,))
+        candidate = SearchCandidate(
+            title="Test",
+            aliases=["テスト"],
+            external_ids={"mal": "123"},
+        )
+
+        with patch(
+            "services.aggregator.resolve_shikimori_id",
+            new=AsyncMock(return_value="456"),
+        ) as resolver:
+            anime = await aggregator.aggregate(candidate)
+
+        resolver.assert_awaited_once_with("123", ["Test", "テスト"])
+        self.assertIsNotNone(source.known_ids)
+        assert source.known_ids is not None
+        self.assertEqual(source.known_ids["shikimori"], "456")
+        self.assertEqual(candidate.external_ids["shikimori"], "456")
+        self.assertEqual(anime.external_ids["shikimori"], "456")
 
 
 if __name__ == "__main__":
