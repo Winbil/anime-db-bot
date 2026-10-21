@@ -12,8 +12,10 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from bots.session_store import ExpiringSessionStore
 from core.models import SearchCandidate, SearchPage
+from localization import text
 from search.registry import DEFAULT_SEARCH_PROVIDER_KEYS, get_search_provider_map
 from services.search import SearchService
+from services.user_settings import get_user_locale
 
 SEARCH_PAGE_SIZE = 10
 MAX_SEARCH_SESSIONS = 200
@@ -52,6 +54,7 @@ SCOPE_CALLBACKS = {
 @dataclass(slots=True)
 class SearchSession:
     query: str
+    owner_user_id: int = 0
     provider_keys: tuple[str, ...] = ()
     pages: dict[int, SearchPage] = field(default_factory=dict)
     show_scope_label: bool = True
@@ -109,6 +112,7 @@ def _parse_scope(value: str) -> tuple[str, ...] | None:
 
 def _remember(
     query: str,
+    owner_user_id: int,
     provider_keys: tuple[str, ...] = (),
     *,
     show_scope_label: bool = True,
@@ -116,18 +120,19 @@ def _remember(
     token = secrets.token_urlsafe(6)
     SESSIONS[token] = SearchSession(
         query=query,
+        owner_user_id=int(owner_user_id),
         provider_keys=provider_keys,
         show_scope_label=show_scope_label,
     )
     return token
 
 
-def _scope_keyboard(token: str) -> InlineKeyboardMarkup:
+def _scope_keyboard(token: str, locale: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Основной: Shikimori + MAL",
+                    text=text("search", "default_scope", locale=locale),
                     callback_data=f"xs:{token}:default",
                 )
             ],
@@ -144,7 +149,7 @@ def _scope_keyboard(token: str) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="Все поисковики",
+                    text=text("search", "all_scope", locale=locale),
                     callback_data=f"xs:{token}:all",
                 )
             ],
@@ -153,14 +158,14 @@ def _scope_keyboard(token: str) -> InlineKeyboardMarkup:
 
 
 def _candidate_button_text(candidate: SearchCandidate) -> str:
-    text = f"{candidate.title} ({candidate.year})" if candidate.year else candidate.title
+    value = f"{candidate.title} ({candidate.year})" if candidate.year else candidate.title
     mal_id = candidate.external_ids.get("mal")
     if mal_id:
-        text += f" · MAL {mal_id}"
-    return text if len(text) <= 64 else text[:61] + "..."
+        value += f" · MAL {mal_id}"
+    return value if len(value) <= 64 else value[:61] + "..."
 
 
-def _results_keyboard(page: SearchPage, token: str) -> InlineKeyboardMarkup:
+def _results_keyboard(page: SearchPage, token: str, locale: str) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
@@ -181,7 +186,7 @@ def _results_keyboard(page: SearchPage, token: str) -> InlineKeyboardMarkup:
         )
     nav.append(
         InlineKeyboardButton(
-            text=f"Стр. {page.page}",
+            text=text("search", "page", locale=locale, page=page.page),
             callback_data="noop",
         )
     )
@@ -196,21 +201,23 @@ def _results_keyboard(page: SearchPage, token: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _result_text(session: SearchSession, page: SearchPage) -> str:
+def _result_text(session: SearchSession, page: SearchPage, locale: str = "ru") -> str:
     if session.show_scope_label:
-        text = (
-            f"Поиск только через: {_scope_label(session.provider_keys)}\n"
-            f"Запрос: «{session.query}»\n\n"
-            "Выбери нужное аниме:"
+        value = text(
+            "search",
+            "scoped_results",
+            locale=locale,
+            scope=_scope_label(session.provider_keys),
+            query=session.query,
         )
-        unavailable_label = "Недоступны"
+        unavailable_label = text("search", "unavailable", locale=locale)
     else:
-        text = f"Результаты поиска по запросу «{session.query}». Выбери нужное аниме:"
-        unavailable_label = "Недоступны поисковики"
+        value = text("search", "results", locale=locale, query=session.query)
+        unavailable_label = text("search", "unavailable_providers", locale=locale)
 
     if page.errors:
-        text += f"\n\n{unavailable_label}: " + ", ".join(page.errors)
-    return text
+        value += f"\n\n{unavailable_label}: " + ", ".join(page.errors)
+    return value
 
 
 async def _load_page(
@@ -234,10 +241,11 @@ async def _show_results(
     token: str,
     session: SearchSession,
     default_service: SearchService,
-    aggregate_callback: Callable[[Message, SearchCandidate], Awaitable[None]],
+    aggregate_callback: Callable[[Message, SearchCandidate, int], Awaitable[None]],
     *,
     edit: bool,
 ) -> None:
+    locale = get_user_locale(session.owner_user_id)
     try:
         page = await _load_page(session, 1, default_service)
     except Exception as exc:
@@ -248,33 +256,36 @@ async def _show_results(
             exc,
             exc_info=True,
         )
-        text = "Не удалось выполнить поиск через выбранные поисковики."
-        if not session.show_scope_label:
-            text = "Не удалось выполнить поиск. Причина записана в лог."
+        value = text(
+            "search",
+            "failed_scoped" if session.show_scope_label else "failed",
+            locale=locale,
+        )
         if edit:
-            await message.edit_text(text)
+            await message.edit_text(value)
         else:
-            await message.answer(text)
+            await message.answer(value)
         return
 
     if not page.items:
         if page.errors:
-            prefix = (
-                "Ничего не найдено. Недоступны: "
-                if session.show_scope_label
-                else "Не удалось получить результаты. Недоступны поисковики: "
+            key = "nothing_unavailable" if session.show_scope_label else "no_results_unavailable"
+            value = text(
+                "search",
+                key,
+                locale=locale,
+                sources=", ".join(page.errors),
             )
-            text = prefix + ", ".join(page.errors)
         else:
-            text = (
-                "Ничего не найдено через выбранные поисковики."
-                if session.show_scope_label
-                else "Ничего не найдено по этому запросу."
+            value = text(
+                "search",
+                "nothing_scoped" if session.show_scope_label else "nothing",
+                locale=locale,
             )
         if edit:
-            await message.edit_text(text)
+            await message.edit_text(value)
         else:
-            await message.answer(text)
+            await message.answer(value)
         return
 
     if len(page.items) == 1 and not page.has_next:
@@ -283,37 +294,37 @@ async def _show_results(
                 await message.edit_reply_markup(reply_markup=None)
             except Exception:
                 logging.debug("Could not clear single-result search keyboard", exc_info=True)
-        await aggregate_callback(message, page.items[0])
+        await aggregate_callback(message, page.items[0], session.owner_user_id)
         return
 
-    text = _result_text(session, page)
-    keyboard = _results_keyboard(page, token)
+    value = _result_text(session, page, locale)
+    keyboard = _results_keyboard(page, token, locale)
     if edit:
-        await message.edit_text(text, reply_markup=keyboard)
+        await message.edit_text(value, reply_markup=keyboard)
     else:
-        await message.answer(text, reply_markup=keyboard)
+        await message.answer(value, reply_markup=keyboard)
 
 
 def register_search_handlers(
     dp: Dispatcher,
     *,
-    aggregate_callback: Callable[[Message, SearchCandidate], Awaitable[None]],
+    aggregate_callback: Callable[[Message, SearchCandidate, int], Awaitable[None]],
     default_service: SearchService,
 ) -> None:
-    """Register both /anime and /search on one shared search flow."""
+    """Register both /anime and legacy /search on one shared search flow."""
 
     @dp.message(Command("anime"))
     async def anime_handler(message: Message, command: CommandObject) -> None:
+        user_id = message.from_user.id if message.from_user else 0
+        locale = get_user_locale(user_id)
         query = (command.args or "").strip()
         if not query:
-            await message.answer(
-                "Использование: /anime <название>\n"
-                "Например: /anime о моем перерождении в слизь"
-            )
+            await message.answer(text("search", "anime_usage", locale=locale))
             return
 
         token = _remember(
             query,
+            user_id,
             DEFAULT_SEARCH_PROVIDER_KEYS,
             show_scope_label=False,
         )
@@ -328,17 +339,11 @@ def register_search_handlers(
 
     @dp.message(Command("search"))
     async def search_handler(message: Message, command: CommandObject) -> None:
+        user_id = message.from_user.id if message.from_user else 0
+        locale = get_user_locale(user_id)
         args = (command.args or "").strip()
         if not args:
-            await message.answer(
-                "Использование:\n"
-                "/search <название> — выбрать поисковик кнопкой\n"
-                "/search mal <название>\n"
-                "/search shikimori <название>\n"
-                "/search anilist <название>\n"
-                "/search all <название>\n"
-                "/search mal,shikimori <название>"
-            )
+            await message.answer(text("search", "search_usage", locale=locale))
             return
 
         first, separator, rest = args.partition(" ")
@@ -346,7 +351,7 @@ def register_search_handlers(
 
         if parsed_scope is not None and separator and rest.strip():
             query = rest.strip()
-            token = _remember(query, parsed_scope)
+            token = _remember(query, user_id, parsed_scope)
             await _show_results(
                 message,
                 token,
@@ -358,24 +363,28 @@ def register_search_handlers(
             return
 
         query = args
-        token = _remember(query)
+        token = _remember(query, user_id)
         await message.answer(
-            f"Где искать «{query}»?",
-            reply_markup=_scope_keyboard(token),
+            text("search", "where", locale=locale, query=query),
+            reply_markup=_scope_keyboard(token, locale),
         )
 
     @dp.callback_query(F.data.startswith("xs:"))
     async def search_scope_callback(callback: CallbackQuery) -> None:
+        locale = get_user_locale(callback.from_user.id)
         data = (callback.data or "").split(":")
         if len(data) != 3:
-            await callback.answer("Некорректный поисковик.", show_alert=True)
+            await callback.answer(text("search", "invalid_provider", locale=locale), show_alert=True)
             return
 
         _, token, scope_name = data
         session = SESSIONS.get(token)
         provider_keys = SCOPE_CALLBACKS.get(scope_name)
         if session is None or provider_keys is None:
-            await callback.answer("Этот поиск устарел.", show_alert=True)
+            await callback.answer(text("search", "expired", locale=locale), show_alert=True)
+            return
+        if session.owner_user_id != callback.from_user.id:
+            await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
             return
         if callback.message is None:
             await callback.answer()
@@ -395,15 +404,19 @@ def register_search_handlers(
 
     @dp.callback_query(F.data.startswith("xp:"))
     async def search_page_callback(callback: CallbackQuery) -> None:
+        locale = get_user_locale(callback.from_user.id)
         data = (callback.data or "").split(":")
         if len(data) != 3 or not data[2].isdigit():
-            await callback.answer("Некорректная страница.", show_alert=True)
+            await callback.answer(text("search", "invalid_page", locale=locale), show_alert=True)
             return
 
         _, token, page_text = data
         session = SESSIONS.get(token)
         if session is None or not session.provider_keys:
-            await callback.answer("Этот поиск устарел.", show_alert=True)
+            await callback.answer(text("search", "expired", locale=locale), show_alert=True)
+            return
+        if session.owner_user_id != callback.from_user.id:
+            await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
             return
         if callback.message is None:
             await callback.answer()
@@ -413,30 +426,34 @@ def register_search_handlers(
             page = await _load_page(session, int(page_text), default_service)
         except Exception:
             logging.exception("Search page failed")
-            await callback.answer("Не удалось загрузить страницу.", show_alert=True)
+            await callback.answer(text("search", "load_page_failed", locale=locale), show_alert=True)
             return
 
         if not page.items:
-            await callback.answer("Больше результатов нет.", show_alert=True)
+            await callback.answer(text("search", "no_more", locale=locale), show_alert=True)
             return
 
         await callback.answer()
         await callback.message.edit_text(
-            _result_text(session, page),
-            reply_markup=_results_keyboard(page, token),
+            _result_text(session, page, locale),
+            reply_markup=_results_keyboard(page, token, locale),
         )
 
     @dp.callback_query(F.data.startswith("xk:"))
     async def search_pick_callback(callback: CallbackQuery) -> None:
+        locale = get_user_locale(callback.from_user.id)
         data = (callback.data or "").split(":")
         if len(data) != 4 or not data[2].isdigit() or not data[3].isdigit():
-            await callback.answer("Некорректный результат.", show_alert=True)
+            await callback.answer(text("search", "invalid_result", locale=locale), show_alert=True)
             return
 
         _, token, page_text, index_text = data
         session = SESSIONS.get(token)
         if session is None or not session.provider_keys:
-            await callback.answer("Этот поиск устарел.", show_alert=True)
+            await callback.answer(text("search", "expired", locale=locale), show_alert=True)
+            return
+        if session.owner_user_id != callback.from_user.id:
+            await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
             return
         if callback.message is None:
             await callback.answer()
@@ -446,12 +463,12 @@ def register_search_handlers(
             page = await _load_page(session, int(page_text), default_service)
         except Exception:
             logging.exception("Could not reload search page")
-            await callback.answer("Не удалось получить результат.", show_alert=True)
+            await callback.answer(text("search", "get_result_failed", locale=locale), show_alert=True)
             return
 
         index = int(index_text)
         if index < 0 or index >= len(page.items):
-            await callback.answer("Результат больше недоступен.", show_alert=True)
+            await callback.answer(text("search", "result_unavailable", locale=locale), show_alert=True)
             return
 
         candidate = page.items[index]
@@ -460,4 +477,4 @@ def register_search_handlers(
             await callback.message.edit_reply_markup(reply_markup=None)
         except Exception:
             logging.debug("Could not remove search keyboard", exc_info=True)
-        await aggregate_callback(callback.message, candidate)
+        await aggregate_callback(callback.message, candidate, session.owner_user_id)
