@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 
+from core.http_config import USER_AGENT
 from core.models import AnimeRecord
 
 DEFAULT_MAL_API_URL = "https://api.myanimelist.net/v2"
@@ -172,7 +173,6 @@ def _posters(raw: dict[str, Any]) -> list[str]:
 
     def add_picture(picture: dict[str, Any] | None) -> None:
         picture = picture or {}
-        # large/medium are sizes of the same artwork, not separate posters.
         value = _clean(picture.get("large")) or _clean(picture.get("medium"))
         if value:
             urls.append(value)
@@ -187,7 +187,7 @@ def _posters(raw: dict[str, Any]) -> list[str]:
 async def _get_raw(mal_id: str) -> dict[str, Any] | None:
     headers = {
         "Accept": "application/json",
-        "User-Agent": "anime-db-bot/0.8 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": USER_AGENT,
         "X-MAL-CLIENT-ID": client_id(),
     }
 
