@@ -124,6 +124,30 @@ def _display_person_name(person: PersonCredit) -> str:
     return f"{primary} ({', '.join(extras)})" if extras else primary
 
 
+def _external_ids_match(
+    left: dict[str, str],
+    right: dict[str, str],
+) -> bool:
+    for source in set(left) & set(right):
+        left_value = _clean(str(left.get(source) or ""))
+        right_value = _clean(str(right.get(source) or ""))
+        if left_value and right_value and left_value == right_value:
+            return True
+    return False
+
+
+def _external_ids_conflict(
+    left: dict[str, str],
+    right: dict[str, str],
+) -> bool:
+    for source in set(left) & set(right):
+        left_value = _clean(str(left.get(source) or ""))
+        right_value = _clean(str(right.get(source) or ""))
+        if left_value and right_value and left_value != right_value:
+            return True
+    return False
+
+
 def _merge_people(
     groups: list[list[PersonCredit]],
     *,
@@ -134,26 +158,32 @@ def _merge_people(
 
     for group in groups:
         for person in group:
+            # A credit that is explicitly tied to dubbing/localization should
+            # not leak into original-production staff even if the same source
+            # attaches another generic role to that row.
+            if drop_localization_roles and any(
+                is_localization_role(role) for role in person.roles if role
+            ):
+                continue
+
             names = _person_names(person)
-            raw_roles = [
-                role
-                for role in person.roles
-                if role and not (drop_localization_roles and is_localization_role(role))
-            ]
+            raw_roles = [role for role in person.roles if role]
             roles = _dedupe_strings(
                 [canonical_role(role) for role in raw_roles if canonical_role(role)]
             )
 
-            if drop_localization_roles and person.roles and not roles:
-                continue
-
             keys = person_identity_keys(names)
             match_index: int | None = None
-            if keys:
-                for index, existing_keys in enumerate(identity_sets):
-                    if keys & existing_keys:
-                        match_index = index
-                        break
+
+            for index, existing in enumerate(merged):
+                if _external_ids_match(existing.external_ids, person.external_ids):
+                    match_index = index
+                    break
+                if _external_ids_conflict(existing.external_ids, person.external_ids):
+                    continue
+                if keys and keys & identity_sets[index]:
+                    match_index = index
+                    break
 
             if match_index is None:
                 preferred = preferred_person_name(names)
@@ -222,10 +252,11 @@ def _consensus_text(records: list[AnimeRecord], field_name: str) -> str | None:
     if not values:
         return None
 
-    counts = Counter(value.casefold() for value in values)
+    keys = [normalize_key(value) or value.casefold() for value in values]
+    counts = Counter(keys)
     best_count = max(counts.values())
-    for value in values:
-        if counts[value.casefold()] == best_count:
+    for value, key in zip(values, keys):
+        if counts[key] == best_count:
             return value
     return values[0]
 
@@ -306,6 +337,58 @@ class AnimeAggregator:
 
     def __init__(self, sources: tuple[AnimeSource, ...] | list[AnimeSource]) -> None:
         self._sources = tuple(sources)
+
+    def merge_people_source(
+        self,
+        anime: AggregatedAnime,
+        *,
+        source_name: str,
+        people: list[PersonCredit],
+        section: str,
+    ) -> None:
+        """Replace one source's people bucket and rebuild the merged view.
+
+        This is used by on-demand enrichments such as Shikimori seiyuu so the
+        expensive source can be loaded after the main anime card is already on
+        screen without re-fetching every metadata provider.
+        """
+        if section == "staff":
+            mapping = anime.staff_by_source
+            drop_localization_roles = True
+        elif section == "voices":
+            mapping = anime.voices_by_source
+            drop_localization_roles = False
+        else:
+            raise ValueError(f"Unsupported people section: {section}")
+
+        normalized = _merge_people(
+            [people],
+            drop_localization_roles=drop_localization_roles,
+        )
+        if normalized:
+            mapping[source_name] = normalized
+        else:
+            mapping.pop(source_name, None)
+
+        ordered_groups = [
+            mapping[source]
+            for source in anime.sources
+            if source in mapping
+        ]
+        ordered_groups.extend(
+            people_group
+            for source, people_group in mapping.items()
+            if source not in anime.sources
+        )
+        merged = _merge_people(
+            ordered_groups,
+            drop_localization_roles=drop_localization_roles,
+        )
+
+        if section == "staff":
+            anime.staff = merged
+        else:
+            anime.voices = merged
 
     async def aggregate(self, candidate: SearchCandidate) -> AggregatedAnime:
         mal_id = str(candidate.external_ids.get("mal") or "").strip()
