@@ -23,10 +23,12 @@ command -v tmux >/dev/null 2>&1 || fail "tmux is not installed. Install it first
 
 required_files=(
     "requirements.txt"
+    "requirements.lock"
     "bots/common.py"
     "bots/people_portraits.py"
     "bots/runner.py"
     "bots/search_ui.py"
+    "bots/session_store.py"
     "bots/official.py"
     "bots/tgapi.py"
     "core/models.py"
@@ -49,6 +51,7 @@ required_files=(
     "tests/test_aggregator.py"
     "tests/test_shikimori_people.py"
     "tests/test_anilist_lazy.py"
+    "tests/test_session_store.py"
 )
 for required_file in "${required_files[@]}"; do
     [[ -f "$SCRIPT_DIR/$required_file" ]] || fail "$required_file not found."
@@ -112,8 +115,8 @@ fi
 info "Using Python: $($PYTHON --version 2>&1)"
 info "Using pip: $($PYTHON -m pip --version)"
 
-info "Checking and installing Python dependencies..."
-"$PYTHON" -m pip install --disable-pip-version-check -r "$SCRIPT_DIR/requirements.txt"
+info "Checking and installing locked Python dependencies..."
+"$PYTHON" -m pip install --disable-pip-version-check -r "$SCRIPT_DIR/requirements.lock"
 
 info "Checking dependency consistency..."
 "$PYTHON" -m pip check
