@@ -23,16 +23,24 @@ class SearchPage:
     errors: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class BroadcastSlot:
+    """Locale-neutral broadcast schedule entry."""
+
+    weekday: str | None = None
+    time: str | None = None
+
+
 @dataclass(slots=True)
 class PersonCredit:
     """One person participating in an anime.
 
-    ``name`` is the preferred display value. ``aliases`` keeps alternate
-    spellings/languages so the aggregator can identify the same person across
-    Russian and international databases. ``external_ids`` keeps source-local
-    person IDs. ``portraits`` keeps source-keyed image URLs so the merged UI can
-    show every available portrait or one database at a time without losing
-    provenance.
+    ``name`` and ``aliases`` contain raw name variants. They are not a finished
+    presentation string; platform renderers choose the preferred variant for the
+    current interface locale. ``roles`` stores canonical role keys when known,
+    while unknown upstream roles remain as raw strings. Dynamic voice credits use
+    the internal ``voice_of::<character>`` token. ``external_ids`` keeps
+    source-local person IDs and ``portraits`` keeps source-keyed image URLs.
     """
 
     name: str
@@ -44,11 +52,11 @@ class PersonCredit:
 
 @dataclass(slots=True)
 class AnimeRecord:
-    """Normalized metadata returned by one source for a selected anime.
+    """Normalized locale-neutral metadata returned by one source.
 
-    Source adapters should map their own field names into these semantic fields.
-    The aggregator then merges equivalent fields across every source instead of
-    exposing source-specific metadata buckets to the Telegram UI.
+    Source adapters map external enum values to canonical keys. Translation is a
+    platform/UI responsibility and must not happen inside adapters or aggregation.
+    Unknown upstream values are preserved as raw strings for forward compatibility.
     """
 
     source: str
@@ -61,6 +69,7 @@ class AnimeRecord:
     status: str | None = None
     rating: str | None = None
     season: str | None = None
+    season_year: int | None = None
     franchise: str | None = None
 
     episodes_total: int | None = None
@@ -81,7 +90,7 @@ class AnimeRecord:
     studios: list[str] = field(default_factory=list)
     licensors: list[str] = field(default_factory=list)
     source_materials: list[str] = field(default_factory=list)
-    broadcasts: list[str] = field(default_factory=list)
+    broadcasts: list[BroadcastSlot] = field(default_factory=list)
 
     descriptions: dict[str, str] = field(default_factory=dict)
     backgrounds: list[str] = field(default_factory=list)
@@ -93,7 +102,7 @@ class AnimeRecord:
 
 @dataclass(slots=True)
 class AggregatedAnime:
-    """One source-independent anime card assembled from all available records."""
+    """One source-independent locale-neutral anime card."""
 
     title: str
     titles: dict[str, str] = field(default_factory=dict)
@@ -105,6 +114,7 @@ class AggregatedAnime:
     status: str | None = None
     rating: str | None = None
     season: str | None = None
+    season_year: int | None = None
     franchise: str | None = None
 
     episodes_total: int | None = None
@@ -127,18 +137,13 @@ class AggregatedAnime:
     studios: list[str] = field(default_factory=list)
     licensors: list[str] = field(default_factory=list)
     source_materials: list[str] = field(default_factory=list)
-    broadcasts: list[str] = field(default_factory=list)
+    broadcasts: list[BroadcastSlot] = field(default_factory=list)
 
-    # The merged values above remain the default UI representation. These
-    # source-preserving buckets make it possible to switch the same section to
-    # one database without re-fetching or losing the semantically merged view.
     titles_by_source: dict[str, dict[str, str]] = field(default_factory=dict)
     synonyms_by_source: dict[str, list[str]] = field(default_factory=dict)
     staff_by_source: dict[str, list[PersonCredit]] = field(default_factory=dict)
     voices_by_source: dict[str, list[PersonCredit]] = field(default_factory=dict)
 
-    # Some fields are intentionally kept by source because the distinction is
-    # useful in the UI (for example descriptions and links).
     descriptions: dict[str, str] = field(default_factory=dict)
     background: str | None = None
     posters: list[str] = field(default_factory=list)
