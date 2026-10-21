@@ -8,9 +8,27 @@ from bots import common as common_bot
 from bots.people_portraits import install as install_people_portraits
 from bots.search_ui import register_search_handlers
 from core.models import SearchCandidate
+from services.id_resolver import resolve_shikimori_id
 
 
 _RAW_AGGREGATE_AND_SEND = common_bot._aggregate_and_send
+
+
+async def _resolve_candidate_ids(candidate: SearchCandidate) -> None:
+    """Fill cross-IDs missing from explicit single-provider search results."""
+    if str(candidate.external_ids.get("shikimori") or "").strip():
+        return
+
+    mal_id = str(candidate.external_ids.get("mal") or "").strip()
+    if not mal_id:
+        return
+
+    shikimori_id = await resolve_shikimori_id(
+        mal_id,
+        [candidate.title, *candidate.aliases],
+    )
+    if shikimori_id:
+        candidate.external_ids["shikimori"] = shikimori_id
 
 
 async def _aggregate_and_cleanup_search(
@@ -38,6 +56,17 @@ async def _aggregate_and_cleanup_search(
                 "Could not replace search results with loading state",
                 exc_info=True,
             )
+
+    try:
+        await _resolve_candidate_ids(candidate)
+    except Exception:
+        # Cross-ID enrichment improves source coverage but must never prevent
+        # AniList/MAL metadata from opening when Shikimori is temporarily down.
+        logging.warning(
+            "Could not enrich cross-IDs for MAL %s",
+            candidate.external_ids.get("mal"),
+            exc_info=True,
+        )
 
     await _RAW_AGGREGATE_AND_SEND(message, candidate)
 
