@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from core.canonicalization import localize_role_token
 from sources.shikimori import DETAIL_FIELDS, STAFF_QUERY
 from sources.shikimori_people import _rest_voice_credits, _voices_from_character_details
 
@@ -30,7 +31,15 @@ class ShikimoriPeopleTests(unittest.TestCase):
 
         self.assertEqual(len(voices), 1)
         self.assertEqual(voices[0].external_ids["shikimori"], "20")
-        self.assertEqual(voices[0].roles, ["Озвучка: Римуру Темпест"])
+        self.assertEqual(voices[0].roles, ["voice_of::Rimuru Tempest"])
+        self.assertEqual(
+            localize_role_token(voices[0].roles[0], locale="ru"),
+            "Озвучка: Rimuru Tempest",
+        )
+        self.assertEqual(
+            localize_role_token(voices[0].roles[0], locale="en"),
+            "Voice: Rimuru Tempest",
+        )
         self.assertTrue(voices[0].portraits["Shikimori"][0].startswith("https://"))
 
     def test_same_seiyuu_across_characters_is_coalesced(self) -> None:
@@ -48,7 +57,7 @@ class ShikimoriPeopleTests(unittest.TestCase):
         self.assertEqual(len(voices), 1)
         self.assertEqual(
             voices[0].roles,
-            ["Озвучка: Character A", "Озвучка: Character B"],
+            ["voice_of::Character A", "voice_of::Character B"],
         )
 
     def test_smoke_compatibility_helper_uses_same_parser(self) -> None:
@@ -60,7 +69,7 @@ class ShikimoriPeopleTests(unittest.TestCase):
         ])
 
         self.assertEqual(len(voices), 1)
-        self.assertEqual(voices[0].roles, ["Озвучка: Test Character"])
+        self.assertEqual(voices[0].roles, ["voice_of::Test Character"])
 
 
 if __name__ == "__main__":
