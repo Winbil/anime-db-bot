@@ -8,10 +8,10 @@ from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message
 from dotenv import load_dotenv
 
-from bots import common as common_bot
-from bots.card_handlers import build_dispatcher
-from bots.people_portraits import handle_people_callback
-from bots.search_ui import register_search_handlers
+from bots.telegram import common as common_bot
+from bots.telegram.card_handlers import build_dispatcher
+from bots.telegram.people_portraits import handle_people_callback
+from bots.telegram.search_ui import register_search_handlers
 from bots.telegram.transports import TelegramTransport
 from bots.telegram.transports.official import TRANSPORT as OFFICIAL_TRANSPORT
 from bots.telegram.transports.tgapi import TRANSPORT as TGAPI_TRANSPORT
