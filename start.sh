@@ -18,44 +18,10 @@ fail() {
     exit 1
 }
 
+[[ -f "$SCRIPT_DIR/requirements.lock" ]] || fail "requirements.lock not found."
+[[ -f "$SCRIPT_DIR/.env.example" ]] || fail ".env.example not found."
 command -v python3 >/dev/null 2>&1 || fail "python3 is not installed."
 command -v tmux >/dev/null 2>&1 || fail "tmux is not installed. Install it first, for example: sudo apt install tmux"
-
-required_files=(
-    "requirements.txt"
-    "requirements.lock"
-    "bots/common.py"
-    "bots/people_portraits.py"
-    "bots/runner.py"
-    "bots/search_ui.py"
-    "bots/session_store.py"
-    "bots/official.py"
-    "bots/tgapi.py"
-    "core/models.py"
-    "core/contracts.py"
-    "core/canonicalization.py"
-    "core/http_config.py"
-    "services/search.py"
-    "services/aggregator.py"
-    "services/id_resolver.py"
-    "search/registry.py"
-    "search/providers/mal.py"
-    "search/providers/shikimori.py"
-    "search/providers/anilist.py"
-    "sources/registry.py"
-    "sources/shikimori.py"
-    "sources/shikimori_people.py"
-    "sources/anilist.py"
-    "sources/mal.py"
-    "tests/test_search.py"
-    "tests/test_aggregator.py"
-    "tests/test_shikimori_people.py"
-    "tests/test_anilist_lazy.py"
-    "tests/test_session_store.py"
-)
-for required_file in "${required_files[@]}"; do
-    [[ -f "$SCRIPT_DIR/$required_file" ]] || fail "$required_file not found."
-done
 
 if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
     info "Bot is already running in tmux session '$SESSION_NAME'."
@@ -124,145 +90,10 @@ info "Checking dependency consistency..."
 info "Compiling Python sources..."
 "$PYTHON" -m compileall -q bots core search services sources tests
 
-info "Running regression tests..."
+info "Running regression and wiring tests..."
 "$PYTHON" -m unittest discover -s tests -v
 
-info "Checking required imports and service wiring..."
-"$PYTHON" - <<'PY'
-import aiogram
-import httpx
-import dotenv
-from aiogram.types import InputRichMessage
-from bots import common as common_bot
-from bots.people_portraits import _sources_with_portraits, handle_people_callback
-from bots.runner import _CallbackRoutingMiddleware
-from bots.search_ui import register_search_handlers
-from core.canonicalization import (
-    canonical_genre,
-    canonical_role,
-    is_primary_voice_role,
-    person_identity_keys,
-)
-from core.contracts import AnimeSearchProvider, AnimeSource
-from core.http_config import USER_AGENT
-from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate, SearchPage
-from search.providers.anilist import AniListSearchProvider
-from search.providers.mal import MALSearchProvider
-from search.providers.shikimori import ShikimoriSearchProvider
-from search.registry import get_search_provider_map, get_search_providers
-from services.aggregator import AnimeAggregator, _merge_people
-from services.search import SearchService
-from sources.anilist import AniListSource
-from sources.mal import MALSource
-from sources.registry import get_sources
-from sources.shikimori import ShikimoriSource
-from sources.shikimori_people import _rest_voice_credits
-
-providers = get_search_providers()
-all_provider_map = get_search_provider_map()
-sources = get_sources()
-if not providers:
-    raise RuntimeError("No default anime search providers are enabled in search/registry.py")
-if not all_provider_map:
-    raise RuntimeError("No selectable anime search providers are enabled")
-if not sources:
-    raise RuntimeError("No anime metadata sources are enabled in sources/registry.py")
-if not USER_AGENT.startswith("anime-db-bot/"):
-    raise RuntimeError("Shared HTTP User-Agent smoke test failed")
-if not callable(handle_people_callback):
-    raise RuntimeError("People callback routing smoke test failed")
-_CallbackRoutingMiddleware()
-
-if canonical_genre("Fantasy") != canonical_genre("Фэнтези"):
-    raise RuntimeError("Genre canonicalization smoke test failed")
-if canonical_role("Director") != canonical_role("Режиссёр"):
-    raise RuntimeError("Role canonicalization smoke test failed")
-if not (person_identity_keys(["Fuse"]) & person_identity_keys(["Фусэ", "Fuse"])):
-    raise RuntimeError("Person alias canonicalization smoke test failed")
-if not is_primary_voice_role("Сэйю"):
-    raise RuntimeError("Primary seiyuu role smoke test failed")
-if is_primary_voice_role("Сэйю (EN)"):
-    raise RuntimeError("Foreign dub seiyuu filter smoke test failed")
-if common_bot.SOURCE_SELECTABLE_SECTIONS != {"titles", "staff", "voices"}:
-    raise RuntimeError("Source-selectable section registry smoke test failed")
-
-shikimori_voice_smoke = _rest_voice_credits([{
-    "roles": ["Main"],
-    "roles_russian": ["Главная роль"],
-    "person": {
-        "id": 1,
-        "name": "Test Seiyuu",
-        "russian": "",
-        "image": {},
-    },
-    "character": {
-        "id": 2,
-        "name": "Test Character",
-        "russian": "Тестовый персонаж",
-        "image": {},
-    },
-}])
-if len(shikimori_voice_smoke) != 1:
-    raise RuntimeError("Shikimori structural seiyuu link smoke test failed")
-if shikimori_voice_smoke[0].roles != ["Озвучка: Тестовый персонаж"]:
-    raise RuntimeError("Shikimori seiyuu character role smoke test failed")
-
-portrait_merge = _merge_people([
-    [PersonCredit(
-        name="Test Person",
-        portraits={"AniList": ["https://example.invalid/anilist.jpg"]},
-    )],
-    [PersonCredit(
-        name="Test Person",
-        portraits={"Shikimori": ["https://example.invalid/shikimori.jpg"]},
-    )],
-])
-if len(portrait_merge) != 1 or set(portrait_merge[0].portraits) != {"AniList", "Shikimori"}:
-    raise RuntimeError("Cross-source portrait merge smoke test failed")
-
-sample = AggregatedAnime(
-    title="Smoke test",
-    sources=["AniList"],
-    titles_by_source={"AniList": {"english": "Smoke test"}},
-    staff=[PersonCredit(
-        name="Test Person",
-        portraits={"AniList": ["https://example.invalid/staff.jpg"]},
-    )],
-    voices=[PersonCredit(
-        name="Test Voice",
-        portraits={"AniList": ["https://example.invalid/voice.jpg"]},
-    )],
-    staff_by_source={"AniList": [PersonCredit(
-        name="Test Person",
-        portraits={"AniList": ["https://example.invalid/staff.jpg"]},
-    )]},
-    voices_by_source={"AniList": [PersonCredit(
-        name="Test Voice",
-        portraits={"AniList": ["https://example.invalid/voice.jpg"]},
-    )]},
-)
-if common_bot._source_section_sources(sample, "titles") != ["AniList"]:
-    raise RuntimeError("Title source provenance smoke test failed")
-for section in ("staff", "voices"):
-    if _sources_with_portraits(sample, section) != ["AniList"]:
-        raise RuntimeError(f"Portrait source provenance smoke test failed for {section}")
-
-SearchService(providers)
-AnimeAggregator(sources)
-print("Python imports and service wiring: OK")
-print("Multilingual canonicalization: OK")
-print("Original seiyuu filtering: OK")
-print("Shikimori structural seiyuu links: OK")
-print("Source-selectable metadata sections: OK")
-print("Cross-source person portraits: OK")
-print("Portrait callback routing: OK")
-print("Default search providers:", ", ".join(provider.name for provider in providers))
-print("Selectable search providers:", ", ".join(all_provider_map))
-print("Metadata sources:", ", ".join(source.name for source in sources))
-PY
-
 if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
-    [[ -f "$SCRIPT_DIR/.env.example" ]] || fail ".env and .env.example are both missing."
     cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
     info "Created .env from .env.example."
     fail "Add BOT_TOKEN to .env, then run ./start.sh again."
@@ -291,11 +122,7 @@ fi
 info "Default search: Shikimori + MyAnimeList, merged by MAL ID."
 info "Selectable /search providers include MAL, Shikimori and AniList."
 info "Metadata sources: Shikimori + AniList + MyAnimeList."
-info "Equivalent metadata fields are multilingual-canonicalized and merged without duplicates."
 info "People data is loaded lazily when staff/seiyuu sections are opened."
-info "Titles, staff and seiyuu keep source provenance for inline source switching."
-info "Staff and seiyuu portraits are source-keyed and paginated one person per rich page."
-info "Anime cards use sendRichMessage (up to 32768 UTF-8 chars) in both modes."
 
 mkdir -p "$LOG_DIR"
 
