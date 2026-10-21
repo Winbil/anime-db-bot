@@ -9,6 +9,7 @@ from bots.telegram.card.selectors import (
     source_section_sources,
 )
 from core.models import AggregatedAnime
+from localization import text
 
 
 def description_selection_rows(
@@ -30,13 +31,14 @@ def source_section_selection_rows(
     anime: AggregatedAnime,
     section: str,
     *,
+    locale: str,
     selected_source_index: int | None = None,
 ) -> list[list[InlineKeyboardButton]]:
     sources = source_section_sources(anime, section)
     if not sources:
         return []
 
-    all_label = ALL_SOURCE_LABELS[section]
+    all_label = text("card", ALL_SOURCE_LABELS[section], locale=locale)
     rows: list[list[InlineKeyboardButton]] = [[
         InlineKeyboardButton(
             text=("✓ " + all_label) if selected_source_index is None else all_label,
@@ -73,6 +75,8 @@ def navigation_keyboard(
     current_section: str,
     page: int,
     page_count: int,
+    *,
+    locale: str,
 ) -> InlineKeyboardMarkup | None:
     rows: list[list[InlineKeyboardButton]] = []
 
@@ -86,6 +90,7 @@ def navigation_keyboard(
                 token,
                 anime,
                 current_section,
+                locale=locale,
                 selected_source_index=None,
             )
         )
@@ -93,7 +98,7 @@ def navigation_keyboard(
     if current_section != "main":
         rows.append([
             InlineKeyboardButton(
-                text="← Назад",
+                text=text("common", "back", locale=locale),
                 callback_data=f"av:{token}:main:0",
             )
         ])
@@ -124,6 +129,8 @@ def description_keyboard(
     source_index: int,
     page: int,
     page_count: int,
+    *,
+    locale: str,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if page_count > 1:
@@ -146,11 +153,11 @@ def description_keyboard(
 
     rows.append([
         InlineKeyboardButton(
-            text="← Источники",
+            text=text("common", "sources", locale=locale),
             callback_data=f"av:{token}:description:0",
         ),
         InlineKeyboardButton(
-            text="← Назад",
+            text=text("common", "back", locale=locale),
             callback_data=f"av:{token}:main:0",
         ),
     ])
@@ -164,17 +171,20 @@ def source_section_keyboard(
     source_index: int,
     page: int,
     page_count: int,
+    *,
+    locale: str,
 ) -> InlineKeyboardMarkup:
     rows = source_section_selection_rows(
         token,
         anime,
         section,
+        locale=locale,
         selected_source_index=source_index,
     )
 
     rows.append([
         InlineKeyboardButton(
-            text="← Назад",
+            text=text("common", "back", locale=locale),
             callback_data=f"av:{token}:main:0",
         )
     ])
@@ -200,31 +210,31 @@ def source_section_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def fallback_main_keyboard(token: str) -> InlineKeyboardMarkup:
+def fallback_main_keyboard(token: str, *, locale: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
-                text="Описание",
+                text=text("card", "description_button", locale=locale),
                 callback_data=f"av:{token}:description:0",
             ),
             InlineKeyboardButton(
-                text="Названия",
+                text=text("card", "section_titles", locale=locale),
                 callback_data=f"av:{token}:titles:0",
             ),
         ],
         [
             InlineKeyboardButton(
-                text="Команда",
+                text=text("card", "section_staff", locale=locale),
                 callback_data=f"av:{token}:staff:0",
             ),
             InlineKeyboardButton(
-                text="Сэйю",
+                text=text("card", "section_voices", locale=locale),
                 callback_data=f"av:{token}:voices:0",
             ),
         ],
         [
             InlineKeyboardButton(
-                text="Ссылки",
+                text=text("card", "links_button", locale=locale),
                 callback_data=f"av:{token}:links:0",
             )
         ],
