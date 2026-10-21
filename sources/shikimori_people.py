@@ -250,6 +250,27 @@ def _voices_from_character_details(
     return result
 
 
+def _rest_voice_credits(entries: list[dict[str, Any]]) -> list[PersonCredit]:
+    """Compatibility helper for the existing startup smoke test.
+
+    Real Shikimori anime-role rows do not contain person and character in the
+    same row. This helper converts synthetic paired rows into the same
+    character.seyu representation used by the real parser.
+    """
+    characters: list[dict[str, Any]] = []
+    for entry in entries:
+        character = entry.get("character")
+        person = entry.get("person")
+        if not isinstance(character, dict) or not character:
+            continue
+        if not isinstance(person, dict) or not person:
+            continue
+        converted = dict(character)
+        converted["seyu"] = [person]
+        characters.append(converted)
+    return _voices_from_character_details(characters)
+
+
 def _portrait_count(people: list[PersonCredit]) -> int:
     return sum(1 for person in people if person.portraits.get("Shikimori"))
 
