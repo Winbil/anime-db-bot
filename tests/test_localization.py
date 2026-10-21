@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import unittest
 
+import sources.anilist as anilist_source
+import sources.mal as mal_source
+import sources.shikimori as shikimori_source
 from core.canonicalization import (
     canonical_genre,
     canonical_genre_key,
@@ -46,6 +49,16 @@ class LocalizationCatalogTests(unittest.TestCase):
             localize_source_value("mal", "status", "currently_airing", locale="en"),
             "Airing",
         )
+
+    def test_source_adapters_no_longer_own_display_enum_maps(self) -> None:
+        self.assertFalse(hasattr(anilist_source, "FORMAT_NAMES"))
+        self.assertFalse(hasattr(anilist_source, "STATUS_NAMES"))
+        self.assertFalse(hasattr(anilist_source, "SEASON_NAMES"))
+        self.assertFalse(hasattr(mal_source, "MEDIA_TYPE_NAMES"))
+        self.assertFalse(hasattr(mal_source, "SOURCE_NAMES"))
+        self.assertFalse(hasattr(mal_source, "DAY_NAMES"))
+        self.assertFalse(hasattr(shikimori_source, "KIND_NAMES"))
+        self.assertFalse(hasattr(shikimori_source, "RATING_NAMES"))
 
     def test_unknown_source_values_are_preserved(self) -> None:
         self.assertEqual(
