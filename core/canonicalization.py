@@ -71,6 +71,11 @@ def normalize_key(value: str) -> str:
     return " ".join(value.split())
 
 
+def _name_key(value: str) -> str:
+    cleaned = clean_text(value)
+    return normalize_key(cleaned) or unicodedata.normalize("NFKC", cleaned).casefold()
+
+
 @lru_cache(maxsize=None)
 def _normalized_aliases(section: str) -> dict[str, str]:
     return {
@@ -276,7 +281,7 @@ def preferred_person_name(names: list[str], *, locale: str = DEFAULT_LOCALE) -> 
     seen: set[str] = set()
     for value in names:
         value = clean_text(value)
-        key = normalize_key(value)
+        key = _name_key(value)
         if value and key and key not in seen:
             seen.add(key)
             unique.append(value)
@@ -315,21 +320,22 @@ def display_person_name(
     seen: set[str] = set()
     for value in names:
         cleaned = clean_text(value)
-        key = normalize_key(cleaned)
+        key = _name_key(cleaned)
         if cleaned and key and key not in seen:
             seen.add(key)
             unique.append(cleaned)
 
+    primary_key = _name_key(primary)
     extras: list[str] = []
     japanese = next(
-        (value for value in unique if normalize_key(value) != normalize_key(primary) and JAPANESE_RE.search(value)),
+        (value for value in unique if _name_key(value) != primary_key and JAPANESE_RE.search(value)),
         None,
     )
     latin = next(
         (
             value
             for value in unique
-            if normalize_key(value) != normalize_key(primary)
+            if _name_key(value) != primary_key
             and LATIN_RE.search(value)
             and not CYRILLIC_RE.search(value)
             and not JAPANESE_RE.search(value)
