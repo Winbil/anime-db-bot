@@ -7,6 +7,7 @@ from typing import Any
 
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputRichMessage, Message
 
+from bots.session_store import ExpiringSessionStore
 from core.models import AggregatedAnime, PersonCredit
 
 PEOPLE_SECTIONS = {"staff", "voices"}
@@ -15,8 +16,8 @@ SECTION_TITLES = {
     "voices": "Сэйю / актёры озвучки",
 }
 
-_LAZY_PEOPLE_DONE: set[tuple[str, str]] = set()
-_LAZY_PEOPLE_TASKS: dict[tuple[str, str], asyncio.Task[bool]] = {}
+_LAZY_PEOPLE_DONE: ExpiringSessionStore[bool] = ExpiringSessionStore(max_entries=400)
+_LAZY_PEOPLE_TASKS: dict[str, asyncio.Task[bool]] = {}
 
 
 def _dedupe(values: list[str]) -> list[str]:
@@ -295,14 +296,14 @@ async def _ensure_lazy_people(
     section: str,
 ) -> None:
     """Load expensive person lists only when their UI section is opened."""
-    key = (token, section)
-    if key in _LAZY_PEOPLE_DONE:
+    key = f"{token}:{section}"
+    if _LAZY_PEOPLE_DONE.get(key):
         return
 
     running = _LAZY_PEOPLE_TASKS.get(key)
     if running is not None:
         if await running:
-            _LAZY_PEOPLE_DONE.add(key)
+            _LAZY_PEOPLE_DONE[key] = True
         return
 
     method_name = "load_staff" if section == "staff" else "load_voices"
@@ -314,7 +315,7 @@ async def _ensure_lazy_people(
             loaders.append((source, loader))
 
     if not loaders:
-        _LAZY_PEOPLE_DONE.add(key)
+        _LAZY_PEOPLE_DONE[key] = True
         return
 
     async def load() -> bool:
@@ -380,7 +381,7 @@ async def _ensure_lazy_people(
     _LAZY_PEOPLE_TASKS[key] = task
     try:
         if await task:
-            _LAZY_PEOPLE_DONE.add(key)
+            _LAZY_PEOPLE_DONE[key] = True
     finally:
         _LAZY_PEOPLE_TASKS.pop(key, None)
 
