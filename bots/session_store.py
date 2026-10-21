@@ -17,7 +17,7 @@ def session_ttl_seconds() -> int:
 
 
 class ExpiringSessionStore(MutableMapping[str, T], Generic[T]):
-    """Small dict-like sliding-TTL store for callback state kept in bot RAM."""
+    """Small dict-like sliding-TTL + LRU store for callback state kept in RAM."""
 
     def __init__(
         self,
@@ -41,9 +41,10 @@ class ExpiringSessionStore(MutableMapping[str, T], Generic[T]):
 
     def __getitem__(self, key: str) -> T:
         self._prune()
-        _, value = self._items[key]
-        # A callback that is still being used remains alive; abandoned tokens
-        # disappear after the configured idle interval.
+        _, value = self._items.pop(key)
+        # A session that is still being used remains alive and moves to the
+        # most-recently-used end, so capacity eviction cannot discard an active
+        # card merely because it was originally created a long time ago.
         self._items[key] = (time.monotonic() + self._ttl_seconds, value)
         return value
 
