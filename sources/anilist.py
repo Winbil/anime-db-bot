@@ -10,9 +10,10 @@ from typing import Any
 
 import httpx
 
+from core.canonicalization import canonical_genre_token, canonical_role_token, voice_role_token
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord, PersonCredit
-from localization import localize_source_value, text
+from localization import source_value_key
 
 DEFAULT_ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
 DEFAULT_PEOPLE_MAX_PAGES = 4
@@ -195,18 +196,13 @@ def _person_credit(value: dict[str, Any] | None, roles: list[str]) -> PersonCred
 def _character_name(value: dict[str, Any] | None) -> str:
     value = value or {}
     name = value.get("name") or {}
-    return (
-        _clean_text(name.get("full"))
-        or _clean_text(name.get("native"))
-        or text("common", "unknown")
-    )
+    return _clean_text(name.get("full")) or _clean_text(name.get("native"))
 
 
-def _season(value: str | None, year: int | None) -> str | None:
-    if not value and not year:
-        return None
-    name = localize_source_value("anilist", "season", value or "", default=value or "")
-    return " ".join(part for part in (name, str(year) if year else "") if part).strip() or None
+def _season(value: str | None, year: int | None) -> tuple[str | None, int | None]:
+    raw = _clean_text(value)
+    season = source_value_key("anilist", "season", raw, default=raw or None)
+    return season, int(year) if year else None
 
 
 def _score(value: Any) -> float | None:
@@ -261,7 +257,7 @@ async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
 def _staff_from_connection(connection: dict[str, Any] | None) -> list[PersonCredit]:
     result: list[PersonCredit] = []
     for edge in (connection or {}).get("edges") or []:
-        role = _clean_text(edge.get("role"))
+        role = canonical_role_token(_clean_text(edge.get("role")))
         credit = _person_credit(edge.get("node"), [role] if role else [])
         if credit is not None:
             result.append(credit)
@@ -270,15 +266,9 @@ def _staff_from_connection(connection: dict[str, Any] | None) -> list[PersonCred
 
 def _voices_from_connection(connection: dict[str, Any] | None) -> list[PersonCredit]:
     result: list[PersonCredit] = []
-    unknown = text("common", "unknown")
-    voice_actor = text("roles", "voice_actor")
     for edge in (connection or {}).get("edges") or []:
         character = _character_name(edge.get("node"))
-        role = (
-            text("common", "voice_of", name=character)
-            if character and character != unknown
-            else voice_actor
-        )
+        role = voice_role_token(character or None)
         for actor in edge.get("voiceActors") or []:
             credit = _person_credit(actor, [role])
             if credit is not None:
@@ -384,6 +374,7 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
     site_url = _clean_text(raw.get("siteUrl"))
     format_raw = raw.get("format") or ""
     status_raw = raw.get("status") or ""
+    season, season_year = _season(raw.get("season"), raw.get("seasonYear"))
 
     return AnimeRecord(
         source="AniList",
@@ -391,24 +382,11 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         titles=titles,
         synonyms=_dedupe(raw.get("synonyms") or []),
         external_ids=external_ids,
-        kind=localize_source_value(
-            "anilist",
-            "format",
-            format_raw,
-            default=str(format_raw) or None,
-        ),
-        status=localize_source_value(
-            "anilist",
-            "status",
-            status_raw,
-            default=str(status_raw) or None,
-        ),
-        rating=(
-            localize_source_value("anilist", "rating", "ADULT", default="18+")
-            if raw.get("isAdult")
-            else None
-        ),
-        season=_season(raw.get("season"), raw.get("seasonYear")),
+        kind=source_value_key("anilist", "format", format_raw, default=str(format_raw) or None),
+        status=source_value_key("anilist", "status", status_raw, default=str(status_raw) or None),
+        rating=(source_value_key("anilist", "rating", "ADULT", default="adult") if raw.get("isAdult") else None),
+        season=season,
+        season_year=season_year,
         episodes_total=episodes_total,
         episodes_aired=episodes_aired,
         duration_minutes=raw.get("duration") or None,
@@ -416,7 +394,7 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         released_on=_format_date(raw.get("endDate")),
         next_episode_at=_format_timestamp(next_airing.get("airingAt")),
         score=_score(raw.get("averageScore")),
-        genres=_dedupe(raw.get("genres") or []),
+        genres=_dedupe([canonical_genre_token(value) for value in raw.get("genres") or []]),
         studios=_dedupe(
             [node.get("name", "") for node in ((raw.get("studios") or {}).get("nodes") or [])]
         ),
