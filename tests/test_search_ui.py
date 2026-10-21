@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from bots.telegram import common as common_bot
 from bots.telegram import search_ui
+from bots.telegram.card.service import SEARCH_PROVIDERS
 from core.models import SearchPage
 from services.search import SearchService
 
@@ -44,7 +44,7 @@ class UnifiedSearchUiTests(unittest.TestCase):
         self.assertIsNone(search_ui._parse_scope("unknown-source"))
 
     def test_default_scope_reuses_shared_search_service(self) -> None:
-        default_service = SearchService(common_bot.SEARCH_PROVIDERS)
+        default_service = SearchService(SEARCH_PROVIDERS)
 
         service = search_ui._service_for(
             search_ui.DEFAULT_SEARCH_PROVIDER_KEYS,
@@ -53,12 +53,11 @@ class UnifiedSearchUiTests(unittest.TestCase):
 
         self.assertIs(service, default_service)
 
-    def test_common_no_longer_contains_legacy_search_runtime(self) -> None:
-        self.assertFalse(hasattr(common_bot, "SearchSession"))
-        self.assertFalse(hasattr(common_bot, "SEARCH_SESSIONS"))
-        self.assertFalse(hasattr(common_bot, "_get_search_page"))
-        self.assertFalse(hasattr(common_bot, "build_dispatcher"))
-        self.assertFalse(hasattr(common_bot, "run_bot"))
+    def test_search_ui_keeps_card_runtime_outside_search_module(self) -> None:
+        self.assertFalse(hasattr(search_ui, "ANIME_SESSIONS"))
+        self.assertFalse(hasattr(search_ui, "AGGREGATOR"))
+        self.assertFalse(hasattr(search_ui, "build_dispatcher"))
+        self.assertFalse(hasattr(search_ui, "run_bot"))
 
 
 if __name__ == "__main__":
