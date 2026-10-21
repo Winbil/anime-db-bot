@@ -8,10 +8,15 @@ from typing import Any
 
 import httpx
 
-from core.canonicalization import is_primary_voice_role, normalize_key
+from core.canonicalization import (
+    canonical_genre_token,
+    canonical_role_key,
+    canonical_role_token,
+    is_primary_voice_role,
+)
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord, PersonCredit
-from localization import localize_source_value
+from localization import source_value_key
 
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
 DEFAULT_SHIKIMORI_SITE_URL = "https://shikimori.io"
@@ -107,6 +112,7 @@ _BBCODE_REMAINING_RE = re.compile(
 )
 _HTML_BREAK_RE = re.compile(r"<br\s*/?>", flags=re.IGNORECASE)
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
+_SEASON_RE = re.compile(r"^(?P<year>\d{4})[_\s-]+(?P<season>[a-z]+)$", re.IGNORECASE)
 
 
 def graphql_url() -> str:
@@ -130,7 +136,6 @@ def _clean_text(value: Any) -> str:
 
 
 def _clean_description(value: Any) -> str:
-    """Convert Shikimori BBCode/HTML description markup into readable text."""
     if value is None:
         return ""
 
@@ -142,8 +147,6 @@ def _clean_description(value: Any) -> str:
     text_value = _HTML_BREAK_RE.sub("\n", text_value)
     text_value = _BBCODE_BREAK_RE.sub("\n", text_value)
 
-    # Entity/link wrappers such as [character=171572]Cid[/character] should
-    # keep their visible caption while dropping Shikimori-specific markup.
     for _ in range(6):
         text_value, count = _BBCODE_WRAPPED_RE.subn(
             lambda match: match.group("body"),
@@ -213,6 +216,18 @@ def _format_datetime(value: str | None) -> str | None:
         return value
 
 
+def _season(value: Any) -> tuple[str | None, int | None]:
+    raw = _clean_text(value)
+    if not raw:
+        return None, None
+    match = _SEASON_RE.match(raw)
+    if match:
+        season_raw = match.group("season").casefold()
+        season = source_value_key("shikimori", "season", season_raw, default=season_raw)
+        return season, int(match.group("year"))
+    return source_value_key("shikimori", "season", raw, default=raw), None
+
+
 def _best_poster_url(poster: dict[str, Any]) -> str | None:
     for field in (
         "originalUrl",
@@ -228,14 +243,14 @@ def _best_poster_url(poster: dict[str, Any]) -> str | None:
 
 
 def _person_credit(person: dict[str, Any], roles: list[str]) -> PersonCredit | None:
-    russian = _clean_text(person.get("russian"))
     name = _clean_text(person.get("name"))
+    russian = _clean_text(person.get("russian"))
     japanese = _clean_text(person.get("japanese"))
-    names = _dedupe([russian, name, japanese])
+    names = _dedupe([name, russian, japanese])
     if not names:
         return None
 
-    preferred = russian or name or japanese
+    preferred = name or russian or japanese
     source_id = str(person.get("id") or "").strip()
     poster = person.get("poster") or {}
     portrait = _best_poster_url(poster) if isinstance(poster, dict) else None
@@ -249,19 +264,7 @@ def _person_credit(person: dict[str, Any], roles: list[str]) -> PersonCredit | N
 
 
 def _is_any_voice_role(value: str) -> bool:
-    key = normalize_key(value)
-    return (
-        key == "сэйю"
-        or key.startswith("сэйю ")
-        or key == "сейю"
-        or key.startswith("сейю ")
-        or key == "seiyuu"
-        or key.startswith("seiyuu ")
-        or key == "voice actor"
-        or key.startswith("voice actor ")
-        or key == "voice acting"
-        or key.startswith("voice acting ")
-    )
+    return canonical_role_key(value) == "voice_actor"
 
 
 async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
@@ -322,9 +325,10 @@ def _credits(raw: dict[str, Any], *, voices: bool) -> list[PersonCredit]:
         all_roles = _dedupe(entry.get("rolesRu") or entry.get("rolesEn") or [])
 
         if voices:
-            roles = [role for role in all_roles if is_primary_voice_role(role)]
+            raw_roles = [role for role in all_roles if is_primary_voice_role(role)]
         else:
-            roles = [role for role in all_roles if not _is_any_voice_role(role)]
+            raw_roles = [role for role in all_roles if not _is_any_voice_role(role)]
+        roles = _dedupe([canonical_role_token(role) for role in raw_roles])
 
         if not roles:
             continue
@@ -385,6 +389,7 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
     kind_raw = raw.get("kind") or ""
     status_raw = raw.get("status") or ""
     rating_raw = raw.get("rating") or ""
+    season, season_year = _season(raw.get("season"))
 
     return AnimeRecord(
         source="Shikimori",
@@ -392,25 +397,11 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         titles=titles,
         synonyms=_dedupe(raw.get("synonyms") or []),
         external_ids=external_ids,
-        kind=localize_source_value(
-            "shikimori",
-            "kind",
-            kind_raw,
-            default=str(kind_raw) or None,
-        ),
-        status=localize_source_value(
-            "shikimori",
-            "status",
-            status_raw,
-            default=str(status_raw) or None,
-        ),
-        rating=localize_source_value(
-            "shikimori",
-            "rating",
-            rating_raw,
-            default=str(rating_raw) or None,
-        ),
-        season=_clean_text(raw.get("season")) or None,
+        kind=source_value_key("shikimori", "kind", kind_raw, default=str(kind_raw) or None),
+        status=source_value_key("shikimori", "status", status_raw, default=str(status_raw) or None),
+        rating=source_value_key("shikimori", "rating", rating_raw, default=str(rating_raw) or None),
+        season=season,
+        season_year=season_year,
         franchise=_clean_text(raw.get("franchise")) or None,
         episodes_total=raw.get("episodes") or None,
         episodes_aired=raw.get("episodesAired") or None,
@@ -420,7 +411,10 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         next_episode_at=_format_datetime(raw.get("nextEpisodeAt")),
         score=score,
         genres=_dedupe(
-            [genre.get("russian") or genre.get("name") or "" for genre in raw.get("genres") or []]
+            [
+                canonical_genre_token(genre.get("name") or genre.get("russian") or "")
+                for genre in raw.get("genres") or []
+            ]
         ),
         studios=_dedupe([studio.get("name", "") for studio in raw.get("studios") or []]),
         licensors=_dedupe(raw.get("licensors") or []),
