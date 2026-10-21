@@ -5,7 +5,7 @@ import html
 import logging
 from typing import Any
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputRichMessage, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputRichMessage, Message
 
 from core.models import AggregatedAnime, PersonCredit
 
@@ -15,7 +15,6 @@ SECTION_TITLES = {
     "voices": "Сэйю / актёры озвучки",
 }
 
-_INSTALLED = False
 _LAZY_PEOPLE_DONE: set[tuple[str, str]] = set()
 _LAZY_PEOPLE_TASKS: dict[tuple[str, str], asyncio.Task[bool]] = {}
 
@@ -210,7 +209,7 @@ def _source_rows(
     section: str,
     selected_source_index: int | None,
 ) -> list[list[InlineKeyboardButton]]:
-    sources = common._source_section_sources(anime, section)
+    sources = _sources_with_portraits(anime, section)
     if not sources:
         return []
 
@@ -397,7 +396,7 @@ async def _edit_people_view(
 ) -> None:
     await _ensure_lazy_people(common, token, anime, message, section)
 
-    sources = common._source_section_sources(anime, section)
+    sources = _sources_with_portraits(anime, section)
     source: str | None = None
     if source_index is not None:
         if source_index < 0 or source_index >= len(sources):
@@ -440,77 +439,70 @@ async def _edit_people_view(
         )
 
 
-def install(common: Any) -> None:
-    """Install portrait-aware lazy people views into bots.common.
+async def handle_people_callback(common: Any, callback: CallbackQuery) -> bool:
+    """Handle staff/voice callback namespaces before bots.common handlers.
 
-    Staff and seiyuu reuse the existing av:/as: callback namespaces. Expensive
-    person pagination is fetched only on first entry into the corresponding
-    section, then merged into the current anime-card session with source-keyed
-    portrait provenance preserved.
+    Returns True only when this module consumed the callback. This explicit
+    callback hook replaces the previous runtime replacement of common module
+    functions, so handler behaviour no longer depends on monkeypatch order.
     """
+    raw = callback.data or ""
+    parts = raw.split(":")
 
-    global _INSTALLED
-    if _INSTALLED:
-        return
+    if raw.startswith("av:"):
+        if len(parts) != 4 or parts[2] not in PEOPLE_SECTIONS or not parts[3].isdigit():
+            return False
+        _, token, section, page_text = parts
+        source_index: int | None = None
+    elif raw.startswith("as:"):
+        if (
+            len(parts) != 5
+            or parts[2] not in PEOPLE_SECTIONS
+            or not parts[3].isdigit()
+            or not parts[4].isdigit()
+        ):
+            return False
+        _, token, section, source_index_text, page_text = parts
+        source_index = int(source_index_text)
+    else:
+        return False
 
-    original_source_section_sources = common._source_section_sources
-    original_edit_anime_view = common._edit_anime_view
-    original_edit_source_section_view = common._edit_source_section_view
+    anime = common.ANIME_SESSIONS.get(token)
+    if anime is None:
+        await callback.answer(
+            "Карточка устарела. Выполни поиск ещё раз.",
+            show_alert=True,
+        )
+        return True
+    if callback.message is None:
+        await callback.answer()
+        return True
 
-    def source_section_sources(anime: AggregatedAnime, section: str) -> list[str]:
-        if section in PEOPLE_SECTIONS:
-            return _sources_with_portraits(anime, section)
-        return original_source_section_sources(anime, section)
-
-    async def edit_anime_view(
-        message: Message,
-        token: str,
-        anime: AggregatedAnime,
-        section: str,
-        page: int,
-    ) -> None:
-        if section in PEOPLE_SECTIONS:
-            await _edit_people_view(
-                common,
-                message,
-                token,
-                anime,
-                section,
-                source_index=None,
-                page=page,
-            )
-            return
-        await original_edit_anime_view(message, token, anime, section, page)
-
-    async def edit_source_section_view(
-        message: Message,
-        token: str,
-        anime: AggregatedAnime,
-        section: str,
-        source_index: int,
-        page: int,
-    ) -> None:
-        if section in PEOPLE_SECTIONS:
-            await _edit_people_view(
-                common,
-                message,
-                token,
-                anime,
-                section,
-                source_index=source_index,
-                page=page,
-            )
-            return
-        await original_edit_source_section_view(
-            message,
+    await callback.answer()
+    try:
+        await _edit_people_view(
+            common,
+            callback.message,
             token,
             anime,
             section,
-            source_index,
-            page,
+            source_index=source_index,
+            page=int(page_text),
         )
-
-    common._source_section_sources = source_section_sources
-    common._edit_anime_view = edit_anime_view
-    common._edit_source_section_view = edit_source_section_view
-    _INSTALLED = True
+    except ValueError:
+        logging.debug("People callback source is no longer available", exc_info=True)
+        try:
+            await callback.message.edit_text(
+                text="Источник больше недоступен. Вернись в карточку и открой раздел снова.",
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[[
+                        InlineKeyboardButton(
+                            text="← Назад",
+                            callback_data=f"av:{token}:main:0",
+                        )
+                    ]]
+                ),
+            )
+        except Exception:
+            logging.exception("Could not render stale people callback fallback")
+    return True
