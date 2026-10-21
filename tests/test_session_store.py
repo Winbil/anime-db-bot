@@ -48,6 +48,22 @@ class SessionStoreTests(unittest.TestCase):
             self.assertEqual(store.get("second"), "2")
             self.assertEqual(store.get("third"), "3")
 
+    def test_recently_used_session_survives_capacity_eviction(self) -> None:
+        store: ExpiringSessionStore[str] = ExpiringSessionStore(
+            max_entries=2,
+            ttl_seconds=100,
+        )
+
+        with patch("bots.session_store.time.monotonic", return_value=100.0):
+            store["first"] = "1"
+            store["second"] = "2"
+            self.assertEqual(store.get("first"), "1")
+            store["third"] = "3"
+
+            self.assertEqual(store.get("first"), "1")
+            self.assertIsNone(store.get("second"))
+            self.assertEqual(store.get("third"), "3")
+
 
 if __name__ == "__main__":
     unittest.main()
