@@ -33,7 +33,7 @@ class LocalTelegramTransport(TelegramTransport):
 
     @property
     def endpoint_label(self) -> str:
-        return self.api_url
+        return os.getenv("TELEGRAM_BOT_API_URL", "").strip().rstrip("/") or self.mode_name
 
     @property
     def is_local(self) -> bool:
