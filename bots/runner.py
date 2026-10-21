@@ -11,9 +11,6 @@ from bots.search_ui import register_search_handlers
 from core.models import SearchCandidate
 
 
-_RAW_AGGREGATE_AND_SEND = common_bot._aggregate_and_send
-
-
 async def _aggregate_and_cleanup_search(
     message: Message,
     candidate: SearchCandidate,
@@ -33,9 +30,7 @@ async def _aggregate_and_cleanup_search(
                 exc_info=True,
             )
 
-    # Cross-ID enrichment belongs to AnimeAggregator, so every entry path
-    # (single result, /anime selection and explicit /search) behaves the same.
-    await _RAW_AGGREGATE_AND_SEND(message, candidate)
+    await common_bot._aggregate_and_send(message, candidate)
 
     if not is_bot_search_message:
         return
@@ -58,62 +53,12 @@ async def _aggregate_and_cleanup_search(
         )
 
 
-async def _handle_default_pick(callback: CallbackQuery) -> bool:
-    """Handle the default /anime result-selection callback explicitly."""
-    raw = callback.data or ""
-    if not raw.startswith("pick:"):
-        return False
-
-    parts = raw.split(":")
-    if len(parts) != 4 or not parts[2].isdigit() or not parts[3].isdigit():
-        await callback.answer("Некорректный результат.", show_alert=True)
-        return True
-
-    _, token, page_text, index_text = parts
-    session = common_bot.SEARCH_SESSIONS.get(token)
-    if session is None:
-        await callback.answer(
-            "Этот поиск устарел. Выполни /anime ещё раз.",
-            show_alert=True,
-        )
-        return True
-    if callback.message is None:
-        await callback.answer()
-        return True
-
-    try:
-        search_page = await common_bot._get_search_page(
-            session,
-            max(1, int(page_text)),
-        )
-    except Exception:
-        logging.exception("Could not reload default search page for selection")
-        await callback.answer("Не удалось получить результат поиска.", show_alert=True)
-        return True
-
-    index = int(index_text)
-    if index < 0 or index >= len(search_page.items):
-        await callback.answer("Результат больше недоступен.", show_alert=True)
-        return True
-
-    candidate = search_page.items[index]
-    await callback.answer()
-    try:
-        await callback.message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        logging.debug("Could not remove search keyboard", exc_info=True)
-    await _aggregate_and_cleanup_search(callback.message, candidate)
-    return True
-
-
 class _CallbackRoutingMiddleware(BaseMiddleware):
-    """Explicit extension point for callbacks that augment bots.common UI."""
+    """Route callback extensions that sit outside the core card handlers."""
 
     async def __call__(self, handler, event, data):
         if isinstance(event, CallbackQuery):
             if await handle_people_callback(common_bot, event):
-                return None
-            if await _handle_default_pick(event):
                 return None
         return await handler(event, data)
 
