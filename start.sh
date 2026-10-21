@@ -89,7 +89,7 @@ info "Checking dependency consistency..."
 "$PYTHON" -m pip check
 
 info "Compiling Python sources..."
-"$PYTHON" -m compileall -q bots core search services sources tests
+"$PYTHON" -m compileall -q bots core localization search services sources tests
 
 info "Running regression and wiring tests..."
 "$PYTHON" -m unittest discover -s tests -v
