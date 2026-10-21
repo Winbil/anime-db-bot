@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from collections import Counter
 
@@ -16,6 +17,7 @@ from core.canonicalization import (
 )
 from core.contracts import AnimeSource
 from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate
+from services.id_resolver import resolve_shikimori_id
 
 
 PAREN_NAME_RE = re.compile(r"^(.*?)\s*\((.*)\)\s*$")
@@ -74,20 +76,12 @@ def _person_names(person: PersonCredit) -> list[str]:
 
 
 def _display_person_name(person: PersonCredit) -> str:
-    """Render Russian + romaji/English + Japanese names when available.
-
-    Identity matching still uses ``person.name`` and ``person.aliases`` before
-    this final presentation step. The aliases remain untouched afterwards so
-    portrait/cross-ID work can keep using the raw name variants.
-    """
-
     primary = _clean(person.name)
     names = _dedupe_strings([primary, *person.aliases])
     if not primary:
         return "Неизвестно"
 
     extras: list[str] = []
-
     latin = next(
         (
             value
@@ -158,9 +152,6 @@ def _merge_people(
 
     for group in groups:
         for person in group:
-            # A credit that is explicitly tied to dubbing/localization should
-            # not leak into original-production staff even if the same source
-            # attaches another generic role to that row.
             if drop_localization_roles and any(
                 is_localization_role(role) for role in person.roles if role
             ):
@@ -346,12 +337,6 @@ class AnimeAggregator:
         people: list[PersonCredit],
         section: str,
     ) -> None:
-        """Replace one source's people bucket and rebuild the merged view.
-
-        This is used by on-demand enrichments such as Shikimori seiyuu so the
-        expensive source can be loaded after the main anime card is already on
-        screen without re-fetching every metadata provider.
-        """
         if section == "staff":
             mapping = anime.staff_by_source
             drop_localization_roles = True
@@ -401,6 +386,22 @@ class AnimeAggregator:
             if value is not None and str(value).strip()
         }
         known_ids["mal"] = mal_id
+
+        if not known_ids.get("shikimori"):
+            try:
+                shikimori_id = await resolve_shikimori_id(
+                    mal_id,
+                    [candidate.title, *candidate.aliases],
+                )
+                if shikimori_id:
+                    known_ids["shikimori"] = shikimori_id
+                    candidate.external_ids["shikimori"] = shikimori_id
+            except Exception:
+                logging.warning(
+                    "Could not resolve Shikimori ID for MAL %s before aggregation",
+                    mal_id,
+                    exc_info=True,
+                )
 
         async def run(source: AnimeSource):
             try:
