@@ -12,13 +12,12 @@ from bots.telegram.card.constants import ALL_SOURCE_LABELS, STANDARD_MESSAGE_LIM
 from bots.telegram.card.renderer import plain_text_to_rich_html, split_text
 from bots.telegram.card.service import AGGREGATOR, SOURCES
 from bots.telegram.card.state import ANIME_SESSIONS
+from core.canonicalization import display_person_name, localize_role_token
 from core.models import AggregatedAnime, PersonCredit
+from localization import text
+from services.user_settings import get_user_locale
 
 PEOPLE_SECTIONS = {"staff", "voices"}
-SECTION_TITLES = {
-    "staff": "Авторы и команда",
-    "voices": "Сэйю / актёры озвучки",
-}
 
 _LAZY_PEOPLE_DONE: ExpiringSessionStore[bool] = ExpiringSessionStore(max_entries=400)
 _LAZY_PEOPLE_TASKS: dict[str, asyncio.Task[bool]] = {}
@@ -129,9 +128,17 @@ def _people_state(
     return without, with_portraits
 
 
-def _person_line(person: PersonCredit) -> str:
-    roles = ", ".join(person.roles) if person.roles else "роль не указана"
-    return f"• {person.name} — {roles}"
+def _localized_roles(person: PersonCredit, locale: str) -> str:
+    return ", ".join(
+        localize_role_token(role, locale=locale)
+        for role in person.roles
+        if localize_role_token(role, locale=locale)
+    ) or text("common", "role_not_specified", locale=locale)
+
+
+def _person_line(person: PersonCredit, locale: str) -> str:
+    name = display_person_name(person.name, person.aliases, locale=locale)
+    return f"• {name} — {_localized_roles(person, locale)}"
 
 
 def _page_text(
@@ -139,26 +146,31 @@ def _page_text(
     section: str,
     source: str | None,
     page: int,
+    *,
+    locale: str,
 ) -> tuple[str, list[str], int, int, int]:
     without, with_portraits = _people_state(anime, section, source)
     total = len(without) + len(with_portraits)
     max_page = len(with_portraits)
     page = max(0, min(page, max_page))
 
-    title = SECTION_TITLES[section]
+    title_value = text("people", section, locale=locale)
     if source:
-        title += f" — {source}"
+        title_value += f" — {source}"
 
     if page == 0:
-        lines = [f"{title}:", "", "Без портрета:"]
+        lines = [
+            f"{title_value}:",
+            "",
+            text("people", "without_portrait", locale=locale),
+        ]
         if without:
-            lines.extend(_person_line(person) for person in without)
+            lines.extend(_person_line(person, locale) for person in without)
         else:
-            lines.append("Нет.")
+            lines.append(text("people", "none", locale=locale))
         return "\n".join(lines), [], len(without), total, page
 
     person = with_portraits[page - 1]
-    roles = ", ".join(person.roles) if person.roles else "роль не указана"
     portrait_sources = _portrait_source_names(person, anime.sources)
     urls = _portrait_urls(
         person,
@@ -167,13 +179,20 @@ def _page_text(
     )
 
     lines = [
-        f"{title}:",
+        f"{title_value}:",
         "",
-        person.name,
-        f"Роли: {roles}",
+        display_person_name(person.name, person.aliases, locale=locale),
+        text("people", "roles", locale=locale, roles=_localized_roles(person, locale)),
     ]
     if portrait_sources:
-        lines.append("Портреты: " + ", ".join(portrait_sources))
+        lines.append(
+            text(
+                "people",
+                "portraits",
+                locale=locale,
+                sources=", ".join(portrait_sources),
+            )
+        )
 
     shown = len(without) + page
     return "\n".join(lines), urls, shown, total, page
@@ -190,9 +209,9 @@ def _portrait_html(urls: list[str]) -> str:
     return images if len(urls) == 1 else f"<tg-slideshow>{images}</tg-slideshow>"
 
 
-def _rich(text: str, urls: list[str]) -> InputRichMessage:
+def _rich(text_value: str, urls: list[str]) -> InputRichMessage:
     return InputRichMessage(
-        html=_portrait_html(urls) + plain_text_to_rich_html(text)
+        html=_portrait_html(urls) + plain_text_to_rich_html(text_value)
     )
 
 
@@ -212,12 +231,14 @@ def _source_rows(
     anime: AggregatedAnime,
     section: str,
     selected_source_index: int | None,
+    *,
+    locale: str,
 ) -> list[list[InlineKeyboardButton]]:
     sources = _sources_with_portraits(anime, section)
     if not sources:
         return []
 
-    all_label = ALL_SOURCE_LABELS[section]
+    all_label = text("card", ALL_SOURCE_LABELS[section], locale=locale)
     rows: list[list[InlineKeyboardButton]] = [[
         InlineKeyboardButton(
             text=("✓ " + all_label) if selected_source_index is None else all_label,
@@ -245,6 +266,8 @@ def _keyboard(
     shown: int,
     total: int,
     max_page: int,
+    *,
+    locale: str,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
 
@@ -258,7 +281,7 @@ def _keyboard(
         )
     nav.append(
         InlineKeyboardButton(
-            text=f"Показано {shown}/{total}",
+            text=text("people", "shown", locale=locale, shown=shown, total=total),
             callback_data="noop",
         )
     )
@@ -277,12 +300,13 @@ def _keyboard(
             anime,
             section,
             selected_source_index=source_index,
+            locale=locale,
         )
     )
 
     rows.append([
         InlineKeyboardButton(
-            text="← Назад",
+            text=text("common", "back", locale=locale),
             callback_data=f"av:{token}:main:0",
         )
     ])
@@ -294,6 +318,8 @@ async def _ensure_lazy_people(
     anime: AggregatedAnime,
     message: Message,
     section: str,
+    *,
+    locale: str,
 ) -> None:
     """Load expensive person lists only when their UI section is opened."""
     key = f"{token}:{section}"
@@ -320,13 +346,12 @@ async def _ensure_lazy_people(
 
     async def load() -> bool:
         try:
-            loading_text = (
-                "Загружаю авторов, команду и портреты…"
-                if section == "staff"
-                else "Загружаю сэйю и портреты…"
-            )
+            loading_key = "loading_staff" if section == "staff" else "loading_voices"
             try:
-                await message.edit_text(text=loading_text, reply_markup=None)
+                await message.edit_text(
+                    text=text("people", loading_key, locale=locale),
+                    reply_markup=None,
+                )
             except Exception:
                 logging.debug(
                     "Could not show lazy people loading state",
@@ -393,8 +418,10 @@ async def _edit_people_view(
     section: str,
     source_index: int | None,
     page: int,
+    *,
+    locale: str,
 ) -> None:
-    await _ensure_lazy_people(token, anime, message, section)
+    await _ensure_lazy_people(token, anime, message, section, locale=locale)
 
     sources = _sources_with_portraits(anime, section)
     source: str | None = None
@@ -406,11 +433,12 @@ async def _edit_people_view(
     without, with_portraits = _people_state(anime, section, source)
     max_page = len(with_portraits)
     page = max(0, min(int(page), max_page))
-    text, urls, shown, total, page = _page_text(
+    text_value, urls, shown, total, page = _page_text(
         anime,
         section,
         source,
         page,
+        locale=locale,
     )
     keyboard = _keyboard(
         token,
@@ -421,11 +449,12 @@ async def _edit_people_view(
         shown,
         total,
         max_page,
+        locale=locale,
     )
 
     try:
         await message.edit_text(
-            rich_message=_rich(text, urls),
+            rich_message=_rich(text_value, urls),
             reply_markup=keyboard,
         )
     except Exception:
@@ -433,18 +462,13 @@ async def _edit_people_view(
             "Rich portrait view edit failed; falling back to standard text edit"
         )
         await message.edit_text(
-            text=split_text(text, STANDARD_MESSAGE_LIMIT)[0],
+            text=split_text(text_value, STANDARD_MESSAGE_LIMIT, locale=locale)[0],
             reply_markup=keyboard,
         )
 
 
 async def handle_people_callback(callback: CallbackQuery) -> bool:
-    """Handle staff/voice callback namespaces before card handlers.
-
-    Returns True only when this module consumed the callback. The portrait UI
-    depends on explicit card services/state instead of a module-sized service
-    locator, so its dependencies stay visible and testable.
-    """
+    """Handle staff/voice callback namespaces before card handlers."""
     raw = callback.data or ""
     parts = raw.split(":")
 
@@ -466,17 +490,19 @@ async def handle_people_callback(callback: CallbackQuery) -> bool:
     else:
         return False
 
-    anime = ANIME_SESSIONS.get(token)
-    if anime is None:
-        await callback.answer(
-            "Карточка устарела. Выполни поиск ещё раз.",
-            show_alert=True,
-        )
+    locale = get_user_locale(callback.from_user.id)
+    session = ANIME_SESSIONS.get(token)
+    if session is None:
+        await callback.answer(text("card", "expired", locale=locale), show_alert=True)
+        return True
+    if session.owner_user_id != callback.from_user.id:
+        await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
         return True
     if callback.message is None:
         await callback.answer()
         return True
 
+    anime = session.anime
     await callback.answer()
     try:
         await _edit_people_view(
@@ -486,16 +512,17 @@ async def handle_people_callback(callback: CallbackQuery) -> bool:
             section,
             source_index=source_index,
             page=int(page_text),
+            locale=locale,
         )
     except ValueError:
         logging.debug("People callback source is no longer available", exc_info=True)
         try:
             await callback.message.edit_text(
-                text="Источник больше недоступен. Вернись в карточку и открой раздел снова.",
+                text=text("people", "source_unavailable", locale=locale),
                 reply_markup=InlineKeyboardMarkup(
                     inline_keyboard=[[
                         InlineKeyboardButton(
-                            text="← Назад",
+                            text=text("common", "back", locale=locale),
                             callback_data=f"av:{token}:main:0",
                         )
                     ]]
