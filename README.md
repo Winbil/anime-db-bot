@@ -2,7 +2,7 @@
 
 Telegram-бот для поиска аниме и сборки одной общей карточки из нескольких баз данных.
 
-Главный принцип проекта: **поиск, metadata sources, агрегирование и Telegram UI — отдельные слои**. Канонический ID между слоями сейчас — MAL ID.
+Главный принцип проекта: **поиск, metadata sources, агрегирование и UI конкретной платформы — отдельные слои**. Канонический ID между слоями сейчас — MAL ID.
 
 ## Что подключено
 
@@ -65,14 +65,19 @@ Retry-обёртка `sources/resilient.py` больше не реализует
 anime-db-bot/
 ├── .github/workflows/ci.yml
 ├── bots/
-│   ├── card_handlers.py
-│   ├── common.py
-│   ├── official.py
-│   ├── people_portraits.py
-│   ├── runner.py
-│   ├── search_ui.py
+│   ├── __init__.py
 │   ├── session_store.py
-│   └── tgapi.py
+│   └── telegram/
+│       ├── __init__.py
+│       ├── bot.py
+│       ├── card_handlers.py
+│       ├── common.py
+│       ├── people_portraits.py
+│       ├── search_ui.py
+│       └── transports/
+│           ├── __init__.py
+│           ├── official.py
+│           └── tgapi.py
 ├── core/
 │   ├── canonicalization.py
 │   ├── contracts.py
@@ -113,15 +118,24 @@ anime-db-bot/
 └── README.md
 ```
 
-### Telegram-слой после первого этапа рефакторинга
+### Платформенный слой ботов
 
-- `bots/search_ui.py` — весь `/anime` + `/search` flow и search callback state.
-- `bots/card_handlers.py` — `/start`, `/ping` и callback handlers обычных разделов карточки.
-- `bots/common.py` — создание Bot, общие сервисы, anime-card state, форматирование и рендеринг карточки.
-- `bots/people_portraits.py` — lazy staff/seiyuu + rich portrait UI.
-- `bots/runner.py` — composition root Telegram runtime и middleware.
+`bots/` больше не считается синонимом Telegram. Это контейнер для реализаций разных платформ.
 
-Старые `pick:*`/`sp:*` callbacks, вторая search session внутри `common.py`, старый `common.build_dispatcher()` и второй `common.run_bot()` удалены.
+- `bots/telegram/` — текущая Telegram-реализация.
+- `bots/telegram/bot.py` — единственная точка сборки и запуска Telegram-бота.
+- `bots/telegram/search_ui.py` — весь `/anime` + `/search` flow и search callback state.
+- `bots/telegram/card_handlers.py` — `/start`, `/ping` и callback handlers обычных разделов карточки.
+- `bots/telegram/common.py` — общие Telegram-сервисы, anime-card state, форматирование и рендеринг карточки.
+- `bots/telegram/people_portraits.py` — lazy staff/seiyuu + rich portrait UI.
+- `bots/telegram/transports/official.py` и `tgapi.py` — только transport-конфигурации для official Bot API и локального `tg-bot-api`.
+- `bots/session_store.py` — общий platform-neutral helper для callback/session state.
+
+Для следующей платформы можно добавить отдельный package, например `bots/discord/`, не смешивая Discord handlers/runtime с Telegram-кодом и не меняя `core/`, `search/`, `services/` и `sources/`.
+
+`start.sh` всегда запускает один модуль `bots.telegram.bot`. Сам `bot.py` выбирает transport: official API по умолчанию или локальный `tg-bot-api`, если задан `TELEGRAM_BOT_API_URL`.
+
+Старые верхнеуровневые `bots/runner.py`, `bots/official.py`, `bots/tgapi.py`, `bots/common.py`, `bots/search_ui.py`, `bots/card_handlers.py` и `bots/people_portraits.py` удалены.
 
 ## Поток данных
 
@@ -129,7 +143,7 @@ anime-db-bot/
 /anime или /search
         │
         ▼
- bots/search_ui.py
+ bots/telegram/search_ui.py
         │
         ▼
  Search providers
@@ -156,7 +170,7 @@ SearchCandidate (MAL ID + известные cross-ID)
         └── Сэйю             -> Shikimori + AniList lazy voices
 ```
 
-People callbacks подключены через явный aiogram middleware в `bots/runner.py`; runtime monkeypatch функций `bots.common` не используется.
+People callbacks подключены через явный aiogram middleware в `bots/telegram/bot.py`; runtime monkeypatch функций `bots.telegram.common` не используется.
 
 ## SearchService
 
@@ -263,6 +277,8 @@ Regression-тесты покрывают в том числе:
 - ограничение объединённой поисковой страницы;
 - кеширование успешных и повторный запрос ошибочных search pages;
 - единый `/anime` + `/search` UI flow и отсутствие legacy search runtime в `common.py`;
+- выбор official/local Telegram transport по конфигурации;
+- импорт новой платформенной структуры `bots.telegram.*`;
 - cross-ID enrichment до запуска metadata sources;
 - идентичность персонала по source IDs;
 - фильтрацию localization staff;
@@ -295,6 +311,8 @@ BOT_TOKEN=...
 MAL_CLIENT_ID=...
 ```
 
+Если `TELEGRAM_BOT_API_URL` не задан, Telegram-бот использует официальный `api.telegram.org`. Если URL задан, `bots.telegram.bot` выбирает local `tg-bot-api` transport; `TELEGRAM_BOT_API_LOCAL` продолжает управлять режимом локального Bot API server.
+
 При обычном обновлении сервера достаточно:
 
 ```bash
@@ -302,4 +320,4 @@ git pull
 ./start.sh
 ```
 
-`start.sh` создаёт/проверяет `.venv`, устанавливает `requirements.lock`, запускает проверки и тесты, затем запускает бота в `tmux`. Runtime-лог пишется в `logs/bot.log`; `logs/` исключён из Git.
+`start.sh` создаёт/проверяет `.venv`, устанавливает `requirements.lock`, запускает проверки и тесты, затем запускает `bots.telegram.bot` в `tmux`. Runtime-лог пишется в `logs/bot.log`; `logs/` исключён из Git.
