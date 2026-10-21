@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 
-from aiogram.types import Message
+from aiogram import BaseMiddleware
+from aiogram.types import CallbackQuery, Message
 
 from bots import common as common_bot
-from bots.people_portraits import install as install_people_portraits
+from bots.people_portraits import handle_people_callback
 from bots.search_ui import register_search_handlers
 from core.models import SearchCandidate
 from services.id_resolver import resolve_shikimori_id
@@ -35,14 +36,7 @@ async def _aggregate_and_cleanup_search(
     message: Message,
     candidate: SearchCandidate,
 ) -> None:
-    """Replace/remove the bot's search-results message around aggregation.
-
-    Direct one-result searches call the aggregator with the user's command
-    message, so those messages are left untouched. Callback selections pass
-    the bot-authored results message; that one is converted to a loading state
-    and then removed after the anime card has been produced.
-    """
-
+    """Replace/remove a bot-authored search list around metadata aggregation."""
     is_bot_search_message = bool(message.from_user and message.from_user.is_bot)
 
     if is_bot_search_message:
@@ -60,8 +54,6 @@ async def _aggregate_and_cleanup_search(
     try:
         await _resolve_candidate_ids(candidate)
     except Exception:
-        # Cross-ID enrichment improves source coverage but must never prevent
-        # AniList/MAL metadata from opening when Shikimori is temporarily down.
         logging.warning(
             "Could not enrich cross-IDs for MAL %s",
             candidate.external_ids.get("mal"),
@@ -79,8 +71,6 @@ async def _aggregate_and_cleanup_search(
     except Exception:
         logging.debug("Could not delete completed search message", exc_info=True)
 
-    # Some Telegram contexts do not allow deleting the old message. In that
-    # case at least make sure the stale list of search results is gone.
     try:
         await message.edit_text(
             f"Выбрано: {candidate.title}",
@@ -93,6 +83,70 @@ async def _aggregate_and_cleanup_search(
         )
 
 
+async def _handle_default_pick(callback: CallbackQuery) -> bool:
+    """Handle the legacy /anime result-selection callback explicitly.
+
+    bots.common keeps the basic handler as a safe fallback, while this middleware
+    routes the normal path through the shared aggregation/cleanup callback.
+    """
+    raw = callback.data or ""
+    if not raw.startswith("pick:"):
+        return False
+
+    parts = raw.split(":")
+    if len(parts) != 4 or not parts[2].isdigit() or not parts[3].isdigit():
+        await callback.answer("Некорректный результат.", show_alert=True)
+        return True
+
+    _, token, page_text, index_text = parts
+    session = common_bot.SEARCH_SESSIONS.get(token)
+    if session is None:
+        await callback.answer(
+            "Этот поиск устарел. Выполни /anime ещё раз.",
+            show_alert=True,
+        )
+        return True
+    if callback.message is None:
+        await callback.answer()
+        return True
+
+    try:
+        search_page = await common_bot._get_search_page(
+            session,
+            max(1, int(page_text)),
+        )
+    except Exception:
+        logging.exception("Could not reload default search page for selection")
+        await callback.answer("Не удалось получить результат поиска.", show_alert=True)
+        return True
+
+    index = int(index_text)
+    if index < 0 or index >= len(search_page.items):
+        await callback.answer("Результат больше недоступен.", show_alert=True)
+        return True
+
+    candidate = search_page.items[index]
+    await callback.answer()
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        logging.debug("Could not remove search keyboard", exc_info=True)
+    await _aggregate_and_cleanup_search(callback.message, candidate)
+    return True
+
+
+class _CallbackRoutingMiddleware(BaseMiddleware):
+    """Explicit extension point for callbacks that augment bots.common UI."""
+
+    async def __call__(self, handler, event, data):
+        if isinstance(event, CallbackQuery):
+            if await handle_people_callback(common_bot, event):
+                return None
+            if await _handle_default_pick(event):
+                return None
+        return await handler(event, data)
+
+
 async def run_bot(*, use_custom_api: bool, mode_name: str) -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -103,14 +157,13 @@ async def run_bot(*, use_custom_api: bool, mode_name: str) -> None:
     logging.info("Metadata sources: %s", ", ".join(source.name for source in common_bot.SOURCES))
     logging.info("Selectable /search providers are enabled")
 
-    # build_dispatcher() resolves these helpers from bots.common when callbacks
-    # run. Install the search cleanup and portrait-aware staff/seiyuu views
-    # before registering handlers so both /anime and /search share the same UI.
-    common_bot._aggregate_and_send = _aggregate_and_cleanup_search
-    install_people_portraits(common_bot)
-
     bot = common_bot.create_bot(use_custom_api=use_custom_api)
     dp = common_bot.build_dispatcher(mode_name=mode_name)
+
+    # Extension callbacks are intercepted explicitly before bots.common's
+    # generic handlers. No common module functions are replaced at runtime.
+    dp.callback_query.outer_middleware(_CallbackRoutingMiddleware())
+
     register_search_handlers(
         dp,
         aggregate_callback=_aggregate_and_cleanup_search,
