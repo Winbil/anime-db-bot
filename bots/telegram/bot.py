@@ -16,6 +16,8 @@ from bots.telegram.transports import TelegramTransport
 from bots.telegram.transports.official import TRANSPORT as OFFICIAL_TRANSPORT
 from bots.telegram.transports.tgapi import TRANSPORT as TGAPI_TRANSPORT
 from core.models import SearchCandidate
+from localization import text
+from services.user_settings import get_user_locale
 
 load_dotenv()
 
@@ -30,14 +32,16 @@ def select_transport() -> TelegramTransport:
 async def _aggregate_and_cleanup_search(
     message: Message,
     candidate: SearchCandidate,
+    owner_user_id: int,
 ) -> None:
     """Replace/remove a bot-authored search list around metadata aggregation."""
+    locale = get_user_locale(owner_user_id)
     is_bot_search_message = bool(message.from_user and message.from_user.is_bot)
 
     if is_bot_search_message:
         try:
             await message.edit_text(
-                f"Загружаю данные для «{candidate.title}»…",
+                text("search", "loading", locale=locale, title=candidate.title),
                 reply_markup=None,
             )
         except Exception:
@@ -46,7 +50,7 @@ async def _aggregate_and_cleanup_search(
                 exc_info=True,
             )
 
-    await aggregate_and_send(message, candidate)
+    await aggregate_and_send(message, candidate, owner_user_id)
 
     if not is_bot_search_message:
         return
@@ -59,7 +63,7 @@ async def _aggregate_and_cleanup_search(
 
     try:
         await message.edit_text(
-            f"Выбрано: {candidate.title}",
+            text("search", "selected", locale=locale, title=candidate.title),
             reply_markup=None,
         )
     except Exception:
