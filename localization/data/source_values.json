@@ -1,0 +1,152 @@
+{
+  "anilist": {
+    "format": {
+      "domain": "anime_kind",
+      "values": {
+        "TV": "tv",
+        "TV_SHORT": "tv_short",
+        "MOVIE": "movie",
+        "SPECIAL": "special",
+        "OVA": "ova",
+        "ONA": "ona",
+        "MUSIC": "music_video"
+      }
+    },
+    "status": {
+      "domain": "anime_status",
+      "values": {
+        "FINISHED": "finished",
+        "RELEASING": "airing",
+        "NOT_YET_RELEASED": "announced",
+        "CANCELLED": "cancelled",
+        "HIATUS": "hiatus"
+      }
+    },
+    "season": {
+      "domain": "season",
+      "values": {
+        "WINTER": "winter",
+        "SPRING": "spring",
+        "SUMMER": "summer",
+        "FALL": "fall"
+      }
+    },
+    "rating": {
+      "domain": "rating",
+      "values": {
+        "ADULT": "adult"
+      }
+    }
+  },
+  "mal": {
+    "media_type": {
+      "domain": "anime_kind",
+      "values": {
+        "tv": "tv",
+        "ova": "ova",
+        "movie": "movie",
+        "special": "special",
+        "ona": "ona",
+        "music": "music_video",
+        "unknown": "unknown"
+      }
+    },
+    "status": {
+      "domain": "anime_status",
+      "values": {
+        "finished_airing": "finished",
+        "currently_airing": "airing",
+        "not_yet_aired": "announced"
+      }
+    },
+    "rating": {
+      "domain": "rating",
+      "values": {
+        "g": "g",
+        "pg": "pg",
+        "pg_13": "pg_13",
+        "r": "r",
+        "r+": "r_plus",
+        "rx": "rx"
+      }
+    },
+    "season": {
+      "domain": "season",
+      "values": {
+        "winter": "winter",
+        "spring": "spring",
+        "summer": "summer",
+        "fall": "fall"
+      }
+    },
+    "source": {
+      "domain": "source_material",
+      "values": {
+        "original": "original",
+        "manga": "manga",
+        "4_koma_manga": "four_koma_manga",
+        "web_manga": "web_manga",
+        "digital_manga": "digital_manga",
+        "novel": "novel",
+        "light_novel": "light_novel",
+        "visual_novel": "visual_novel",
+        "game": "game",
+        "card_game": "card_game",
+        "book": "book",
+        "picture_book": "picture_book",
+        "radio": "radio",
+        "music": "music",
+        "other": "other"
+      }
+    },
+    "weekday": {
+      "domain": "weekday",
+      "values": {
+        "monday": "monday",
+        "tuesday": "tuesday",
+        "wednesday": "wednesday",
+        "thursday": "thursday",
+        "friday": "friday",
+        "saturday": "saturday",
+        "sunday": "sunday",
+        "other": "other"
+      }
+    }
+  },
+  "shikimori": {
+    "kind": {
+      "domain": "anime_kind",
+      "values": {
+        "tv": "tv",
+        "movie": "movie",
+        "ova": "ova",
+        "ona": "ona",
+        "special": "special",
+        "tv_special": "tv_special",
+        "music": "music_video",
+        "pv": "pv",
+        "cm": "commercial"
+      }
+    },
+    "status": {
+      "domain": "anime_status",
+      "values": {
+        "anons": "announced",
+        "ongoing": "airing",
+        "released": "finished"
+      }
+    },
+    "rating": {
+      "domain": "rating",
+      "values": {
+        "none": "none",
+        "g": "g",
+        "pg": "pg",
+        "pg_13": "pg_13",
+        "r": "r",
+        "r_plus": "r_plus",
+        "rx": "rx"
+      }
+    }
+  }
+}
