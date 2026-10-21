@@ -1,18 +1,21 @@
 from __future__ import annotations
 
-import asyncio
+import copy
 import html
 import os
 import re
+import time
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 
+from core.http_config import USER_AGENT
 from core.models import AnimeRecord, PersonCredit
 
 DEFAULT_ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
 DEFAULT_PEOPLE_MAX_PAGES = 4
+DEFAULT_PEOPLE_CACHE_TTL_SECONDS = 21600
 
 FORMAT_NAMES = {
     "TV": "TV",
@@ -62,28 +65,6 @@ query AnimeDetails($idMal: Int!) {
     siteUrl
     nextAiringEpisode { airingAt episode }
     studios { nodes { name } }
-    staff(page: 1, perPage: 25) {
-      pageInfo { hasNextPage }
-      edges {
-        role
-        node {
-          id
-          name { full native alternative }
-          image { large medium }
-        }
-      }
-    }
-    characters(page: 1, perPage: 25) {
-      pageInfo { hasNextPage }
-      edges {
-        node { id name { full native } }
-        voiceActors(language: JAPANESE) {
-          id
-          name { full native alternative }
-          image { large medium }
-        }
-      }
-    }
   }
 }
 """
@@ -124,6 +105,8 @@ query AnimeCharacters($id: Int!, $page: Int!) {
 }
 """
 
+_PEOPLE_CACHE: dict[tuple[str, str], tuple[float, list[PersonCredit]]] = {}
+
 
 def graphql_url() -> str:
     return (
@@ -138,6 +121,17 @@ def _people_max_pages() -> int:
         return max(1, min(int(raw), 20))
     except ValueError:
         return DEFAULT_PEOPLE_MAX_PAGES
+
+
+def _people_cache_ttl() -> int:
+    raw = os.getenv(
+        "ANILIST_PEOPLE_CACHE_TTL_SECONDS",
+        str(DEFAULT_PEOPLE_CACHE_TTL_SECONDS),
+    ).strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return DEFAULT_PEOPLE_CACHE_TTL_SECONDS
 
 
 def _clean_text(value: Any) -> str:
@@ -246,7 +240,7 @@ def _headers() -> dict[str, str]:
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "User-Agent": "anime-db-bot/1.0 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": USER_AGENT,
     }
     access_token = os.getenv("ANILIST_ACCESS_TOKEN", "").strip()
     if access_token:
@@ -306,30 +300,30 @@ def _voices_from_connection(connection: dict[str, Any] | None) -> list[PersonCre
     return result
 
 
-async def _all_staff(media_id: int, first: dict[str, Any]) -> list[PersonCredit]:
-    result = _staff_from_connection(first)
-    has_next = bool((first.get("pageInfo") or {}).get("hasNextPage"))
-    page = 2
+async def _all_staff(media_id: int) -> list[PersonCredit]:
+    result: list[PersonCredit] = []
+    page = 1
+    has_next = True
     while has_next and page <= _people_max_pages():
         data = await _graphql(STAFF_PAGE_QUERY, {"id": media_id, "page": page})
         connection = ((data.get("Media") or {}).get("staff") or {})
         result.extend(_staff_from_connection(connection))
         has_next = bool((connection.get("pageInfo") or {}).get("hasNextPage"))
         page += 1
-    return result
+    return _dedupe_people(result)
 
 
-async def _all_voices(media_id: int, first: dict[str, Any]) -> list[PersonCredit]:
-    result = _voices_from_connection(first)
-    has_next = bool((first.get("pageInfo") or {}).get("hasNextPage"))
-    page = 2
+async def _all_voices(media_id: int) -> list[PersonCredit]:
+    result: list[PersonCredit] = []
+    page = 1
+    has_next = True
     while has_next and page <= _people_max_pages():
         data = await _graphql(CHARACTERS_PAGE_QUERY, {"id": media_id, "page": page})
         connection = ((data.get("Media") or {}).get("characters") or {})
         result.extend(_voices_from_connection(connection))
         has_next = bool((connection.get("pageInfo") or {}).get("hasNextPage"))
         page += 1
-    return result
+    return _dedupe_people(result)
 
 
 def _merge_portraits(target: dict[str, list[str]], values: dict[str, list[str]]) -> None:
@@ -361,7 +355,7 @@ def _dedupe_people(values: list[PersonCredit]) -> list[PersonCredit]:
     return list(merged.values())
 
 
-async def _record(raw: dict[str, Any]) -> AnimeRecord:
+def _record(raw: dict[str, Any]) -> AnimeRecord:
     titles_raw = raw.get("title") or {}
     romaji = _clean_text(titles_raw.get("romaji"))
     english = _clean_text(titles_raw.get("english"))
@@ -400,12 +394,6 @@ async def _record(raw: dict[str, Any]) -> AnimeRecord:
     else:
         episodes_aired = None
 
-    media_id = int(raw.get("id"))
-    staff, voices = await asyncio.gather(
-        _all_staff(media_id, raw.get("staff") or {}),
-        _all_voices(media_id, raw.get("characters") or {}),
-    )
-
     description = _clean_description(raw.get("description"))
     site_url = _clean_text(raw.get("siteUrl"))
 
@@ -433,9 +421,32 @@ async def _record(raw: dict[str, Any]) -> AnimeRecord:
         descriptions={"AniList": description} if description else {},
         posters=[poster] if poster else [],
         urls={"AniList": site_url} if site_url else {},
-        staff=_dedupe_people(staff),
-        voices=_dedupe_people(voices),
     )
+
+
+async def _cached_people(
+    media_id: str,
+    section: str,
+) -> list[PersonCredit]:
+    key = (media_id, section)
+    now = time.monotonic()
+    cached = _PEOPLE_CACHE.get(key)
+    if cached is not None and cached[0] > now:
+        return copy.deepcopy(cached[1])
+    if cached is not None:
+        _PEOPLE_CACHE.pop(key, None)
+
+    if section == "staff":
+        people = await _all_staff(int(media_id))
+    elif section == "voices":
+        people = await _all_voices(int(media_id))
+    else:
+        raise ValueError(f"Unsupported AniList people section: {section}")
+
+    ttl = _people_cache_ttl()
+    if ttl > 0:
+        _PEOPLE_CACHE[key] = (time.monotonic() + ttl, copy.deepcopy(people))
+    return people
 
 
 class AniListSource:
@@ -456,4 +467,24 @@ class AniListSource:
             return None
         if str(raw.get("idMal") or "") != mal_id:
             return None
-        return await _record(raw)
+        return _record(raw)
+
+    async def load_staff(
+        self,
+        mal_id: str,
+        known_ids: dict[str, str],
+    ) -> list[PersonCredit]:
+        media_id = str(known_ids.get("anilist") or "").strip()
+        if not str(mal_id).strip().isdigit() or not media_id.isdigit():
+            return []
+        return await _cached_people(media_id, "staff")
+
+    async def load_voices(
+        self,
+        mal_id: str,
+        known_ids: dict[str, str],
+    ) -> list[PersonCredit]:
+        media_id = str(known_ids.get("anilist") or "").strip()
+        if not str(mal_id).strip().isdigit() or not media_id.isdigit():
+            return []
+        return await _cached_people(media_id, "voices")
