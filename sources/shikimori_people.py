@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from core.canonicalization import voice_role_token
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord, PersonCredit
 from sources.shikimori import (
@@ -90,21 +91,20 @@ def _rest_person_credit(
     *,
     character_name: str,
 ) -> PersonCredit | None:
-    russian = _clean_text(person.get("russian"))
     name = _clean_text(person.get("name"))
-    names = _dedupe([russian, name])
+    russian = _clean_text(person.get("russian"))
+    names = _dedupe([name, russian])
     if not names:
         return None
 
-    preferred = russian or name
+    preferred = name or russian
     person_id = _clean_text(person.get("id"))
     image = person.get("image") or {}
     portrait = _best_rest_image_url(image) if isinstance(image, dict) else None
-    role = f"Озвучка: {character_name}" if character_name else "Сэйю"
 
     return PersonCredit(
         name=preferred,
-        roles=[role],
+        roles=[voice_role_token(character_name or None)],
         aliases=[item for item in names if item.casefold() != preferred.casefold()],
         external_ids={"shikimori": person_id} if person_id else {},
         portraits={"Shikimori": [portrait]} if portrait else {},
@@ -199,12 +199,7 @@ def _character_ids_from_roles(entries: list[dict[str, Any]]) -> list[str]:
 async def _rest_character_details(
     character_ids: list[str],
 ) -> list[dict[str, Any]]:
-    """Load characters and their original Japanese ``seyu`` lists.
-
-    Requests are globally rate-limited across concurrent Telegram users and
-    character payloads are cached, because the same popular cast is reused by
-    many anime and changes very rarely.
-    """
+    """Load characters and their original Japanese ``seyu`` lists."""
     if not character_ids:
         return []
 
@@ -272,8 +267,8 @@ def _voices_from_character_details(
 
     for character in characters:
         character_name = (
-            _clean_text(character.get("russian"))
-            or _clean_text(character.get("name"))
+            _clean_text(character.get("name"))
+            or _clean_text(character.get("russian"))
         )
 
         seyu = character.get("seyu") or []
@@ -312,12 +307,7 @@ def _voices_from_character_details(
 
 
 def _rest_voice_credits(entries: list[dict[str, Any]]) -> list[PersonCredit]:
-    """Compatibility helper for the startup smoke test.
-
-    Real Shikimori anime-role rows do not contain person and character in the
-    same row. This helper converts synthetic paired rows into the same
-    character.seyu representation used by the real parser.
-    """
+    """Compatibility helper for the startup smoke test."""
     characters: list[dict[str, Any]] = []
     for entry in entries:
         character = entry.get("character")
@@ -362,11 +352,11 @@ async def _refresh_people(people: list[PersonCredit]) -> None:
             if credit is None:
                 continue
 
-            russian = _clean_text(raw_person.get("russian"))
             name = _clean_text(raw_person.get("name"))
+            russian = _clean_text(raw_person.get("russian"))
             japanese = _clean_text(raw_person.get("japanese"))
-            names = _dedupe([credit.name, *credit.aliases, russian, name, japanese])
-            preferred = russian or credit.name or name or japanese
+            names = _dedupe([credit.name, *credit.aliases, name, russian, japanese])
+            preferred = name or credit.name or russian or japanese
             if preferred:
                 credit.name = preferred
                 credit.aliases = [
@@ -406,8 +396,7 @@ async def _load_shikimori_voices(anime_id: str) -> list[PersonCredit]:
         )
 
     logging.info(
-        "Shikimori seiyuu for anime %s: roles=%d, characters=%d/%d, "
-        "voices=%d, portraits=%d",
+        "Shikimori seiyuu for anime %s: roles=%d, characters=%d/%d, voices=%d, portraits=%d",
         anime_id,
         len(raw_roles),
         len(characters),
