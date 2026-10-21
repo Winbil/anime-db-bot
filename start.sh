@@ -32,8 +32,10 @@ required_files=(
     "core/models.py"
     "core/contracts.py"
     "core/canonicalization.py"
+    "core/http_config.py"
     "services/search.py"
     "services/aggregator.py"
+    "services/id_resolver.py"
     "search/registry.py"
     "search/providers/mal.py"
     "search/providers/shikimori.py"
@@ -43,6 +45,10 @@ required_files=(
     "sources/shikimori_people.py"
     "sources/anilist.py"
     "sources/mal.py"
+    "tests/test_search.py"
+    "tests/test_aggregator.py"
+    "tests/test_shikimori_people.py"
+    "tests/test_anilist_lazy.py"
 )
 for required_file in "${required_files[@]}"; do
     [[ -f "$SCRIPT_DIR/$required_file" ]] || fail "$required_file not found."
@@ -112,6 +118,12 @@ info "Checking and installing Python dependencies..."
 info "Checking dependency consistency..."
 "$PYTHON" -m pip check
 
+info "Compiling Python sources..."
+"$PYTHON" -m compileall -q bots core search services sources tests
+
+info "Running regression tests..."
+"$PYTHON" -m unittest discover -s tests -v
+
 info "Checking required imports and service wiring..."
 "$PYTHON" - <<'PY'
 import aiogram
@@ -128,6 +140,7 @@ from core.canonicalization import (
     person_identity_keys,
 )
 from core.contracts import AnimeSearchProvider, AnimeSource
+from core.http_config import USER_AGENT
 from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate, SearchPage
 from search.providers.anilist import AniListSearchProvider
 from search.providers.mal import MALSearchProvider
@@ -150,6 +163,8 @@ if not all_provider_map:
     raise RuntimeError("No selectable anime search providers are enabled")
 if not sources:
     raise RuntimeError("No anime metadata sources are enabled in sources/registry.py")
+if not USER_AGENT.startswith("anime-db-bot/"):
+    raise RuntimeError("Shared HTTP User-Agent smoke test failed")
 
 if canonical_genre("Fantasy") != canonical_genre("Фэнтези"):
     raise RuntimeError("Genre canonicalization smoke test failed")
@@ -269,6 +284,7 @@ info "Default search: Shikimori + MyAnimeList, merged by MAL ID."
 info "Selectable /search providers include MAL, Shikimori and AniList."
 info "Metadata sources: Shikimori + AniList + MyAnimeList."
 info "Equivalent metadata fields are multilingual-canonicalized and merged without duplicates."
+info "People data is loaded lazily when staff/seiyuu sections are opened."
 info "Titles, staff and seiyuu keep source provenance for inline source switching."
 info "Staff and seiyuu portraits are source-keyed and paginated one person per rich page."
 info "Anime cards use sendRichMessage (up to 32768 UTF-8 chars) in both modes."
