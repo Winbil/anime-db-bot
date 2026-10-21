@@ -6,9 +6,8 @@ import re
 from collections import Counter
 
 from core.canonicalization import (
-    canonical_genre,
-    canonical_role,
-    canonical_studio,
+    canonical_genre_token,
+    canonical_role_token,
     is_localization_role,
     normalize_key,
     person_identity_keys,
@@ -16,14 +15,14 @@ from core.canonicalization import (
     studio_identity_key,
 )
 from core.contracts import AnimeSource
-from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate
+from core.models import AggregatedAnime, AnimeRecord, BroadcastSlot, PersonCredit, SearchCandidate
+from localization import canonicalize_domain_value
 from services.id_resolver import resolve_shikimori_id
 
 
 PAREN_NAME_RE = re.compile(r"^(.*?)\s*\((.*)\)\s*$")
-CYRILLIC_NAME_RE = re.compile(r"[А-Яа-яЁё]")
-LATIN_NAME_RE = re.compile(r"[A-Za-z]")
-JAPANESE_NAME_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]")
+SEASON_SUFFIX_RE = re.compile(r"^(.*?)\s+(\d{4})$")
+SEASON_PREFIX_RE = re.compile(r"^(\d{4})[_\s-]+(.+)$")
 
 
 def _clean(value: str) -> str:
@@ -61,61 +60,20 @@ def _merge_portraits(
 
 
 def _person_names(person: PersonCredit) -> list[str]:
-    names = [person.name, *person.aliases]
-    parsed: list[str] = []
-    for value in list(names):
-        value = _clean(value)
+    result: list[str] = []
+    for raw_value in [person.name, *person.aliases]:
+        value = _clean(raw_value)
+        if not value:
+            continue
         match = PAREN_NAME_RE.match(value)
         if not match:
+            result.append(value)
             continue
         base = _clean(match.group(1))
         if base:
-            parsed.append(base)
-        parsed.extend(_clean(part) for part in match.group(2).split(","))
-    return _dedupe_strings([*names, *parsed])
-
-
-def _display_person_name(person: PersonCredit) -> str:
-    primary = _clean(person.name)
-    names = _dedupe_strings([primary, *person.aliases])
-    if not primary:
-        return "Неизвестно"
-
-    extras: list[str] = []
-    latin = next(
-        (
-            value
-            for value in names
-            if normalize_key(value) != normalize_key(primary)
-            and LATIN_NAME_RE.search(value)
-            and not CYRILLIC_NAME_RE.search(value)
-            and not JAPANESE_NAME_RE.search(value)
-        ),
-        None,
-    )
-    japanese = next(
-        (
-            value
-            for value in names
-            if normalize_key(value) != normalize_key(primary)
-            and JAPANESE_NAME_RE.search(value)
-        ),
-        None,
-    )
-
-    if CYRILLIC_NAME_RE.search(primary):
-        if latin:
-            extras.append(latin)
-        if japanese:
-            extras.append(japanese)
-    elif LATIN_NAME_RE.search(primary):
-        if japanese:
-            extras.append(japanese)
-    elif JAPANESE_NAME_RE.search(primary):
-        if latin:
-            extras.append(latin)
-
-    return f"{primary} ({', '.join(extras)})" if extras else primary
+            result.append(base)
+        result.extend(_clean(part) for part in match.group(2).split(","))
+    return _dedupe_strings(result)
 
 
 def _external_ids_match(
@@ -160,9 +118,8 @@ def _merge_people(
             names = _person_names(person)
             raw_roles = [role for role in person.roles if role]
             roles = _dedupe_strings(
-                [canonical_role(role) for role in raw_roles if canonical_role(role)]
+                [canonical_role_token(role) for role in raw_roles if canonical_role_token(role)]
             )
-
             keys = person_identity_keys(names)
             match_index: int | None = None
 
@@ -177,7 +134,7 @@ def _merge_people(
                     break
 
             if match_index is None:
-                preferred = preferred_person_name(names)
+                preferred = preferred_person_name(names, locale="en")
                 aliases = [
                     value
                     for value in names
@@ -197,7 +154,7 @@ def _merge_people(
 
             current = merged[match_index]
             all_names = _dedupe_strings([current.name, *current.aliases, *names])
-            preferred = preferred_person_name(all_names)
+            preferred = preferred_person_name(all_names, locale="en")
             current.name = preferred
             current.aliases = _dedupe_strings(
                 [
@@ -213,9 +170,6 @@ def _merge_people(
             _merge_portraits(current.portraits, person.portraits)
             identity_sets[match_index] |= keys
 
-    for person in merged:
-        person.name = _display_person_name(person)
-
     return merged
 
 
@@ -224,7 +178,7 @@ def _merge_studios(records: list[AnimeRecord]) -> list[str]:
     order: list[str] = []
     for record in records:
         for raw_value in record.studios:
-            value = canonical_studio(raw_value)
+            value = _clean(raw_value)
             key = studio_identity_key(value)
             if not value or not key:
                 continue
@@ -234,15 +188,10 @@ def _merge_studios(records: list[AnimeRecord]) -> list[str]:
     return [merged[key] for key in order]
 
 
-def _consensus_text(records: list[AnimeRecord], field_name: str) -> str | None:
-    values: list[str] = []
-    for record in records:
-        value = getattr(record, field_name)
-        if isinstance(value, str) and _clean(value):
-            values.append(_clean(value))
+def _consensus_values(values: list[str]) -> str | None:
+    values = [_clean(value) for value in values if _clean(value)]
     if not values:
         return None
-
     keys = [normalize_key(value) or value.casefold() for value in values]
     counts = Counter(keys)
     best_count = max(counts.values())
@@ -250,6 +199,32 @@ def _consensus_text(records: list[AnimeRecord], field_name: str) -> str | None:
         if counts[key] == best_count:
             return value
     return values[0]
+
+
+def _consensus_text(records: list[AnimeRecord], field_name: str) -> str | None:
+    return _consensus_values(
+        [
+            value
+            for record in records
+            if isinstance((value := getattr(record, field_name)), str)
+        ]
+    )
+
+
+def _consensus_domain(
+    records: list[AnimeRecord],
+    field_name: str,
+    domain: str,
+) -> str | None:
+    values: list[str] = []
+    for record in records:
+        value = getattr(record, field_name)
+        if not isinstance(value, str) or not _clean(value):
+            continue
+        canonical = canonicalize_domain_value(domain, value)
+        if canonical:
+            values.append(canonical)
+    return _consensus_values(values)
 
 
 def _consensus_int(
@@ -296,6 +271,62 @@ def _min_positive_int(records: list[AnimeRecord], field_name: str) -> int | None
         and getattr(record, field_name) > 0
     ]
     return min(values) if values else None
+
+
+def _season_parts(record: AnimeRecord) -> tuple[str | None, int | None]:
+    raw = _clean(record.season or "")
+    year = record.season_year
+    if not raw:
+        return None, year
+
+    suffix = SEASON_SUFFIX_RE.match(raw)
+    if suffix and year is None:
+        raw = _clean(suffix.group(1))
+        year = int(suffix.group(2))
+
+    prefix = SEASON_PREFIX_RE.match(raw)
+    if prefix and year is None:
+        year = int(prefix.group(1))
+        raw = _clean(prefix.group(2))
+
+    return canonicalize_domain_value("season", raw), year
+
+
+def _merge_season(records: list[AnimeRecord]) -> tuple[str | None, int | None]:
+    seasons: list[str] = []
+    years: list[int] = []
+    for record in records:
+        season, year = _season_parts(record)
+        if season:
+            seasons.append(season)
+        if year:
+            years.append(year)
+    season = _consensus_values(seasons)
+    year = None
+    if years:
+        counts = Counter(years)
+        best = max(counts.values())
+        year = next(value for value in years if counts[value] == best)
+    return season, year
+
+
+def _merge_broadcasts(records: list[AnimeRecord]) -> list[BroadcastSlot]:
+    result: list[BroadcastSlot] = []
+    seen: set[tuple[str, str]] = set()
+    for record in records:
+        for item in record.broadcasts:
+            if isinstance(item, BroadcastSlot):
+                weekday = canonicalize_domain_value("weekday", item.weekday) if item.weekday else None
+                time = _clean(item.time or "") or None
+            else:
+                weekday = None
+                time = _clean(str(item)) or None
+            key = (weekday or "", time or "")
+            if key == ("", "") or key in seen:
+                continue
+            seen.add(key)
+            result.append(BroadcastSlot(weekday=weekday, time=time))
+    return result
 
 
 def _best_text(values: list[str]) -> str | None:
@@ -355,11 +386,7 @@ class AnimeAggregator:
         else:
             mapping.pop(source_name, None)
 
-        ordered_groups = [
-            mapping[source]
-            for source in anime.sources
-            if source in mapping
-        ]
+        ordered_groups = [mapping[source] for source in anime.sources if source in mapping]
         ordered_groups.extend(
             people_group
             for source, people_group in mapping.items()
@@ -482,18 +509,28 @@ class AnimeAggregator:
         ]
 
         title = (
-            titles.get("russian")
-            or titles.get("romaji")
+            titles.get("romaji")
             or titles.get("english")
+            or titles.get("japanese")
+            or titles.get("russian")
             or candidate.title
         )
+        season, season_year = _merge_season(records)
 
         canonical_genres = _dedupe_strings(
             [
-                canonical_genre(value)
+                canonical_genre_token(value)
                 for record in records
                 for value in record.genres
-                if canonical_genre(value)
+                if canonical_genre_token(value)
+            ]
+        )
+        source_materials = _dedupe_strings(
+            [
+                canonicalize_domain_value("source_material", value) or value
+                for record in records
+                for value in record.source_materials
+                if _clean(value)
             ]
         )
 
@@ -503,10 +540,11 @@ class AnimeAggregator:
             synonyms=synonyms,
             external_ids=external_ids,
             sources=_dedupe_strings([record.source for record in records]),
-            kind=_consensus_text(records, "kind"),
-            status=_consensus_text(records, "status"),
-            rating=_consensus_text(records, "rating"),
-            season=_consensus_text(records, "season"),
+            kind=_consensus_domain(records, "kind", "anime_kind"),
+            status=_consensus_domain(records, "status", "anime_status"),
+            rating=_consensus_domain(records, "rating", "rating"),
+            season=season,
+            season_year=season_year,
             franchise=_consensus_text(records, "franchise"),
             episodes_total=_consensus_int(
                 records,
@@ -531,12 +569,8 @@ class AnimeAggregator:
             licensors=_dedupe_strings(
                 [value for record in records for value in record.licensors]
             ),
-            source_materials=_dedupe_strings(
-                [value for record in records for value in record.source_materials]
-            ),
-            broadcasts=_dedupe_strings(
-                [value for record in records for value in record.broadcasts]
-            ),
+            source_materials=source_materials,
+            broadcasts=_merge_broadcasts(records),
             titles_by_source=titles_by_source,
             synonyms_by_source=synonyms_by_source,
             staff_by_source=staff_by_source,
