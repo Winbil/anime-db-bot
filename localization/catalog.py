@@ -39,6 +39,7 @@ def _locale_catalog(locale: str) -> dict[str, Any]:
         return _load_json(f"locales/{DEFAULT_LOCALE}.json")
 
 
+@lru_cache(maxsize=1)
 def available_locales() -> tuple[str, ...]:
     locale_dir = resources.files("localization").joinpath("locales")
     return tuple(
@@ -48,6 +49,17 @@ def available_locales() -> tuple[str, ...]:
             if item.is_file() and item.name.endswith(".json")
         )
     )
+
+
+def normalize_locale(locale: str | None) -> str:
+    value = (locale or "").strip().lower()
+    return value if value in available_locales() else DEFAULT_LOCALE
+
+
+def locale_name(locale: str, *, display_locale: str | None = None) -> str:
+    locale = normalize_locale(locale)
+    display_locale = normalize_locale(display_locale or locale)
+    return text("locale_names", locale, locale=display_locale, default=locale.upper())
 
 
 def aliases(section: str) -> dict[str, str]:
@@ -69,6 +81,7 @@ def text(
     default: str | None = None,
     **params: object,
 ) -> str:
+    locale = normalize_locale(locale)
     section_map = _locale_catalog(locale).get(section, {})
     value: object | None = None
     if isinstance(section_map, dict):
@@ -123,6 +136,27 @@ def source_canonical_key(source: str, field: str, value: object) -> tuple[str, s
     if canonical is None:
         return None
     return domain, canonical
+
+
+def source_value_key(
+    source: str,
+    field: str,
+    value: object,
+    *,
+    default: str | None = None,
+) -> str | None:
+    """Return a locale-neutral canonical value for one source enum.
+
+    Unknown values are deliberately preserved by default so a new upstream enum
+    does not disappear just because the local catalog has not learned it yet.
+    """
+    raw = str(value or "").strip()
+    if not raw:
+        return default
+    canonical = source_canonical_key(source, field, raw)
+    if canonical is not None:
+        return canonical[1]
+    return raw if default is None else default
 
 
 def localize_source_value(
