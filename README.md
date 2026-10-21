@@ -15,6 +15,8 @@ Telegram-бот для поиска аниме и сборки одной общ
 
 Результаты объединяются строго по MAL ID. `/search` позволяет явно выбрать MAL, Shikimori, AniList, несколько источников или все сразу.
 
+`/anime` и `/search` теперь используют один `SearchSession`, одну пагинацию и один набор callback namespaces (`xs/xp/xk`). Разница только в UX: `/anime` сразу запускает основной набор поисковиков, а `/search` без указанного scope сначала предлагает выбрать источники.
+
 Если у выбранного результата нет Shikimori ID, `AnimeAggregator` вызывает `services/id_resolver.py`. Resolver выполняет отдельный Shikimori search и принимает запись только при **точном совпадении MAL ID**. Поэтому cross-ID восстановление одинаково работает для единственного результата `/anime`, MAL-only и AniList-only поиска, а metadata source сам не выполняет скрытый текстовый поиск.
 
 ### Метаданные
@@ -29,7 +31,7 @@ Telegram-бот для поиска аниме и сборки одной общ
 
 ## Ленивая загрузка персонала
 
-Главная карточка теперь **metadata-only** и не ждёт тяжёлые списки людей ни от Shikimori, ни от AniList.
+Главная карточка **metadata-only** и не ждёт тяжёлые списки людей ни от Shikimori, ни от AniList.
 
 - Shikimori staff загружается при первом открытии `Авторы и команда`.
 - AniList staff загружается при первом открытии `Авторы и команда`.
@@ -37,9 +39,11 @@ Telegram-бот для поиска аниме и сборки одной общ
 - Shikimori character-backed seiyuu (`anime roles -> character -> seyu`) загружаются при первом открытии `Сэйю`.
 - Источники одного раздела загружаются параллельно.
 - Данные вливаются в уже существующую `AggregatedAnime`; основная metadata карточки повторно не запрашивается.
-- Повторные открытия используют данные карточки и RAM-кеши источников.
+- Повторные открытия используют данные карточки и RAM-кеши источников там, где они предусмотрены adapter-слоем.
 
 Для Shikimori REST есть общий для процесса rate limiter и до трёх попыток после HTTP 429 с учётом `Retry-After`. Это защищает тяжёлую character→seyu цепочку при одновременных запросах нескольких пользователей.
+
+Retry-обёртка `sources/resilient.py` больше не реализует собственную Shikimori business logic: она только повторяет временно упавшие операции и сохраняет реальные capabilities исходного adapter-а.
 
 ## Команды
 
@@ -61,6 +65,7 @@ Telegram-бот для поиска аниме и сборки одной общ
 anime-db-bot/
 ├── .github/workflows/ci.yml
 ├── bots/
+│   ├── card_handlers.py
 │   ├── common.py
 │   ├── official.py
 │   ├── people_portraits.py
@@ -87,14 +92,19 @@ anime-db-bot/
 │   ├── anilist.py
 │   ├── mal.py
 │   ├── registry.py
+│   ├── resilient.py
 │   ├── shikimori.py
 │   └── shikimori_people.py
 ├── tests/
 │   ├── test_aggregator.py
 │   ├── test_anilist_lazy.py
+│   ├── test_resilient_sources.py
 │   ├── test_search.py
+│   ├── test_search_ui.py
 │   ├── test_session_store.py
-│   └── test_shikimori_people.py
+│   ├── test_shikimori_description.py
+│   ├── test_shikimori_people.py
+│   └── test_startup_wiring.py
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt
@@ -103,10 +113,23 @@ anime-db-bot/
 └── README.md
 ```
 
+### Telegram-слой после первого этапа рефакторинга
+
+- `bots/search_ui.py` — весь `/anime` + `/search` flow и search callback state.
+- `bots/card_handlers.py` — `/start`, `/ping` и callback handlers обычных разделов карточки.
+- `bots/common.py` — создание Bot, общие сервисы, anime-card state, форматирование и рендеринг карточки.
+- `bots/people_portraits.py` — lazy staff/seiyuu + rich portrait UI.
+- `bots/runner.py` — composition root Telegram runtime и middleware.
+
+Старые `pick:*`/`sp:*` callbacks, вторая search session внутри `common.py`, старый `common.build_dispatcher()` и второй `common.run_bot()` удалены.
+
 ## Поток данных
 
 ```text
 /anime или /search
+        │
+        ▼
+ bots/search_ui.py
         │
         ▼
  Search providers
@@ -179,6 +202,8 @@ async def load_staff(mal_id: str, known_ids: dict[str, str]) -> list[PersonCredi
 async def load_voices(mal_id: str, known_ids: dict[str, str]) -> list[PersonCredit]: ...
 ```
 
+Retry-proxy не добавляет эти capabilities metadata-only источникам: lazy people loader видит только операции, которые реально поддерживает исходный adapter.
+
 ## Персонал и портреты
 
 `PersonCredit` хранит имя, aliases, роли, source-local external IDs и source-keyed portraits.
@@ -216,7 +241,7 @@ Telegram callback state:
 TELEGRAM_SESSION_TTL_SECONDS=3600
 ```
 
-Search и anime-card sessions используют ограниченное in-memory хранилище со sliding TTL: активная карточка продлевается при использовании, заброшенный callback token удаляется после периода бездействия. Служебное lazy-people состояние ограничено тем же TTL-подходом. После перезапуска процесса RAM-кеши очищаются.
+Search и anime-card sessions используют ограниченное in-memory хранилище со sliding TTL и настоящим LRU-порядком: активная карточка продлевается и становится most-recently-used, заброшенный callback token удаляется после периода бездействия. Служебное lazy-people состояние ограничено тем же TTL-подходом. После перезапуска процесса RAM-кеши очищаются.
 
 ## Зависимости
 
@@ -237,15 +262,18 @@ Regression-тесты покрывают в том числе:
 
 - ограничение объединённой поисковой страницы;
 - кеширование успешных и повторный запрос ошибочных search pages;
+- единый `/anime` + `/search` UI flow и отсутствие legacy search runtime в `common.py`;
 - cross-ID enrichment до запуска metadata sources;
 - идентичность персонала по source IDs;
 - фильтрацию localization staff;
 - source-keyed portrait merge;
 - Shikimori `character -> seyu` parsing;
 - отсутствие `personRoles` Shikimori и people pagination AniList в initial metadata path;
-- callback session TTL и ограничение размера session store.
+- source capability preservation в retry proxy;
+- callback session TTL, LRU и ограничение размера session store;
+- import/wiring smoke checks, которые раньше находились прямо внутри `start.sh`.
 
-`start.sh` перед запуском процесса выполняет те же unit tests, compile check, `pip check` и быстрый wiring smoke test.
+`start.sh` перед запуском процесса устанавливает lock-файл, выполняет `pip check`, compile check и тот же полный unit-test suite. Отдельного вручную поддерживаемого embedded smoke-script больше нет.
 
 ## Запуск
 
@@ -274,4 +302,4 @@ git pull
 ./start.sh
 ```
 
-`start.sh` проверяет файлы, создаёт/проверяет `.venv`, устанавливает `requirements.lock`, запускает тесты и smoke checks, затем запускает бота в `tmux`. Runtime-лог пишется в `logs/bot.log`; `logs/` исключён из Git.
+`start.sh` создаёт/проверяет `.venv`, устанавливает `requirements.lock`, запускает проверки и тесты, затем запускает бота в `tmux`. Runtime-лог пишется в `logs/bot.log`; `logs/` исключён из Git.
