@@ -1,1 +1,1 @@
-"""Telegram bot launchers and shared handlers."""
+"""Platform bot implementations and shared bot infrastructure."""
