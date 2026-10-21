@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import unittest
 
+from sources.shikimori import DETAIL_FIELDS, STAFF_QUERY
 from sources.shikimori_people import _rest_voice_credits, _voices_from_character_details
 
 
 class ShikimoriPeopleTests(unittest.TestCase):
+    def test_main_metadata_query_does_not_request_person_roles(self) -> None:
+        self.assertNotIn("personRoles", DETAIL_FIELDS)
+        self.assertIn("personRoles", STAFF_QUERY)
+
     def test_character_seyu_is_original_voice_link(self) -> None:
         voices = _voices_from_character_details([
             {
