@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 
+from core.http_config import USER_AGENT
 from core.models import SearchCandidate, SearchPage
 
 DEFAULT_ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
@@ -56,7 +57,7 @@ class AniListSearchProvider:
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "anime-db-bot/0.8 (https://github.com/Winbil/anime-db-bot)",
+            "User-Agent": USER_AGENT,
         }
         token = os.getenv("ANILIST_ACCESS_TOKEN", "").strip()
         if token:
@@ -102,8 +103,6 @@ class AniListSearchProvider:
         for raw in page_data.get("media") or []:
             mal_id = str(raw.get("idMal") or "").strip()
             if not mal_id:
-                # The rest of the bot intentionally uses MAL ID as its canonical
-                # hand-off ID, so entries without a MAL mapping are not selectable.
                 continue
 
             titles = raw.get("title") or {}
