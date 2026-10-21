@@ -104,6 +104,25 @@ def text(
     return result
 
 
+def canonicalize_domain_value(domain: str, value: object) -> str | None:
+    """Convert a canonical key or one of its localized labels back to the key."""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+
+    folded = raw.casefold()
+    for locale in available_locales():
+        section = _locale_catalog(locale).get(domain, {})
+        if not isinstance(section, dict):
+            continue
+        if raw in section:
+            return raw
+        for key, label in section.items():
+            if str(label).strip().casefold() == folded:
+                return str(key)
+    return raw
+
+
 def _source_field(source: str, field: str) -> tuple[str, dict[str, str]] | None:
     source_data = _source_catalog().get(source, {})
     if not isinstance(source_data, dict):
