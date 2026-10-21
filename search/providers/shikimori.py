@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 
+from core.http_config import USER_AGENT
 from core.models import SearchCandidate, SearchPage
 
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
@@ -44,7 +45,7 @@ class ShikimoriSearchProvider:
 
         headers = {
             "Accept": "application/json",
-            "User-Agent": "anime-db-bot/0.7 (https://github.com/Winbil/anime-db-bot)",
+            "User-Agent": USER_AGENT,
         }
         payload = {
             "query": _search_query(page, limit),
