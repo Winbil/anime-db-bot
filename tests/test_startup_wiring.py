@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from aiogram.types import InputRichMessage
 
-from bots import common as common_bot
-from bots.people_portraits import _sources_with_portraits, handle_people_callback
-from bots.runner import _CallbackRoutingMiddleware
-from bots.search_ui import register_search_handlers
+from bots.telegram import common as common_bot
+from bots.telegram.bot import _CallbackRoutingMiddleware, select_transport
+from bots.telegram.people_portraits import _sources_with_portraits, handle_people_callback
+from bots.telegram.search_ui import register_search_handlers
+from bots.telegram.transports.official import TRANSPORT as OFFICIAL_TRANSPORT
+from bots.telegram.transports.tgapi import TRANSPORT as TGAPI_TRANSPORT
 from core.canonicalization import (
     canonical_genre,
     canonical_role,
@@ -65,6 +68,20 @@ class StartupWiringTests(unittest.TestCase):
             ShikimoriSource,
         ):
             self.assertIsNotNone(imported)
+
+    def test_telegram_transport_selection(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertIs(select_transport(), OFFICIAL_TRANSPORT)
+
+        with patch.dict(
+            "os.environ",
+            {"TELEGRAM_BOT_API_URL": "http://127.0.0.1:8081"},
+            clear=True,
+        ):
+            self.assertIs(select_transport(), TGAPI_TRANSPORT)
+
+        self.assertFalse(OFFICIAL_TRANSPORT.use_custom_api)
+        self.assertTrue(TGAPI_TRANSPORT.use_custom_api)
 
     def test_canonicalization_contracts(self) -> None:
         self.assertEqual(canonical_genre("Fantasy"), canonical_genre("Фэнтези"))
