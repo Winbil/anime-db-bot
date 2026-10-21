@@ -131,7 +131,8 @@ import httpx
 import dotenv
 from aiogram.types import InputRichMessage
 from bots import common as common_bot
-from bots.people_portraits import install as install_people_portraits
+from bots.people_portraits import _sources_with_portraits, handle_people_callback
+from bots.runner import _CallbackRoutingMiddleware
 from bots.search_ui import register_search_handlers
 from core.canonicalization import (
     canonical_genre,
@@ -165,6 +166,9 @@ if not sources:
     raise RuntimeError("No anime metadata sources are enabled in sources/registry.py")
 if not USER_AGENT.startswith("anime-db-bot/"):
     raise RuntimeError("Shared HTTP User-Agent smoke test failed")
+if not callable(handle_people_callback):
+    raise RuntimeError("People callback routing smoke test failed")
+_CallbackRoutingMiddleware()
 
 if canonical_genre("Fantasy") != canonical_genre("Фэнтези"):
     raise RuntimeError("Genre canonicalization smoke test failed")
@@ -213,7 +217,6 @@ portrait_merge = _merge_people([
 if len(portrait_merge) != 1 or set(portrait_merge[0].portraits) != {"AniList", "Shikimori"}:
     raise RuntimeError("Cross-source portrait merge smoke test failed")
 
-install_people_portraits(common_bot)
 sample = AggregatedAnime(
     title="Smoke test",
     sources=["AniList"],
@@ -235,9 +238,11 @@ sample = AggregatedAnime(
         portraits={"AniList": ["https://example.invalid/voice.jpg"]},
     )]},
 )
-for section in ("titles", "staff", "voices"):
-    if common_bot._source_section_sources(sample, section) != ["AniList"]:
-        raise RuntimeError(f"Source provenance smoke test failed for {section}")
+if common_bot._source_section_sources(sample, "titles") != ["AniList"]:
+    raise RuntimeError("Title source provenance smoke test failed")
+for section in ("staff", "voices"):
+    if _sources_with_portraits(sample, section) != ["AniList"]:
+        raise RuntimeError(f"Portrait source provenance smoke test failed for {section}")
 
 SearchService(providers)
 AnimeAggregator(sources)
@@ -247,7 +252,7 @@ print("Original seiyuu filtering: OK")
 print("Shikimori structural seiyuu links: OK")
 print("Source-selectable metadata sections: OK")
 print("Cross-source person portraits: OK")
-print("Portrait pagination UI: OK")
+print("Portrait callback routing: OK")
 print("Default search providers:", ", ".join(provider.name for provider in providers))
 print("Selectable search providers:", ", ".join(all_provider_map))
 print("Metadata sources:", ", ".join(source.name for source in sources))
