@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 from datetime import datetime
 from typing import Any
@@ -38,6 +37,20 @@ DETAIL_FIELDS = """
     genres { id name russian kind }
     studios { id name }
     licensors
+    description
+    poster {
+      originalUrl
+      main2xUrl
+      mainUrl
+      preview2xUrl
+      previewUrl
+    }
+    url
+"""
+
+PERSON_ROLES_FIELDS = """
+    id
+    malId
     personRoles {
       rolesRu
       rolesEn
@@ -56,15 +69,6 @@ DETAIL_FIELDS = """
         }
       }
     }
-    description
-    poster {
-      originalUrl
-      main2xUrl
-      mainUrl
-      preview2xUrl
-      previewUrl
-    }
-    url
 """
 
 BY_ID_QUERY = f"""
@@ -75,19 +79,12 @@ query AnimeById($ids: String!) {{
 }}
 """
 
-PEOPLE_POSTERS_QUERY = """
-query PeoplePosters($ids: [ID!]) {
-  people(ids: $ids, limit: 50) {
-    id
-    poster {
-      originalUrl
-      main2xUrl
-      mainUrl
-      preview2xUrl
-      previewUrl
-    }
-  }
-}
+STAFF_QUERY = f"""
+query AnimeStaff($ids: String!) {{
+  animes(ids: $ids, limit: 1) {{
+{PERSON_ROLES_FIELDS}
+  }}
+}}
 """
 
 STATUS_NAMES = {
@@ -273,6 +270,12 @@ async def _get_raw(anime_id: str) -> dict[str, Any] | None:
     return animes[0] if animes else None
 
 
+async def _get_staff_raw(anime_id: str) -> dict[str, Any] | None:
+    data = await _graphql(STAFF_QUERY, {"ids": anime_id})
+    animes = data.get("animes", [])
+    return animes[0] if animes else None
+
+
 def _credits(raw: dict[str, Any], *, voices: bool) -> list[PersonCredit]:
     result: list[PersonCredit] = []
     seen: set[tuple[str, tuple[str, ...]]] = set()
@@ -302,54 +305,6 @@ def _credits(raw: dict[str, Any], *, voices: bool) -> list[PersonCredit]:
         result.append(credit)
 
     return result
-
-
-def _attach_person_posters(
-    credits: list[PersonCredit],
-    raw_people: list[dict[str, Any]],
-) -> int:
-    by_id = {
-        str(person.get("id") or "").strip(): person
-        for person in raw_people
-        if str(person.get("id") or "").strip()
-    }
-    attached = 0
-    for credit in credits:
-        if credit.portraits.get("Shikimori"):
-            continue
-        person_id = str(credit.external_ids.get("shikimori") or "").strip()
-        person = by_id.get(person_id)
-        if not person:
-            continue
-        poster = person.get("poster") or {}
-        portrait = _best_poster_url(poster) if isinstance(poster, dict) else None
-        if not portrait:
-            continue
-        credit.portraits["Shikimori"] = [portrait]
-        attached += 1
-    return attached
-
-
-async def _enrich_missing_voice_portraits(credits: list[PersonCredit]) -> None:
-    """Legacy helper kept for compatibility; the live source enriches voices lazily."""
-    missing_ids = _dedupe([
-        str(credit.external_ids.get("shikimori") or "").strip()
-        for credit in credits
-        if not credit.portraits.get("Shikimori")
-    ])
-    if not missing_ids:
-        return
-
-    try:
-        for offset in range(0, len(missing_ids), 50):
-            ids = missing_ids[offset:offset + 50]
-            data = await _graphql(PEOPLE_POSTERS_QUERY, {"ids": ids})
-            _attach_person_posters(credits, data.get("people") or [])
-    except Exception:
-        logging.warning(
-            "Could not backfill Shikimori seiyuu portraits",
-            exc_info=True,
-        )
 
 
 def _record(raw: dict[str, Any]) -> AnimeRecord:
@@ -417,8 +372,8 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         descriptions={"Shikimori": description} if description else {},
         posters=[poster_url] if poster_url else [],
         urls={"Shikimori": url} if url else {},
-        staff=_credits(raw, voices=False),
-        voices=_credits(raw, voices=True),
+        staff=[],
+        voices=[],
     )
 
 
@@ -440,5 +395,19 @@ class ShikimoriSource:
             return None
         if str(raw.get("malId") or "") != mal_id:
             return None
-
         return _record(raw)
+
+    async def load_staff(
+        self,
+        mal_id: str,
+        known_ids: dict[str, str],
+    ) -> list[PersonCredit]:
+        mal_id = str(mal_id).strip()
+        shikimori_id = str(known_ids.get("shikimori") or "").strip()
+        if not mal_id.isdigit() or not shikimori_id.isdigit():
+            return []
+
+        raw = await _get_staff_raw(shikimori_id)
+        if not raw or str(raw.get("malId") or "") != mal_id:
+            return []
+        return _credits(raw, voices=False)
