@@ -8,6 +8,10 @@ from typing import Any
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputRichMessage, Message
 
 from bots.session_store import ExpiringSessionStore
+from bots.telegram.card.constants import ALL_SOURCE_LABELS, STANDARD_MESSAGE_LIMIT
+from bots.telegram.card.renderer import plain_text_to_rich_html, split_text
+from bots.telegram.card.service import AGGREGATOR, SOURCES
+from bots.telegram.card.state import ANIME_SESSIONS
 from core.models import AggregatedAnime, PersonCredit
 
 PEOPLE_SECTIONS = {"staff", "voices"}
@@ -186,9 +190,9 @@ def _portrait_html(urls: list[str]) -> str:
     return images if len(urls) == 1 else f"<tg-slideshow>{images}</tg-slideshow>"
 
 
-def _rich(common: Any, text: str, urls: list[str]) -> InputRichMessage:
+def _rich(text: str, urls: list[str]) -> InputRichMessage:
     return InputRichMessage(
-        html=_portrait_html(urls) + common._plain_text_to_rich_html(text)
+        html=_portrait_html(urls) + plain_text_to_rich_html(text)
     )
 
 
@@ -204,7 +208,6 @@ def _page_callback(
 
 
 def _source_rows(
-    common: Any,
     token: str,
     anime: AggregatedAnime,
     section: str,
@@ -214,7 +217,7 @@ def _source_rows(
     if not sources:
         return []
 
-    all_label = common.ALL_SOURCE_LABELS[section]
+    all_label = ALL_SOURCE_LABELS[section]
     rows: list[list[InlineKeyboardButton]] = [[
         InlineKeyboardButton(
             text=("✓ " + all_label) if selected_source_index is None else all_label,
@@ -234,7 +237,6 @@ def _source_rows(
 
 
 def _keyboard(
-    common: Any,
     token: str,
     anime: AggregatedAnime,
     section: str,
@@ -271,7 +273,6 @@ def _keyboard(
 
     rows.extend(
         _source_rows(
-            common,
             token,
             anime,
             section,
@@ -289,7 +290,6 @@ def _keyboard(
 
 
 async def _ensure_lazy_people(
-    common: Any,
     token: str,
     anime: AggregatedAnime,
     message: Message,
@@ -309,7 +309,7 @@ async def _ensure_lazy_people(
     method_name = "load_staff" if section == "staff" else "load_voices"
     mapping = _section_mapping(anime, section)
     loaders: list[tuple[Any, Any]] = []
-    for source in common.SOURCES:
+    for source in SOURCES:
         loader = getattr(source, method_name, None)
         if callable(loader) and source.name not in mapping:
             loaders.append((source, loader))
@@ -359,7 +359,7 @@ async def _ensure_lazy_people(
                     continue
 
                 source, people = result
-                common.AGGREGATOR.merge_people_source(
+                AGGREGATOR.merge_people_source(
                     anime,
                     source_name=source.name,
                     people=people,
@@ -387,7 +387,6 @@ async def _ensure_lazy_people(
 
 
 async def _edit_people_view(
-    common: Any,
     message: Message,
     token: str,
     anime: AggregatedAnime,
@@ -395,7 +394,7 @@ async def _edit_people_view(
     source_index: int | None,
     page: int,
 ) -> None:
-    await _ensure_lazy_people(common, token, anime, message, section)
+    await _ensure_lazy_people(token, anime, message, section)
 
     sources = _sources_with_portraits(anime, section)
     source: str | None = None
@@ -414,7 +413,6 @@ async def _edit_people_view(
         page,
     )
     keyboard = _keyboard(
-        common,
         token,
         anime,
         section,
@@ -427,7 +425,7 @@ async def _edit_people_view(
 
     try:
         await message.edit_text(
-            rich_message=_rich(common, text, urls),
+            rich_message=_rich(text, urls),
             reply_markup=keyboard,
         )
     except Exception:
@@ -435,17 +433,17 @@ async def _edit_people_view(
             "Rich portrait view edit failed; falling back to standard text edit"
         )
         await message.edit_text(
-            text=common._split_text(text, common.STANDARD_MESSAGE_LIMIT)[0],
+            text=split_text(text, STANDARD_MESSAGE_LIMIT)[0],
             reply_markup=keyboard,
         )
 
 
-async def handle_people_callback(common: Any, callback: CallbackQuery) -> bool:
-    """Handle staff/voice callback namespaces before bots.common handlers.
+async def handle_people_callback(callback: CallbackQuery) -> bool:
+    """Handle staff/voice callback namespaces before card handlers.
 
-    Returns True only when this module consumed the callback. This explicit
-    callback hook replaces the previous runtime replacement of common module
-    functions, so handler behaviour no longer depends on monkeypatch order.
+    Returns True only when this module consumed the callback. The portrait UI
+    depends on explicit card services/state instead of a module-sized service
+    locator, so its dependencies stay visible and testable.
     """
     raw = callback.data or ""
     parts = raw.split(":")
@@ -468,7 +466,7 @@ async def handle_people_callback(common: Any, callback: CallbackQuery) -> bool:
     else:
         return False
 
-    anime = common.ANIME_SESSIONS.get(token)
+    anime = ANIME_SESSIONS.get(token)
     if anime is None:
         await callback.answer(
             "Карточка устарела. Выполни поиск ещё раз.",
@@ -482,7 +480,6 @@ async def handle_people_callback(common: Any, callback: CallbackQuery) -> bool:
     await callback.answer()
     try:
         await _edit_people_view(
-            common,
             callback.message,
             token,
             anime,
