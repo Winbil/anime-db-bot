@@ -7,6 +7,7 @@ import httpx
 
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord
+from localization import localize_source_value
 
 DEFAULT_MAL_API_URL = "https://api.myanimelist.net/v2"
 
@@ -39,67 +40,6 @@ DETAIL_FIELDS = ",".join(
         "studios",
     )
 )
-
-MEDIA_TYPE_NAMES = {
-    "tv": "TV",
-    "ova": "OVA",
-    "movie": "фильм",
-    "special": "спешл",
-    "ona": "ONA",
-    "music": "клип",
-    "unknown": "неизвестно",
-}
-
-STATUS_NAMES = {
-    "finished_airing": "вышло",
-    "currently_airing": "выходит",
-    "not_yet_aired": "анонсировано",
-}
-
-RATING_NAMES = {
-    "g": "G",
-    "pg": "PG",
-    "pg_13": "PG-13",
-    "r": "R-17+",
-    "r+": "R+",
-    "rx": "Rx",
-}
-
-SEASON_NAMES = {
-    "winter": "Зима",
-    "spring": "Весна",
-    "summer": "Лето",
-    "fall": "Осень",
-}
-
-SOURCE_NAMES = {
-    "original": "Оригинал",
-    "manga": "Манга",
-    "4_koma_manga": "4-кома манга",
-    "web_manga": "Веб-манга",
-    "digital_manga": "Цифровая манга",
-    "novel": "Роман",
-    "light_novel": "Ранобэ",
-    "visual_novel": "Визуальная новелла",
-    "game": "Игра",
-    "card_game": "Карточная игра",
-    "book": "Книга",
-    "picture_book": "Иллюстрированная книга",
-    "radio": "Радио",
-    "music": "Музыка",
-    "other": "Другое",
-}
-
-DAY_NAMES = {
-    "monday": "Понедельник",
-    "tuesday": "Вторник",
-    "wednesday": "Среда",
-    "thursday": "Четверг",
-    "friday": "Пятница",
-    "saturday": "Суббота",
-    "sunday": "Воскресенье",
-    "other": "Другое",
-}
 
 
 def api_url() -> str:
@@ -154,7 +94,12 @@ def _season(value: dict[str, Any] | None) -> str | None:
     value = value or {}
     season = _clean(value.get("season")).casefold()
     year = _int(value.get("year"))
-    season_name = SEASON_NAMES.get(season, season.title() if season else "")
+    season_name = localize_source_value(
+        "mal",
+        "season",
+        season,
+        default=season.title() if season else "",
+    )
     result = " ".join(part for part in (season_name, str(year) if year else "") if part)
     return result or None
 
@@ -163,7 +108,12 @@ def _broadcast(value: dict[str, Any] | None) -> list[str]:
     value = value or {}
     day = _clean(value.get("day_of_the_week")).casefold()
     time = _clean(value.get("start_time"))
-    day_name = DAY_NAMES.get(day, day.title() if day else "")
+    day_name = localize_source_value(
+        "mal",
+        "weekday",
+        day,
+        default=day.title() if day else "",
+    )
     text = " ".join(part for part in (day_name, time) if part)
     return [text] if text else []
 
@@ -263,9 +213,11 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
     )
 
     source_raw = _clean(raw.get("source")).casefold()
-    source_material = SOURCE_NAMES.get(
+    source_material = localize_source_value(
+        "mal",
+        "source",
         source_raw,
-        source_raw.replace("_", " ").title() if source_raw else "",
+        default=source_raw.replace("_", " ").title() if source_raw else "",
     )
 
     genres = _dedupe(
@@ -285,6 +237,8 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
 
     synopsis = _clean(raw.get("synopsis"))
     background = _clean(raw.get("background"))
+    media_type = _clean(raw.get("media_type")).casefold()
+    rating_raw = _clean(raw.get("rating")).casefold()
 
     return AnimeRecord(
         source="MyAnimeList",
@@ -292,14 +246,23 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         titles=titles,
         synonyms=synonyms,
         external_ids={"mal": mal_id} if mal_id else {},
-        kind=MEDIA_TYPE_NAMES.get(
-            _clean(raw.get("media_type")).casefold(),
-            _clean(raw.get("media_type")) or None,
+        kind=localize_source_value(
+            "mal",
+            "media_type",
+            media_type,
+            default=media_type or None,
         ),
-        status=STATUS_NAMES.get(status_raw, status_raw or None),
-        rating=RATING_NAMES.get(
-            _clean(raw.get("rating")).casefold(),
-            _clean(raw.get("rating")) or None,
+        status=localize_source_value(
+            "mal",
+            "status",
+            status_raw,
+            default=status_raw or None,
+        ),
+        rating=localize_source_value(
+            "mal",
+            "rating",
+            rating_raw,
+            default=rating_raw or None,
         ),
         season=_season(raw.get("start_season")),
         episodes_total=episodes_total,
