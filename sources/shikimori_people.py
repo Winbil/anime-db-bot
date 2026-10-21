@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from core.http_config import USER_AGENT
 from core.models import AnimeRecord, PersonCredit
 from sources.shikimori import (
     ShikimoriSource as BaseShikimoriSource,
@@ -163,7 +164,7 @@ async def _rest_get_json(
 
 async def _rest_anime_roles(anime_id: str) -> list[dict[str, Any]]:
     headers = {
-        "User-Agent": "anime-db-bot/1.1 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": USER_AGENT,
         "Accept": "application/json",
     }
     async with httpx.AsyncClient(
@@ -223,7 +224,7 @@ async def _rest_character_details(
 
     if missing:
         headers = {
-            "User-Agent": "anime-db-bot/1.1 (https://github.com/Winbil/anime-db-bot)",
+            "User-Agent": USER_AGENT,
             "Accept": "application/json",
         }
         async with httpx.AsyncClient(
@@ -435,8 +436,6 @@ class ShikimoriSource(BaseShikimoriSource):
         if record is None:
             return None
 
-        # Character -> seyu is intentionally deferred. It can require dozens
-        # of REST requests and should never delay the main anime card.
         record.voices = []
         anime_id = _clean_text(known_ids.get("shikimori") or record.source_id)
         logging.info(
