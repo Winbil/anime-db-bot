@@ -6,6 +6,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message
 
 from bots import common as common_bot
+from bots.card_handlers import build_dispatcher
 from bots.people_portraits import handle_people_callback
 from bots.search_ui import register_search_handlers
 from core.models import SearchCandidate
@@ -74,7 +75,7 @@ async def run_bot(*, use_custom_api: bool, mode_name: str) -> None:
     logging.info("Selectable /search providers are enabled")
 
     bot = common_bot.create_bot(use_custom_api=use_custom_api)
-    dp = common_bot.build_dispatcher(mode_name=mode_name)
+    dp = build_dispatcher(mode_name=mode_name)
 
     dp.callback_query.outer_middleware(_CallbackRoutingMiddleware())
 
