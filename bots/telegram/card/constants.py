@@ -5,18 +5,18 @@ RICH_MESSAGE_LIMIT = 32000
 MAX_ANIME_SESSIONS = 200
 
 SECTION_LABELS = {
-    "main": "Основное",
-    "titles": "Названия",
-    "description": "Описание",
-    "links": "Ссылки",
-    "staff": "Команда",
-    "voices": "Сэйю",
+    "main": "section_main",
+    "titles": "section_titles",
+    "description": "section_description",
+    "links": "section_links",
+    "staff": "section_staff",
+    "voices": "section_voices",
 }
 
 SOURCE_SELECTABLE_SECTIONS = {"titles", "staff", "voices"}
 
 ALL_SOURCE_LABELS = {
-    "titles": "Все названия",
-    "staff": "Вся команда",
-    "voices": "Все сэйю",
+    "titles": "all_titles",
+    "staff": "all_staff",
+    "voices": "all_voices",
 }
