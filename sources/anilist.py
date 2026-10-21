@@ -12,35 +12,11 @@ import httpx
 
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord, PersonCredit
+from localization import localize_source_value, text
 
 DEFAULT_ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
 DEFAULT_PEOPLE_MAX_PAGES = 4
 DEFAULT_PEOPLE_CACHE_TTL_SECONDS = 21600
-
-FORMAT_NAMES = {
-    "TV": "TV",
-    "TV_SHORT": "TV-короткометражка",
-    "MOVIE": "фильм",
-    "SPECIAL": "спешл",
-    "OVA": "OVA",
-    "ONA": "ONA",
-    "MUSIC": "клип",
-}
-
-STATUS_NAMES = {
-    "FINISHED": "вышло",
-    "RELEASING": "выходит",
-    "NOT_YET_RELEASED": "анонсировано",
-    "CANCELLED": "отменено",
-    "HIATUS": "приостановлено",
-}
-
-SEASON_NAMES = {
-    "WINTER": "Зима",
-    "SPRING": "Весна",
-    "SUMMER": "Лето",
-    "FALL": "Осень",
-}
 
 DETAIL_QUERY = """
 query AnimeDetails($idMal: Int!) {
@@ -141,15 +117,15 @@ def _clean_text(value: Any) -> str:
 
 
 def _clean_description(value: Any) -> str:
-    text = str(value or "")
-    if not text:
+    text_value = str(value or "")
+    if not text_value:
         return ""
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = html.unescape(text)
-    text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
-    text = text.replace("~!", "").replace("!~", "")
-    lines = [" ".join(line.split()) for line in text.splitlines()]
+    text_value = re.sub(r"<br\s*/?>", "\n", text_value, flags=re.IGNORECASE)
+    text_value = re.sub(r"<[^>]+>", "", text_value)
+    text_value = html.unescape(text_value)
+    text_value = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text_value)
+    text_value = text_value.replace("~!", "").replace("!~", "")
+    lines = [" ".join(line.split()) for line in text_value.splitlines()]
     return "\n".join(line for line in lines if line).strip()
 
 
@@ -219,13 +195,17 @@ def _person_credit(value: dict[str, Any] | None, roles: list[str]) -> PersonCred
 def _character_name(value: dict[str, Any] | None) -> str:
     value = value or {}
     name = value.get("name") or {}
-    return _clean_text(name.get("full")) or _clean_text(name.get("native")) or "Неизвестно"
+    return (
+        _clean_text(name.get("full"))
+        or _clean_text(name.get("native"))
+        or text("common", "unknown")
+    )
 
 
 def _season(value: str | None, year: int | None) -> str | None:
     if not value and not year:
         return None
-    name = SEASON_NAMES.get(value or "", value or "")
+    name = localize_source_value("anilist", "season", value or "", default=value or "")
     return " ".join(part for part in (name, str(year) if year else "") if part).strip() or None
 
 
@@ -290,9 +270,15 @@ def _staff_from_connection(connection: dict[str, Any] | None) -> list[PersonCred
 
 def _voices_from_connection(connection: dict[str, Any] | None) -> list[PersonCredit]:
     result: list[PersonCredit] = []
+    unknown = text("common", "unknown")
+    voice_actor = text("roles", "voice_actor")
     for edge in (connection or {}).get("edges") or []:
         character = _character_name(edge.get("node"))
-        role = f"Озвучка: {character}" if character and character != "Неизвестно" else "Сэйю"
+        role = (
+            text("common", "voice_of", name=character)
+            if character and character != unknown
+            else voice_actor
+        )
         for actor in edge.get("voiceActors") or []:
             credit = _person_credit(actor, [role])
             if credit is not None:
@@ -396,6 +382,8 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
 
     description = _clean_description(raw.get("description"))
     site_url = _clean_text(raw.get("siteUrl"))
+    format_raw = raw.get("format") or ""
+    status_raw = raw.get("status") or ""
 
     return AnimeRecord(
         source="AniList",
@@ -403,9 +391,23 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         titles=titles,
         synonyms=_dedupe(raw.get("synonyms") or []),
         external_ids=external_ids,
-        kind=FORMAT_NAMES.get(raw.get("format"), raw.get("format") or None),
-        status=STATUS_NAMES.get(raw.get("status"), raw.get("status") or None),
-        rating="18+" if raw.get("isAdult") else None,
+        kind=localize_source_value(
+            "anilist",
+            "format",
+            format_raw,
+            default=str(format_raw) or None,
+        ),
+        status=localize_source_value(
+            "anilist",
+            "status",
+            status_raw,
+            default=str(status_raw) or None,
+        ),
+        rating=(
+            localize_source_value("anilist", "rating", "ADULT", default="18+")
+            if raw.get("isAdult")
+            else None
+        ),
         season=_season(raw.get("season"), raw.get("seasonYear")),
         episodes_total=episodes_total,
         episodes_aired=episodes_aired,
