@@ -59,7 +59,7 @@ query PeoplePosters($ids: [ID!]) {
 
 
 def _is_original_voice_role(value: str) -> bool:
-    """Recognize original/Japanese voice labels used by Shikimori."""
+    """Recognize original/Japanese voice labels used by Shikimori fallbacks."""
     if is_primary_voice_role(value):
         return True
 
@@ -167,55 +167,79 @@ def _rest_role_labels(entry: dict[str, Any]) -> list[str]:
     return _dedupe(labels)
 
 
+def _is_structural_voice_link(entry: dict[str, Any]) -> bool:
+    """A Shikimori anime-role row linking both person and character is a seiyuu link.
+
+    REST /api/animes/:id/roles is a mixed relation list. Character-only rows describe
+    Main/Supporting characters, person-only rows describe production staff, while a
+    row containing both a person and a character connects that actor to that character.
+    The textual `roles` value is not a reliable language/seiyuu discriminator here.
+    """
+    person = entry.get("person")
+    character = entry.get("character")
+    return (
+        isinstance(person, dict)
+        and bool(person)
+        and isinstance(character, dict)
+        and bool(character)
+    )
+
+
 def _rest_voice_stats(
     entries: list[dict[str, Any]],
-) -> tuple[int, int, int, list[str]]:
-    original_entries = 0
+) -> tuple[int, int, int, int, list[str]]:
+    paired_entries = 0
     person_entries = 0
     character_entries = 0
+    labelled_voice_entries = 0
     all_labels: list[str] = []
 
     for entry in entries:
         labels = _rest_role_labels(entry)
         all_labels.extend(labels)
-        if not any(_is_original_voice_role(role) for role in labels):
-            continue
 
-        original_entries += 1
         person = entry.get("person")
         character = entry.get("character")
-        if isinstance(person, dict) and person:
+        has_person = isinstance(person, dict) and bool(person)
+        has_character = isinstance(character, dict) and bool(character)
+
+        if has_person:
             person_entries += 1
-        if isinstance(character, dict) and character:
+        if has_character:
             character_entries += 1
+        if has_person and has_character:
+            paired_entries += 1
+        if any(_is_original_voice_role(role) for role in labels):
+            labelled_voice_entries += 1
 
     unique_labels = sorted(_dedupe(all_labels), key=str.casefold)
-    return original_entries, person_entries, character_entries, unique_labels
+    return (
+        paired_entries,
+        person_entries,
+        character_entries,
+        labelled_voice_entries,
+        unique_labels,
+    )
 
 
 def _rest_voice_credits(entries: list[dict[str, Any]]) -> list[PersonCredit]:
-    """Extract only original Japanese seiyuu from REST role relations."""
+    """Extract Shikimori seiyuu from structural person↔character role relations."""
     result: list[PersonCredit] = []
     by_person_id: dict[str, PersonCredit] = {}
 
     for entry in entries:
-        labels = _rest_role_labels(entry)
-        if not any(_is_original_voice_role(role) for role in labels):
+        if not _is_structural_voice_link(entry):
             continue
 
         person = entry.get("person") or {}
-        if not isinstance(person, dict) or not person:
-            continue
+        character = entry.get("character") or {}
 
-        character = entry.get("character")
-        character_name = ""
-        if isinstance(character, dict):
-            character_name = (
-                str(character.get("russian") or "").strip()
-                or str(character.get("name") or "").strip()
-            )
-
+        character_name = (
+            str(character.get("russian") or "").strip()
+            or str(character.get("name") or "").strip()
+        )
         role = f"Озвучка: {character_name}" if character_name else "Сэйю"
+
         credit = _person_credit(person, [role])
         if credit is None:
             continue
@@ -299,21 +323,23 @@ class ShikimoriSource(BaseShikimoriSource):
                 raw_roles = await _rest_anime_roles(anime_id)
                 rest_voices = _rest_voice_credits(raw_roles)
                 (
-                    original_entries,
+                    paired_entries,
                     person_entries,
                     character_entries,
+                    labelled_voice_entries,
                     role_labels,
                 ) = _rest_voice_stats(raw_roles)
 
                 logging.info(
                     "Shikimori REST roles for anime %s: total=%d, "
-                    "original_voice_entries=%d, person_voice_entries=%d, "
-                    "character_voice_entries=%d, voices=%d",
+                    "paired_voice_links=%d, person_entries=%d, "
+                    "character_entries=%d, labelled_voice_entries=%d, voices=%d",
                     anime_id,
                     len(raw_roles),
-                    original_entries,
+                    paired_entries,
                     person_entries,
                     character_entries,
+                    labelled_voice_entries,
                     len(rest_voices),
                 )
 
