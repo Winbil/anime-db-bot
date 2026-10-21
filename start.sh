@@ -40,6 +40,7 @@ required_files=(
     "search/providers/anilist.py"
     "sources/registry.py"
     "sources/shikimori.py"
+    "sources/shikimori_people.py"
     "sources/anilist.py"
     "sources/mal.py"
 )
@@ -138,6 +139,7 @@ from sources.anilist import AniListSource
 from sources.mal import MALSource
 from sources.registry import get_sources
 from sources.shikimori import ShikimoriSource
+from sources.shikimori_people import _rest_voice_credits
 
 providers = get_search_providers()
 all_provider_map = get_search_provider_map()
@@ -161,6 +163,27 @@ if is_primary_voice_role("Сэйю (EN)"):
     raise RuntimeError("Foreign dub seiyuu filter smoke test failed")
 if common_bot.SOURCE_SELECTABLE_SECTIONS != {"titles", "staff", "voices"}:
     raise RuntimeError("Source-selectable section registry smoke test failed")
+
+shikimori_voice_smoke = _rest_voice_credits([{
+    "roles": ["Main"],
+    "roles_russian": ["Главная роль"],
+    "person": {
+        "id": 1,
+        "name": "Test Seiyuu",
+        "russian": "",
+        "image": {},
+    },
+    "character": {
+        "id": 2,
+        "name": "Test Character",
+        "russian": "Тестовый персонаж",
+        "image": {},
+    },
+}])
+if len(shikimori_voice_smoke) != 1:
+    raise RuntimeError("Shikimori structural seiyuu link smoke test failed")
+if shikimori_voice_smoke[0].roles != ["Озвучка: Тестовый персонаж"]:
+    raise RuntimeError("Shikimori seiyuu character role smoke test failed")
 
 portrait_merge = _merge_people([
     [PersonCredit(
@@ -206,6 +229,7 @@ AnimeAggregator(sources)
 print("Python imports and service wiring: OK")
 print("Multilingual canonicalization: OK")
 print("Original seiyuu filtering: OK")
+print("Shikimori structural seiyuu links: OK")
 print("Source-selectable metadata sections: OK")
 print("Cross-source person portraits: OK")
 print("Portrait pagination UI: OK")
