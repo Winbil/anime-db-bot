@@ -70,8 +70,15 @@ anime-db-bot/
 │   └── telegram/
 │       ├── __init__.py
 │       ├── bot.py
-│       ├── card_handlers.py
-│       ├── common.py
+│       ├── card/
+│       │   ├── __init__.py
+│       │   ├── constants.py
+│       │   ├── handlers.py
+│       │   ├── keyboards.py
+│       │   ├── renderer.py
+│       │   ├── selectors.py
+│       │   ├── service.py
+│       │   └── state.py
 │       ├── people_portraits.py
 │       ├── search_ui.py
 │       └── transports/
@@ -109,7 +116,8 @@ anime-db-bot/
 │   ├── test_session_store.py
 │   ├── test_shikimori_description.py
 │   ├── test_shikimori_people.py
-│   └── test_startup_wiring.py
+│   ├── test_startup_wiring.py
+│   └── test_telegram_transports.py
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt
@@ -122,20 +130,24 @@ anime-db-bot/
 
 `bots/` больше не считается синонимом Telegram. Это контейнер для реализаций разных платформ.
 
-- `bots/telegram/` — текущая Telegram-реализация.
-- `bots/telegram/bot.py` — единственная точка сборки и запуска Telegram-бота.
+- `bots/telegram/bot.py` — composition root и lifecycle Telegram-бота: transport, dispatcher, middleware, polling и shutdown.
 - `bots/telegram/search_ui.py` — весь `/anime` + `/search` flow и search callback state.
-- `bots/telegram/card_handlers.py` — `/start`, `/ping` и callback handlers обычных разделов карточки.
-- `bots/telegram/common.py` — общие Telegram-сервисы, anime-card state, форматирование и рендеринг карточки.
-- `bots/telegram/people_portraits.py` — lazy staff/seiyuu + rich portrait UI.
-- `bots/telegram/transports/official.py` и `tgapi.py` — только transport-конфигурации для official Bot API и локального `tg-bot-api`.
+- `bots/telegram/card/` — изолированный пакет обычной anime-card логики.
+- `card/state.py` — callback/session state карточек.
+- `card/selectors.py` — чистые функции выбора source-specific данных.
+- `card/keyboards.py` — inline keyboards и навигация карточки.
+- `card/renderer.py` — текст, rich HTML и send/edit rendering.
+- `card/service.py` — общие search/source/aggregator instances и aggregate→send use-case.
+- `card/handlers.py` — `/start`, `/ping` и callback handlers обычных разделов карточки.
+- `bots/telegram/people_portraits.py` — lazy staff/seiyuu + rich portrait UI; использует явные зависимости из `card/`, а не module-sized service locator.
+- `bots/telegram/transports/official.py` и `tgapi.py` — реальные backend-реализации official Bot API и локального `tg-bot-api`; каждая сама создаёт Bot/session, участвует в health-check и shutdown lifecycle.
 - `bots/session_store.py` — общий platform-neutral helper для callback/session state.
 
 Для следующей платформы можно добавить отдельный package, например `bots/discord/`, не смешивая Discord handlers/runtime с Telegram-кодом и не меняя `core/`, `search/`, `services/` и `sources/`.
 
 `start.sh` всегда запускает один модуль `bots.telegram.bot`. Сам `bot.py` выбирает transport: official API по умолчанию или локальный `tg-bot-api`, если задан `TELEGRAM_BOT_API_URL`.
 
-Старые верхнеуровневые `bots/runner.py`, `bots/official.py`, `bots/tgapi.py`, `bots/common.py`, `bots/search_ui.py`, `bots/card_handlers.py` и `bots/people_portraits.py` удалены.
+Старый монолитный `bots/telegram/common.py` и верхнеуровневый `bots/telegram/card_handlers.py` удалены. Более ранние верхнеуровневые Telegram entrypoints `bots/runner.py`, `bots/official.py`, `bots/tgapi.py` и старые Telegram-модули в корне `bots/` также удалены.
 
 ## Поток данных
 
@@ -164,13 +176,16 @@ SearchCandidate (MAL ID + известные cross-ID)
  AggregatedAnime
         │
         ▼
+ bots/telegram/card/service.py
+        │
+        ▼
  Telegram rich card
         │
         ├── Авторы и команда -> Shikimori + AniList lazy staff
         └── Сэйю             -> Shikimori + AniList lazy voices
 ```
 
-People callbacks подключены через явный aiogram middleware в `bots/telegram/bot.py`; runtime monkeypatch функций `bots.telegram.common` не используется.
+People callbacks подключены через явный aiogram middleware в `bots/telegram/bot.py`. Portrait UI берёт session state, renderer и source services напрямую из `bots/telegram/card/`; runtime monkeypatch и `common: Any` service locator не используются.
 
 ## SearchService
 
@@ -276,9 +291,9 @@ Regression-тесты покрывают в том числе:
 
 - ограничение объединённой поисковой страницы;
 - кеширование успешных и повторный запрос ошибочных search pages;
-- единый `/anime` + `/search` UI flow и отсутствие legacy search runtime в `common.py`;
-- выбор official/local Telegram transport по конфигурации;
-- импорт новой платформенной структуры `bots.telegram.*`;
+- единый `/anime` + `/search` UI flow;
+- wiring нового `bots/telegram/card/` package;
+- выбор и lifecycle official/local Telegram transport;
 - cross-ID enrichment до запуска metadata sources;
 - идентичность персонала по source IDs;
 - фильтрацию localization staff;
