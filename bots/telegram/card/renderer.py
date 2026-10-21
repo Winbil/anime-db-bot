@@ -17,36 +17,38 @@ from bots.telegram.card.selectors import (
     ordered_mapping_items,
     source_section_sources,
 )
-from core.models import AggregatedAnime
+from core.canonicalization import display_person_name, localize_role_token
+from core.models import AggregatedAnime, BroadcastSlot
+from localization import text
 
 
-def split_text(text: str, limit: int) -> list[str]:
-    text = text.strip()
-    if not text:
-        return ["Нет данных."]
-    if len(text) <= limit:
-        return [text]
+def split_text(text_value: str, limit: int, *, locale: str = "ru") -> list[str]:
+    text_value = text_value.strip()
+    if not text_value:
+        return [text("common", "no_data", locale=locale)]
+    if len(text_value) <= limit:
+        return [text_value]
 
     chunks: list[str] = []
-    while len(text) > limit:
-        split_at = text.rfind("\n\n", 0, limit)
+    while len(text_value) > limit:
+        split_at = text_value.rfind("\n\n", 0, limit)
         if split_at < limit // 2:
-            split_at = text.rfind("\n", 0, limit)
+            split_at = text_value.rfind("\n", 0, limit)
         if split_at < limit // 2:
-            split_at = text.rfind(" ", 0, limit)
+            split_at = text_value.rfind(" ", 0, limit)
         if split_at < limit // 2:
             split_at = limit
-        chunks.append(text[:split_at].strip())
-        text = text[split_at:].strip()
+        chunks.append(text_value[:split_at].strip())
+        text_value = text_value[split_at:].strip()
 
-    if text:
-        chunks.append(text)
+    if text_value:
+        chunks.append(text_value)
     return chunks
 
 
-def plain_text_to_rich_html(text: str) -> str:
+def plain_text_to_rich_html(text_value: str) -> str:
     paragraphs: list[str] = []
-    for paragraph in text.split("\n\n"):
+    for paragraph in text_value.split("\n\n"):
         escaped = html.escape(paragraph).replace("\n", "<br>")
         if escaped:
             paragraphs.append(f"<p>{escaped}</p>")
@@ -64,35 +66,77 @@ def poster_html(anime: AggregatedAnime) -> str:
     return images if len(urls) == 1 else f"<tg-slideshow>{images}</tg-slideshow>"
 
 
-def rich(text: str) -> InputRichMessage:
-    return InputRichMessage(html=plain_text_to_rich_html(text))
+def rich(text_value: str) -> InputRichMessage:
+    return InputRichMessage(html=plain_text_to_rich_html(text_value))
 
 
-def main_rich(token: str, anime: AggregatedAnime, text: str) -> InputRichMessage:
+def display_anime_title(anime: AggregatedAnime, locale: str) -> str:
+    if locale == "en":
+        order = ("english", "romaji", "japanese", "russian", "licensed_ru")
+    else:
+        order = ("russian", "licensed_ru", "romaji", "english", "japanese")
+    for key in order:
+        value = (anime.titles.get(key) or "").strip()
+        if value:
+            return value
+    return anime.title
+
+
+def _domain(domain: str, value: str | None, locale: str) -> str | None:
+    if not value:
+        return None
+    return text(domain, value, locale=locale, default=value)
+
+
+def _season(anime: AggregatedAnime, locale: str) -> str | None:
+    value = _domain("season", anime.season, locale)
+    if anime.season_year:
+        return " ".join(part for part in (value, str(anime.season_year)) if part)
+    return value
+
+
+def _broadcast(item: BroadcastSlot, locale: str) -> str:
+    weekday = _domain("weekday", item.weekday, locale) if item.weekday else None
+    return " ".join(part for part in (weekday, item.time) if part)
+
+
+def main_rich(
+    token: str,
+    anime: AggregatedAnime,
+    text_value: str,
+    *,
+    locale: str,
+) -> InputRichMessage:
+    details = html.escape(text("card", "details", locale=locale))
+    choose_source = html.escape(text("card", "choose_source_hint", locale=locale))
+    open_hint = html.escape(text("card", "open_hint", locale=locale))
+    choose_db = html.escape(text("card", "choose_database_hint", locale=locale))
     links = (
-        "<p><b>Подробная информация</b><br>"
-        f'<tg-button type="callback_data" style="link" data="av:{token}:description:0">Описание</tg-button>'
-        " — выбрать источник<br>"
-        f'<tg-button type="callback_data" style="link" data="av:{token}:titles:0">Все названия</tg-button>'
-        " — нажмите, чтобы открыть<br>"
-        f'<tg-button type="callback_data" style="link" data="av:{token}:staff:0">Авторы и команда</tg-button>'
-        " — нажмите, чтобы открыть<br>"
-        f'<tg-button type="callback_data" style="link" data="av:{token}:voices:0">Сэйю</tg-button>'
-        " — нажмите, чтобы открыть<br>"
-        f'<tg-button type="callback_data" style="link" data="av:{token}:links:0">Ссылки</tg-button>'
-        " — выбрать базу</p>"
+        f"<p><b>{details}</b><br>"
+        f'<tg-button type="callback_data" style="link" data="av:{token}:description:0">{html.escape(text("card", "description_button", locale=locale))}</tg-button>'
+        f" — {choose_source}<br>"
+        f'<tg-button type="callback_data" style="link" data="av:{token}:titles:0">{html.escape(text("card", "titles_button", locale=locale))}</tg-button>'
+        f" — {open_hint}<br>"
+        f'<tg-button type="callback_data" style="link" data="av:{token}:staff:0">{html.escape(text("card", "staff_button", locale=locale))}</tg-button>'
+        f" — {open_hint}<br>"
+        f'<tg-button type="callback_data" style="link" data="av:{token}:voices:0">{html.escape(text("card", "voices_button", locale=locale))}</tg-button>'
+        f" — {open_hint}<br>"
+        f'<tg-button type="callback_data" style="link" data="av:{token}:links:0">{html.escape(text("card", "links_button", locale=locale))}</tg-button>'
+        f" — {choose_db}</p>"
     )
     return InputRichMessage(
-        html=poster_html(anime) + plain_text_to_rich_html(text) + links
+        html=poster_html(anime) + plain_text_to_rich_html(text_value) + links
     )
 
 
 async def send_standard_text(
     message: Message,
-    text: str,
+    text_value: str,
     reply_markup: InlineKeyboardMarkup | None = None,
+    *,
+    locale: str = "ru",
 ) -> None:
-    chunks = split_text(text, STANDARD_MESSAGE_LIMIT)
+    chunks = split_text(text_value, STANDARD_MESSAGE_LIMIT, locale=locale)
     for index, chunk in enumerate(chunks):
         await message.answer(
             chunk,
@@ -118,13 +162,18 @@ def format_number(value: int | None) -> str | None:
     return f"{value:,}".replace(",", " ")
 
 
-def format_people(title: str, people) -> str:
+def format_people(title: str, people, *, locale: str) -> str:
     if not people:
-        return f"{title}:\nНет данных."
+        return f"{title}:\n{text('common', 'no_data', locale=locale)}"
     lines = [f"{title}:"]
     for person in people:
-        roles = ", ".join(person.roles) if person.roles else "роль не указана"
-        lines.append(f"• {person.name} — {roles}")
+        roles = ", ".join(
+            localize_role_token(role, locale=locale)
+            for role in person.roles
+            if localize_role_token(role, locale=locale)
+        ) or text("common", "role_not_specified", locale=locale)
+        name = display_person_name(person.name, person.aliases, locale=locale)
+        lines.append(f"• {name} — {roles}")
     return "\n".join(lines)
 
 
@@ -132,16 +181,18 @@ def format_titles(
     titles_map: dict[str, str],
     synonyms_values: list[str],
     *,
+    locale: str,
     source: str | None = None,
 ) -> str:
-    title = f"Названия — {source}:" if source else "Названия:"
-    lines = [title]
+    base_title = text("card", "titles", locale=locale)
+    title_value = f"{base_title} — {source}:" if source else f"{base_title}:"
+    lines = [title_value]
     labels = {
-        "russian": "Русское",
-        "romaji": "Оригинальное / romaji",
-        "english": "English",
-        "japanese": "日本語",
-        "licensed_ru": "Лицензионное RU",
+        "russian": text("card", "title_russian", locale=locale),
+        "romaji": text("card", "title_romaji", locale=locale),
+        "english": text("card", "title_english", locale=locale),
+        "japanese": text("card", "title_japanese", locale=locale),
+        "licensed_ru": text("card", "title_licensed_ru", locale=locale),
     }
     seen_titles: set[str] = set()
     for key in ("russian", "romaji", "english", "japanese", "licensed_ru"):
@@ -156,20 +207,22 @@ def format_titles(
         if value.casefold() not in seen_titles
     ]
     if synonyms:
-        lines.append("• Синонимы: " + "; ".join(synonyms))
+        lines.append(
+            f"• {text('card', 'synonyms', locale=locale)}: " + "; ".join(synonyms)
+        )
 
     if len(lines) == 1:
-        lines.append("Нет данных.")
+        lines.append(text("common", "no_data", locale=locale))
     return "\n".join(lines)
 
 
-def append_block(target: list[str], title: str, lines: list[str]) -> None:
+def append_block(target: list[str], title_value: str, lines: list[str]) -> None:
     lines = [line for line in lines if line]
     if not lines:
         return
     if target:
         target.append("")
-    target.append(f"{title}:")
+    target.append(f"{title_value}:")
     target.extend(lines)
 
 
@@ -177,128 +230,161 @@ def source_section_text(
     anime: AggregatedAnime,
     section: str,
     source: str,
+    *,
+    locale: str,
 ) -> str:
     if section == "titles":
         return format_titles(
             anime.titles_by_source.get(source, {}),
             anime.synonyms_by_source.get(source, []),
             source=source,
+            locale=locale,
         )
     if section == "staff":
         return format_people(
-            f"Авторы и команда — {source}",
+            f"{text('card', 'staff', locale=locale)} — {source}",
             anime.staff_by_source.get(source, []),
+            locale=locale,
         )
     if section == "voices":
         return format_people(
-            f"Сэйю / актёры озвучки — {source}",
+            f"{text('card', 'voices', locale=locale)} — {source}",
             anime.voices_by_source.get(source, []),
+            locale=locale,
         )
-    return "Нет данных."
+    return text("common", "no_data", locale=locale)
 
 
-def anime_sections(anime: AggregatedAnime) -> dict[str, str]:
+def anime_sections(anime: AggregatedAnime, *, locale: str = "ru") -> dict[str, str]:
     total = anime.episodes_total or 0
     aired = anime.episodes_aired or 0
     episodes = f"{aired}/{total}" if total else str(aired or "—")
 
-    main = [anime.title]
+    main = [display_anime_title(anime, locale)]
     basic: list[str] = []
-    if anime.kind:
-        basic.append(f"Тип: {anime.kind}")
-    if anime.status:
-        basic.append(f"Статус: {anime.status}")
-    basic.append(f"Серии: {episodes}")
+    kind = _domain("anime_kind", anime.kind, locale)
+    status = _domain("anime_status", anime.status, locale)
+    rating = _domain("rating", anime.rating, locale)
+    if kind:
+        basic.append(text("card", "type", locale=locale, value=kind))
+    if status:
+        basic.append(text("card", "status", locale=locale, value=status))
+    basic.append(text("card", "episodes", locale=locale, value=episodes))
     if anime.duration_minutes:
-        basic.append(f"Длительность серии: {anime.duration_minutes} мин.")
-    if anime.rating:
-        basic.append(f"Возрастной рейтинг: {anime.rating}")
-    append_block(main, "Основное", basic)
+        basic.append(text("card", "duration", locale=locale, minutes=anime.duration_minutes))
+    if rating:
+        basic.append(text("card", "rating", locale=locale, value=rating))
+    append_block(main, text("card", "block_main", locale=locale), basic)
 
     release: list[str] = []
-    if anime.season:
-        release.append(f"Сезон: {anime.season}")
+    season = _season(anime, locale)
+    if season:
+        release.append(text("card", "season", locale=locale, value=season))
     if anime.aired_on or anime.released_on:
         release.append(
-            "Начало/Конец показа: "
-            f"{anime.aired_on or '—'}/{anime.released_on or '—'}"
+            text(
+                "card",
+                "air_dates",
+                locale=locale,
+                start=anime.aired_on or "—",
+                end=anime.released_on or "—",
+            )
         )
     if anime.next_episode_at:
-        release.append(f"Следующая серия: {anime.next_episode_at}")
+        release.append(text("card", "next_episode", locale=locale, value=anime.next_episode_at))
     if anime.broadcasts:
-        release.append(f"Расписание: {', '.join(anime.broadcasts)}")
-    append_block(main, "Выход", release)
+        broadcast_text = ", ".join(
+            value for item in anime.broadcasts if (value := _broadcast(item, locale))
+        )
+        if broadcast_text:
+            release.append(text("card", "broadcast", locale=locale, value=broadcast_text))
+    append_block(main, text("card", "block_release", locale=locale), release)
 
     production: list[str] = []
     if anime.source_materials:
-        production.append(f"Первоисточник: {', '.join(anime.source_materials)}")
+        values = ", ".join(
+            text("source_material", value, locale=locale, default=value)
+            for value in anime.source_materials
+        )
+        production.append(text("card", "source_material", locale=locale, value=values))
     if anime.genres:
-        production.append(f"Жанры: {', '.join(anime.genres)}")
+        values = ", ".join(
+            text("genres", value, locale=locale, default=value)
+            for value in anime.genres
+        )
+        production.append(text("card", "genres", locale=locale, value=values))
     if anime.studios:
-        production.append(f"Студии: {', '.join(anime.studios)}")
+        production.append(text("card", "studios", locale=locale, value=", ".join(anime.studios)))
     if anime.licensors:
-        production.append(f"Лицензиаты: {', '.join(anime.licensors)}")
+        production.append(text("card", "licensors", locale=locale, value=", ".join(anime.licensors)))
     if anime.franchise:
-        production.append(f"Франшиза: {anime.franchise}")
-    append_block(main, "Производство", production)
+        production.append(text("card", "franchise", locale=locale, value=anime.franchise))
+    append_block(main, text("card", "block_production", locale=locale), production)
 
     audience: list[str] = []
     if anime.score_average is not None:
         audience.append(
-            f"Средняя оценка: {anime.score_average:g} "
-            f"(источников: {anime.score_sources_count})"
+            text(
+                "card",
+                "average_score",
+                locale=locale,
+                score=f"{anime.score_average:g}",
+                count=anime.score_sources_count,
+            )
         )
     for source, score in ordered_mapping_items(anime.scores, anime.sources):
         audience.append(f"{source}: {float(score):g}")
     if anime.rank:
-        audience.append(f"Рейтинг: #{anime.rank}")
+        audience.append(text("card", "rank", locale=locale, value=anime.rank))
     if anime.popularity_rank:
-        audience.append(f"Популярность: #{anime.popularity_rank}")
+        audience.append(text("card", "popularity", locale=locale, value=anime.popularity_rank))
     if anime.list_users is not None:
-        audience.append(f"В списках пользователей: {format_number(anime.list_users)}")
+        audience.append(text("card", "list_users", locale=locale, value=format_number(anime.list_users)))
     if anime.scoring_users is not None:
-        audience.append(f"Поставили оценку: {format_number(anime.scoring_users)}")
+        audience.append(text("card", "scoring_users", locale=locale, value=format_number(anime.scoring_users)))
     if anime.favorites is not None:
-        audience.append(f"В избранном: {format_number(anime.favorites)}")
-    append_block(main, "Оценка и популярность", audience)
+        audience.append(text("card", "favorites", locale=locale, value=format_number(anime.favorites)))
+    append_block(main, text("card", "block_audience", locale=locale), audience)
 
     source_lines: list[str] = []
     if anime.sources:
-        source_lines.append(f"Базы данных: {', '.join(anime.sources)}")
+        source_lines.append(text("card", "databases", locale=locale, value=", ".join(anime.sources)))
     if anime.external_ids:
         ids = " | ".join(
             f"{name.upper()}: {value}" for name, value in anime.external_ids.items()
         )
-        source_lines.append(f"ID: {ids}")
+        source_lines.append(text("card", "ids", locale=locale, value=ids))
     if anime.errors:
-        source_lines.append("Недоступны: " + ", ".join(anime.errors))
-    append_block(main, "Источники", source_lines)
+        source_lines.append(text("card", "unavailable", locale=locale, value=", ".join(anime.errors)))
+    append_block(main, text("card", "block_sources", locale=locale), source_lines)
 
-    description_text = (
-        "Описание:\nВыбери источник кнопкой ниже."
-        if anime.descriptions
-        else "Описание:\nНет доступных описаний."
+    description_text = text(
+        "card",
+        "description_choose" if anime.descriptions else "description_empty",
+        locale=locale,
     )
-    links_text = (
-        "Ссылки:\nВыбери базу кнопкой ниже."
-        if anime.urls
-        else "Ссылки:\nНет доступных ссылок."
+    links_text = text(
+        "card",
+        "links_choose" if anime.urls else "links_empty",
+        locale=locale,
     )
 
     return {
         "main": "\n".join(main),
-        "titles": format_titles(anime.titles, anime.synonyms),
+        "titles": format_titles(anime.titles, anime.synonyms, locale=locale),
         "description": description_text,
         "links": links_text,
-        "staff": format_people("Авторы и команда", anime.staff),
-        "voices": format_people("Сэйю / актёры озвучки", anime.voices),
+        "staff": format_people(text("card", "staff", locale=locale), anime.staff, locale=locale),
+        "voices": format_people(text("card", "voices", locale=locale), anime.voices, locale=locale),
     }
 
 
-def view_pages(anime: AggregatedAnime, section: str) -> list[str]:
+def view_pages(anime: AggregatedAnime, section: str, *, locale: str) -> list[str]:
     return split_text(
-        anime_sections(anime).get(section) or "Нет данных.",
+        anime_sections(anime, locale=locale).get(section)
+        or text("common", "no_data", locale=locale),
         RICH_MESSAGE_LIMIT,
+        locale=locale,
     )
 
 
@@ -306,9 +392,15 @@ def rich_view(
     token: str,
     anime: AggregatedAnime,
     section: str,
-    text: str,
+    text_value: str,
+    *,
+    locale: str,
 ) -> InputRichMessage:
-    return main_rich(token, anime, text) if section == "main" else rich(text)
+    return (
+        main_rich(token, anime, text_value, locale=locale)
+        if section == "main"
+        else rich(text_value)
+    )
 
 
 async def send_anime_view(
@@ -317,21 +409,25 @@ async def send_anime_view(
     anime: AggregatedAnime,
     section: str = "main",
     page: int = 0,
+    *,
+    locale: str,
 ) -> None:
-    pages = view_pages(anime, section)
+    pages = view_pages(anime, section, locale=locale)
     page = max(0, min(page, len(pages) - 1))
-    keyboard = navigation_keyboard(token, anime, section, page, len(pages))
-    text = pages[page]
+    keyboard = navigation_keyboard(
+        token, anime, section, page, len(pages), locale=locale
+    )
+    text_value = pages[page]
 
     try:
         await message.answer_rich(
-            rich_view(token, anime, section, text),
+            rich_view(token, anime, section, text_value, locale=locale),
             reply_markup=keyboard,
         )
     except Exception:
         logging.exception("sendRichMessage failed; falling back to standard sendMessage")
-        fallback = fallback_main_keyboard(token) if section == "main" else keyboard
-        await send_standard_text(message, text, reply_markup=fallback)
+        fallback = fallback_main_keyboard(token, locale=locale) if section == "main" else keyboard
+        await send_standard_text(message, text_value, reply_markup=fallback, locale=locale)
 
 
 async def edit_anime_view(
@@ -340,22 +436,26 @@ async def edit_anime_view(
     anime: AggregatedAnime,
     section: str,
     page: int,
+    *,
+    locale: str,
 ) -> None:
-    pages = view_pages(anime, section)
+    pages = view_pages(anime, section, locale=locale)
     page = max(0, min(page, len(pages) - 1))
-    keyboard = navigation_keyboard(token, anime, section, page, len(pages))
-    text = pages[page]
+    keyboard = navigation_keyboard(
+        token, anime, section, page, len(pages), locale=locale
+    )
+    text_value = pages[page]
 
     try:
         await message.edit_text(
-            rich_message=rich_view(token, anime, section, text),
+            rich_message=rich_view(token, anime, section, text_value, locale=locale),
             reply_markup=keyboard,
         )
     except Exception:
         logging.exception("Rich message edit failed; falling back to standard text edit")
-        fallback = fallback_main_keyboard(token) if section == "main" else keyboard
+        fallback = fallback_main_keyboard(token, locale=locale) if section == "main" else keyboard
         await message.edit_text(
-            text=split_text(text, STANDARD_MESSAGE_LIMIT)[0],
+            text=split_text(text_value, STANDARD_MESSAGE_LIMIT, locale=locale)[0],
             reply_markup=fallback,
         )
 
@@ -366,6 +466,8 @@ async def edit_description_view(
     anime: AggregatedAnime,
     source_index: int,
     page: int,
+    *,
+    locale: str,
 ) -> None:
     sources = description_sources(anime)
     if source_index < 0 or source_index >= len(sources):
@@ -373,13 +475,20 @@ async def edit_description_view(
 
     source = sources[source_index]
     description = anime.descriptions[source]
-    text = f"Описание — {source}\n\n{description}"
+    text_value = (
+        text("card", "description_title", locale=locale, source=source)
+        + f"\n\n{description}"
+    )
     if source == "MyAnimeList" and anime.background:
-        text += f"\n\nДополнительная информация:\n{anime.background}"
+        text_value += (
+            f"\n\n{text('card', 'extra_info', locale=locale)}\n{anime.background}"
+        )
 
-    pages = split_text(text, RICH_MESSAGE_LIMIT)
+    pages = split_text(text_value, RICH_MESSAGE_LIMIT, locale=locale)
     page = max(0, min(page, len(pages) - 1))
-    keyboard = description_keyboard(token, source_index, page, len(pages))
+    keyboard = description_keyboard(
+        token, source_index, page, len(pages), locale=locale
+    )
 
     try:
         await message.edit_text(
@@ -389,7 +498,7 @@ async def edit_description_view(
     except Exception:
         logging.exception("Rich description edit failed; falling back to standard text edit")
         await message.edit_text(
-            text=split_text(pages[page], STANDARD_MESSAGE_LIMIT)[0],
+            text=split_text(pages[page], STANDARD_MESSAGE_LIMIT, locale=locale)[0],
             reply_markup=keyboard,
         )
 
@@ -401,6 +510,8 @@ async def edit_source_section_view(
     section: str,
     source_index: int,
     page: int,
+    *,
+    locale: str,
 ) -> None:
     sources = source_section_sources(anime, section)
     if source_index < 0 or source_index >= len(sources):
@@ -408,8 +519,9 @@ async def edit_source_section_view(
 
     source = sources[source_index]
     pages = split_text(
-        source_section_text(anime, section, source),
+        source_section_text(anime, section, source, locale=locale),
         RICH_MESSAGE_LIMIT,
+        locale=locale,
     )
     page = max(0, min(page, len(pages) - 1))
     keyboard = source_section_keyboard(
@@ -419,6 +531,7 @@ async def edit_source_section_view(
         source_index,
         page,
         len(pages),
+        locale=locale,
     )
 
     try:
@@ -429,6 +542,6 @@ async def edit_source_section_view(
     except Exception:
         logging.exception("Rich source section edit failed; falling back to standard text edit")
         await message.edit_text(
-            text=split_text(pages[page], STANDARD_MESSAGE_LIMIT)[0],
+            text=split_text(pages[page], STANDARD_MESSAGE_LIMIT, locale=locale)[0],
             reply_markup=keyboard,
         )
