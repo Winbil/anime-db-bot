@@ -231,7 +231,7 @@ def _is_any_voice_role(value: str) -> bool:
 
 async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
     headers = {
-        "User-Agent": "anime-db-bot/1.0 (https://github.com/Winbil/anime-db-bot)",
+        "User-Agent": "anime-db-bot/1.1 (https://github.com/Winbil/anime-db-bot)",
         "Accept": "application/json",
     }
 
@@ -330,6 +330,7 @@ def _attach_person_posters(
 
 
 async def _enrich_missing_voice_portraits(credits: list[PersonCredit]) -> None:
+    """Legacy helper kept for compatibility; the live source enriches voices lazily."""
     missing_ids = _dedupe([
         str(credit.external_ids.get("shikimori") or "").strip()
         for credit in credits
@@ -344,8 +345,6 @@ async def _enrich_missing_voice_portraits(credits: list[PersonCredit]) -> None:
             data = await _graphql(PEOPLE_POSTERS_QUERY, {"ids": ids})
             _attach_person_posters(credits, data.get("people") or [])
     except Exception:
-        # Portraits are optional enrichment. A temporary people-query failure
-        # must not make the whole Shikimori anime metadata source unavailable.
         logging.warning(
             "Could not backfill Shikimori seiyuu portraits",
             exc_info=True,
@@ -441,6 +440,7 @@ class ShikimoriSource:
         if str(raw.get("malId") or "") != mal_id:
             return None
 
-        record = _record(raw)
-        await _enrich_missing_voice_portraits(record.voices)
-        return record
+        # The extended Shikimori source loads character-backed seiyuu only when
+        # the user opens the seiyuu section. Do not perform people enrichment
+        # during the fast metadata path.
+        return _record(raw)
