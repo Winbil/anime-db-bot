@@ -8,8 +8,8 @@ from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message
 from dotenv import load_dotenv
 
-from bots.telegram import common as common_bot
-from bots.telegram.card_handlers import build_dispatcher
+from bots.telegram.card.handlers import build_dispatcher
+from bots.telegram.card.service import SEARCH_SERVICE, SOURCES, aggregate_and_send
 from bots.telegram.people_portraits import handle_people_callback
 from bots.telegram.search_ui import register_search_handlers
 from bots.telegram.transports import TelegramTransport
@@ -46,7 +46,7 @@ async def _aggregate_and_cleanup_search(
                 exc_info=True,
             )
 
-    await common_bot._aggregate_and_send(message, candidate)
+    await aggregate_and_send(message, candidate)
 
     if not is_bot_search_message:
         return
@@ -74,7 +74,7 @@ class _CallbackRoutingMiddleware(BaseMiddleware):
 
     async def __call__(self, handler, event, data):
         if isinstance(event, CallbackQuery):
-            if await handle_people_callback(common_bot, event):
+            if await handle_people_callback(event):
                 return None
         return await handler(event, data)
 
@@ -89,8 +89,8 @@ async def run_bot(transport: TelegramTransport | None = None) -> None:
     )
     logging.info("Bot platform: Telegram")
     logging.info("Telegram transport: %s", transport.mode_name)
-    logging.info("Default search providers: %s", common_bot.SEARCH_SERVICE.provider_name)
-    logging.info("Metadata sources: %s", ", ".join(source.name for source in common_bot.SOURCES))
+    logging.info("Default search providers: %s", SEARCH_SERVICE.provider_name)
+    logging.info("Metadata sources: %s", ", ".join(source.name for source in SOURCES))
     logging.info("Selectable /search providers are enabled")
 
     bot = transport.create_bot()
@@ -108,7 +108,7 @@ async def run_bot(transport: TelegramTransport | None = None) -> None:
         register_search_handlers(
             dp,
             aggregate_callback=_aggregate_and_cleanup_search,
-            default_service=common_bot.SEARCH_SERVICE,
+            default_service=SEARCH_SERVICE,
         )
 
         await dp.start_polling(bot)
