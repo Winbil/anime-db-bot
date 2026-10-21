@@ -5,8 +5,10 @@ from unittest.mock import patch
 
 from aiogram.types import InputRichMessage
 
-from bots.telegram import common as common_bot
 from bots.telegram.bot import _CallbackRoutingMiddleware, select_transport
+from bots.telegram.card.constants import SOURCE_SELECTABLE_SECTIONS
+from bots.telegram.card.selectors import source_section_sources
+from bots.telegram.card.service import SEARCH_SERVICE, SOURCES
 from bots.telegram.people_portraits import _sources_with_portraits, handle_people_callback
 from bots.telegram.search_ui import register_search_handlers
 from bots.telegram.transports.official import (
@@ -48,6 +50,8 @@ class StartupWiringTests(unittest.TestCase):
         self.assertTrue(providers)
         self.assertTrue(provider_map)
         self.assertTrue(sources)
+        self.assertTrue(SEARCH_SERVICE.provider_name)
+        self.assertTrue(SOURCES)
         self.assertTrue(USER_AGENT.startswith("anime-db-bot/"))
         self.assertTrue(callable(handle_people_callback))
         self.assertTrue(callable(register_search_handlers))
@@ -99,7 +103,7 @@ class StartupWiringTests(unittest.TestCase):
 
     def test_source_selectable_sections_and_portraits(self) -> None:
         self.assertEqual(
-            common_bot.SOURCE_SELECTABLE_SECTIONS,
+            SOURCE_SELECTABLE_SECTIONS,
             {"titles", "staff", "voices"},
         )
 
@@ -125,7 +129,7 @@ class StartupWiringTests(unittest.TestCase):
             )]},
         )
 
-        self.assertEqual(common_bot._source_section_sources(sample, "titles"), ["AniList"])
+        self.assertEqual(source_section_sources(sample, "titles"), ["AniList"])
         self.assertEqual(_sources_with_portraits(sample, "staff"), ["AniList"])
         self.assertEqual(_sources_with_portraits(sample, "voices"), ["AniList"])
 
