@@ -17,7 +17,7 @@ def session_ttl_seconds() -> int:
 
 
 class ExpiringSessionStore(MutableMapping[str, T], Generic[T]):
-    """Small dict-like TTL store for callback state kept in bot RAM."""
+    """Small dict-like sliding-TTL store for callback state kept in bot RAM."""
 
     def __init__(
         self,
@@ -41,10 +41,10 @@ class ExpiringSessionStore(MutableMapping[str, T], Generic[T]):
 
     def __getitem__(self, key: str) -> T:
         self._prune()
-        expires_at, value = self._items[key]
-        if expires_at <= time.monotonic():
-            self._items.pop(key, None)
-            raise KeyError(key)
+        _, value = self._items[key]
+        # A callback that is still being used remains alive; abandoned tokens
+        # disappear after the configured idle interval.
+        self._items[key] = (time.monotonic() + self._ttl_seconds, value)
         return value
 
     def __setitem__(self, key: str, value: T) -> None:
@@ -72,10 +72,8 @@ class ExpiringSessionStore(MutableMapping[str, T], Generic[T]):
             return default
 
     def refresh(self, key: str) -> bool:
-        """Extend one live session without changing its value."""
         try:
-            value = self[key]
+            self[key]
         except KeyError:
             return False
-        self[key] = value
         return True
