@@ -16,8 +16,8 @@ SECTION_TITLES = {
 }
 
 _INSTALLED = False
-_LAZY_VOICE_DONE: set[str] = set()
-_LAZY_VOICE_TASKS: dict[str, asyncio.Task[None]] = {}
+_LAZY_PEOPLE_DONE: set[tuple[str, str]] = set()
+_LAZY_PEOPLE_TASKS: dict[tuple[str, str], asyncio.Task[bool]] = {}
 
 
 def _dedupe(values: list[str]) -> list[str]:
@@ -288,75 +288,102 @@ def _keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-async def _ensure_lazy_voices(
+async def _ensure_lazy_people(
     common: Any,
     token: str,
     anime: AggregatedAnime,
     message: Message,
+    section: str,
 ) -> None:
-    """Populate deferred Shikimori seiyuu once for this anime-card session."""
-    if token in _LAZY_VOICE_DONE:
+    """Load expensive person lists only when their UI section is opened."""
+    key = (token, section)
+    if key in _LAZY_PEOPLE_DONE:
         return
 
-    running = _LAZY_VOICE_TASKS.get(token)
+    running = _LAZY_PEOPLE_TASKS.get(key)
     if running is not None:
-        await running
+        if await running:
+            _LAZY_PEOPLE_DONE.add(key)
         return
 
-    async def load() -> None:
+    method_name = "load_staff" if section == "staff" else "load_voices"
+    mapping = _section_mapping(anime, section)
+    loaders: list[tuple[Any, Any]] = []
+    for source in common.SOURCES:
+        loader = getattr(source, method_name, None)
+        if callable(loader) and source.name not in mapping:
+            loaders.append((source, loader))
+
+    if not loaders:
+        _LAZY_PEOPLE_DONE.add(key)
+        return
+
+    async def load() -> bool:
         try:
-            source = next(
-                (
-                    item
-                    for item in common.SOURCES
-                    if item.name == "Shikimori" and hasattr(item, "load_voices")
-                ),
-                None,
+            loading_text = (
+                "Загружаю авторов, команду и портреты…"
+                if section == "staff"
+                else "Загружаю сэйю и портреты…"
             )
-            if source is None:
-                return
-
-            mal_id = str(anime.external_ids.get("mal") or "").strip()
-            shikimori_id = str(anime.external_ids.get("shikimori") or "").strip()
-            if not mal_id.isdigit() or not shikimori_id.isdigit():
-                return
-
             try:
-                await message.edit_text(
-                    text="Загружаю сэйю Shikimori…",
-                    reply_markup=None,
-                )
+                await message.edit_text(text=loading_text, reply_markup=None)
             except Exception:
                 logging.debug(
-                    "Could not show lazy Shikimori seiyuu loading state",
+                    "Could not show lazy people loading state",
                     exc_info=True,
                 )
 
-            voices = await source.load_voices(mal_id, anime.external_ids)
-            common.AGGREGATOR.merge_people_source(
-                anime,
-                source_name="Shikimori",
-                people=voices,
-                section="voices",
+            mal_id = str(anime.external_ids.get("mal") or "").strip()
+            if not mal_id.isdigit():
+                return True
+
+            async def load_source(source: Any, loader: Any):
+                people = await loader(mal_id, anime.external_ids)
+                return source, people
+
+            results = await asyncio.gather(
+                *(load_source(source, loader) for source, loader in loaders),
+                return_exceptions=True,
             )
-            logging.info(
-                "Lazy Shikimori seiyuu loaded for MAL %s: %d people",
-                mal_id,
-                len(voices),
-            )
+
+            success = True
+            for result in results:
+                if isinstance(result, Exception):
+                    success = False
+                    logging.error(
+                        "Lazy %s source load failed: %s",
+                        section,
+                        result,
+                        exc_info=(type(result), result, result.__traceback__),
+                    )
+                    continue
+
+                source, people = result
+                common.AGGREGATOR.merge_people_source(
+                    anime,
+                    source_name=source.name,
+                    people=people,
+                    section=section,
+                )
+                logging.info(
+                    "Lazy %s loaded from %s for MAL %s: %d people",
+                    section,
+                    source.name,
+                    mal_id,
+                    len(people),
+                )
+            return success
         except Exception:
-            # AniList (and any future already-loaded sources) remain usable.
-            # A new anime-card session can retry a temporary Shikimori failure.
-            logging.exception("Lazy Shikimori seiyuu load failed")
-        finally:
-            _LAZY_VOICE_DONE.add(token)
+            logging.exception("Lazy %s loading failed", section)
+            return False
 
     task = asyncio.create_task(load())
-    _LAZY_VOICE_TASKS[token] = task
+    _LAZY_PEOPLE_TASKS[key] = task
     try:
-        await task
+        if await task:
+            _LAZY_PEOPLE_DONE.add(key)
     finally:
-        _LAZY_VOICE_TASKS.pop(token, None)
+        _LAZY_PEOPLE_TASKS.pop(key, None)
 
 
 async def _edit_people_view(
@@ -368,8 +395,7 @@ async def _edit_people_view(
     source_index: int | None,
     page: int,
 ) -> None:
-    if section == "voices":
-        await _ensure_lazy_voices(common, token, anime, message)
+    await _ensure_lazy_people(common, token, anime, message, section)
 
     sources = common._source_section_sources(anime, section)
     source: str | None = None
@@ -415,12 +441,12 @@ async def _edit_people_view(
 
 
 def install(common: Any) -> None:
-    """Install portrait-aware people views into bots.common.
+    """Install portrait-aware lazy people views into bots.common.
 
-    The existing title/description/link handlers stay untouched. Staff and
-    seiyuu reuse the same av:/as: callback namespaces, so source selection and
-    portrait pagination remain part of one anime-card session. Expensive
-    Shikimori character/seiyuu data is loaded only on first entry to voices.
+    Staff and seiyuu reuse the existing av:/as: callback namespaces. Expensive
+    person pagination is fetched only on first entry into the corresponding
+    section, then merged into the current anime-card session with source-keyed
+    portrait provenance preserved.
     """
 
     global _INSTALLED
