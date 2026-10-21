@@ -6,11 +6,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 from core.models import AnimeRecord, PersonCredit
-from sources.resilient import (
-    AniListSourceProxy,
-    RetryingSourceProxy,
-    _load_shikimori_staff,
-)
+from sources.resilient import AniListSourceProxy, RetryingSourceProxy
 
 
 class _FlakySource:
@@ -18,6 +14,7 @@ class _FlakySource:
 
     def __init__(self) -> None:
         self.calls = 0
+        self.staff_calls = 0
 
     async def get_details(self, mal_id: str, known_ids: dict[str, str]):
         self.calls += 1
@@ -28,6 +25,12 @@ class _FlakySource:
             source_id="1",
             external_ids={"mal": mal_id},
         )
+
+    async def load_staff(self, mal_id: str, known_ids: dict[str, str]):
+        self.staff_calls += 1
+        if self.staff_calls < 2:
+            raise httpx.ReadTimeout("temporary staff timeout")
+        return [PersonCredit(name="Staff Person")]
 
 
 class _AniListFake:
@@ -64,6 +67,28 @@ class ResilientSourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(record)
         self.assertEqual(source.calls, 3)
 
+    async def test_lazy_staff_delegates_to_source_and_is_retried(self) -> None:
+        source = _FlakySource()
+        proxy = RetryingSourceProxy(source)
+
+        with patch("sources.resilient.asyncio.sleep", new=AsyncMock()):
+            people = await proxy.load_staff("48316", {"mal": "48316"})
+
+        self.assertEqual(source.staff_calls, 2)
+        self.assertEqual([person.name for person in people], ["Staff Person"])
+
+    async def test_missing_optional_people_loader_returns_empty_list(self) -> None:
+        class _MetadataOnlySource:
+            name = "MetadataOnly"
+
+            async def get_details(self, mal_id: str, known_ids: dict[str, str]):
+                return None
+
+        proxy = RetryingSourceProxy(_MetadataOnlySource())
+
+        self.assertEqual(await proxy.load_staff("1", {"mal": "1"}), [])
+        self.assertEqual(await proxy.load_voices("1", {"mal": "1"}), [])
+
     async def test_anilist_lazy_people_recovers_missing_media_id(self) -> None:
         source = _AniListFake()
         proxy = AniListSourceProxy(source)
@@ -75,40 +100,6 @@ class ResilientSourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(source.staff_calls, 1)
         self.assertEqual(known_ids["anilist"], "999")
         self.assertEqual([person.name for person in people], ["Staff Person"])
-
-    async def test_shikimori_staff_is_loaded_lazily(self) -> None:
-        payload = {
-            "animes": [
-                {
-                    "id": "48316",
-                    "malId": "48316",
-                    "personRoles": [
-                        {
-                            "rolesRu": ["Режиссёр"],
-                            "rolesEn": ["Director"],
-                            "person": {
-                                "id": "42",
-                                "name": "Test Director",
-                                "russian": "Тестовый режиссёр",
-                                "japanese": "",
-                                "isSeyu": False,
-                                "poster": {},
-                            },
-                        }
-                    ],
-                }
-            ]
-        }
-
-        with patch("sources.resilient._graphql", new=AsyncMock(return_value=payload)):
-            people = await _load_shikimori_staff(
-                "48316",
-                {"mal": "48316", "shikimori": "48316"},
-            )
-
-        self.assertEqual(len(people), 1)
-        self.assertEqual(people[0].external_ids["shikimori"], "42")
-        self.assertIn("Режиссёр", people[0].roles)
 
 
 if __name__ == "__main__":
