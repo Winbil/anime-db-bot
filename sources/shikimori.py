@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import html
 import os
+import re
 from datetime import datetime
 from typing import Any
 
@@ -115,6 +117,24 @@ RATING_NAMES = {
     "rx": "Rx",
 }
 
+_BBCODE_WRAPPED_RE = re.compile(
+    r"\[(?P<tag>character|anime|manga|ranobe|person|club|url)"
+    r"(?:=[^\]]*)?\](?P<body>.*?)\[/\s*(?P=tag)\s*\]",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_BBCODE_BREAK_RE = re.compile(r"\[(?:br|hr)\s*/?\]", flags=re.IGNORECASE)
+_BBCODE_DECORATION_RE = re.compile(
+    r"\[/?(?:b|i|u|s|spoiler|quote|center|left|right|color|size)"
+    r"(?:=[^\]]*)?\]",
+    flags=re.IGNORECASE,
+)
+_BBCODE_REMAINING_RE = re.compile(
+    r"\[/?[a-z][a-z0-9_-]*(?:=[^\]]*)?\]",
+    flags=re.IGNORECASE,
+)
+_HTML_BREAK_RE = re.compile(r"<br\s*/?>", flags=re.IGNORECASE)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
 
 def graphql_url() -> str:
     return (
@@ -134,6 +154,50 @@ def _clean_text(value: Any) -> str:
     if value is None:
         return ""
     return " ".join(str(value).replace("\r", " ").split())
+
+
+def _clean_description(value: Any) -> str:
+    """Convert Shikimori BBCode/HTML description markup into readable text."""
+    if value is None:
+        return ""
+
+    text = str(value).replace("\r", "")
+    if not text:
+        return ""
+
+    text = html.unescape(text)
+    text = _HTML_BREAK_RE.sub("\n", text)
+    text = _BBCODE_BREAK_RE.sub("\n", text)
+
+    # Entity/link wrappers such as [character=171572]Cid[/character] should
+    # keep their visible caption while dropping Shikimori-specific markup.
+    for _ in range(6):
+        text, count = _BBCODE_WRAPPED_RE.subn(
+            lambda match: match.group("body"),
+            text,
+        )
+        if not count:
+            break
+
+    text = _BBCODE_DECORATION_RE.sub("", text)
+    text = _BBCODE_REMAINING_RE.sub("", text)
+    text = _HTML_TAG_RE.sub("", text)
+
+    lines = [
+        re.sub(r"[ \t]+", " ", line).strip()
+        for line in text.split("\n")
+    ]
+    normalized: list[str] = []
+    blank = False
+    for line in lines:
+        if line:
+            normalized.append(line)
+            blank = False
+        elif normalized and not blank:
+            normalized.append("")
+            blank = True
+
+    return "\n".join(normalized).strip()
 
 
 def _dedupe(values: list[str]) -> list[str]:
@@ -344,7 +408,7 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
     except (TypeError, ValueError):
         pass
 
-    description = _clean_text(raw.get("description"))
+    description = _clean_description(raw.get("description"))
 
     return AnimeRecord(
         source="Shikimori",
