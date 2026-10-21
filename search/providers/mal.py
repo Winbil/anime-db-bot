@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 
+from core.http_config import USER_AGENT
 from core.models import SearchCandidate, SearchPage
 
 DEFAULT_MAL_API_URL = "https://api.myanimelist.net/v2"
@@ -41,7 +42,7 @@ class MALSearchProvider:
 
         headers = {
             "Accept": "application/json",
-            "User-Agent": "anime-db-bot/0.7 (https://github.com/Winbil/anime-db-bot)",
+            "User-Agent": USER_AGENT,
             "X-MAL-CLIENT-ID": self.client_id(),
         }
         params = {
