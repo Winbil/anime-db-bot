@@ -147,6 +147,15 @@
         "r_plus": "r_plus",
         "rx": "rx"
       }
+    },
+    "season": {
+      "domain": "season",
+      "values": {
+        "winter": "winter",
+        "spring": "spring",
+        "summer": "summer",
+        "fall": "fall"
+      }
     }
   }
 }
