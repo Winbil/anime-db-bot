@@ -2,49 +2,45 @@
 
 Telegram-бот для поиска аниме и сборки одной общей карточки из нескольких баз данных.
 
-Главная идея проекта: **поиск, источники метаданных и агрегирование — разные слои**.
+Главный принцип проекта: **поиск, metadata sources, агрегирование и Telegram UI — отдельные слои**. Канонический ID между слоями сейчас — MAL ID.
 
-- поисковики находят аниме и MAL ID;
-- metadata sources получают уже выбранный MAL ID и cross-ID;
-- `AnimeAggregator` объединяет одинаковые по смыслу поля разных баз без повторений;
-- Telegram получает уже готовую `AggregatedAnime` и не знает, откуда пришёл конкретный жанр, студия или дата.
+## Что подключено
 
----
+### Поиск
 
-# Что подключено
+Обычный `/anime` использует параллельно:
 
-## Поиск
+- Shikimori Search;
+- MyAnimeList Search.
 
-Обычная команда `/anime` использует:
+Результаты объединяются строго по MAL ID. `/search` позволяет явно выбрать MAL, Shikimori, AniList, несколько источников или все сразу.
 
-- **Shikimori Search** — особенно полезен для русских названий;
-- **MyAnimeList Search** — международный поиск и MAL ID.
+Если результат пришёл только из MAL/AniList и в нём нет Shikimori ID, `services/id_resolver.py` выполняет отдельное разрешение cross-ID. Результат принимается только если найденная запись Shikimori имеет **тот же MAL ID**, поэтому metadata source не выполняет скрытый поиск сам.
 
-Они работают параллельно, а результаты объединяются строго по MAL ID.
+### Метаданные
 
-Дополнительно есть `/search`, где можно явно выбрать:
+После выбора аниме используются:
 
-- MyAnimeList;
 - Shikimori;
 - AniList;
-- несколько поисковиков одновременно;
-- все доступные поисковики.
+- MyAnimeList.
 
-AniList Search специально не входит в обычный `/anime`, чтобы не расходовать его rate limit без необходимости.
+`AnimeAggregator` объединяет семантически одинаковые данные: названия, жанры, студии, даты, статусы, оценки, персонал и другие поля. Источник сохраняется там, где provenance действительно нужен: внешние ID/URL, описания, варианты названий, staff/voices и портреты.
 
-## Metadata sources
+## Ленивая загрузка персонала
 
-После выбора аниме агрегатор обращается к:
+Главная карточка **не ждёт тяжёлые списки людей**.
 
-- **Shikimori**;
-- **AniList**;
-- **MyAnimeList**.
+- AniList staff загружается при первом открытии `Авторы и команда`.
+- AniList Japanese voice actors загружаются при первом открытии `Сэйю`.
+- Shikimori character-backed seiyuu (`anime roles -> character -> seyu`) загружаются при первом открытии `Сэйю`.
+- Уже загруженные данные вливаются в текущую `AggregatedAnime` без повторного запроса MAL/AniList/Shikimori основной метадаты.
+- Одновременные загрузки источников запускаются параллельно.
+- Повторные открытия используют данные текущей карточки и RAM-кеши источников.
 
-Источники не отображаются как три независимые карточки. Их данные нормализуются и объединяются.
+Для Shikimori REST есть общий для процесса rate limiter и повторные попытки после HTTP 429. Это не даёт нескольким пользователям одновременно превысить лимит запросов при загрузке большого каста.
 
----
-
-# Команды
+## Команды
 
 ```text
 /start
@@ -67,221 +63,115 @@ AniList Search специально не входит в обычный `/anime`
 /search mal,anilist slime
 ```
 
----
-
-# Архитектура
+## Архитектура
 
 ```text
 anime-db-bot/
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+├── bots/
+│   ├── common.py
+│   ├── official.py
+│   ├── people_portraits.py
+│   ├── runner.py
+│   ├── search_ui.py
+│   └── tgapi.py
 ├── core/
+│   ├── canonicalization.py
 │   ├── contracts.py
+│   ├── http_config.py
 │   └── models.py
-│
 ├── search/
 │   ├── registry.py
 │   └── providers/
+│       ├── anilist.py
 │       ├── mal.py
-│       ├── shikimori.py
-│       └── anilist.py
-│
+│       └── shikimori.py
 ├── services/
-│   ├── search.py
-│   └── aggregator.py
-│
+│   ├── aggregator.py
+│   ├── id_resolver.py
+│   └── search.py
 ├── sources/
-│   ├── registry.py
+│   ├── anilist.py
 │   ├── mal.py
+│   ├── registry.py
 │   ├── shikimori.py
-│   └── anilist.py
-│
-├── bots/
-│   ├── common.py
-│   ├── search_ui.py
-│   ├── runner.py
-│   ├── official.py
-│   └── tgapi.py
-│
+│   └── shikimori_people.py
+├── tests/
+│   ├── test_aggregator.py
+│   ├── test_anilist_lazy.py
+│   ├── test_search.py
+│   └── test_shikimori_people.py
 ├── .env.example
+├── .gitignore
 ├── requirements.txt
 ├── start.sh
 └── README.md
 ```
 
----
-
-# Полный поток `/anime`
+## Поток данных
 
 ```text
-/anime <текст>
-       │
-       ▼
-  SearchService
-       │
-       ├────────► ShikimoriSearchProvider
-       │
-       └────────► MALSearchProvider
-                       │
-                       ▼
-              SearchCandidate[]
-                       │
-              merge by MAL ID
-                       │
-                       ▼
-             пользователь выбирает
-                       │
-                       ▼
-          MAL ID + известные cross-ID
-                       │
-            ┌──────────┼──────────┐
-            ▼          ▼          ▼
-      Shikimori    AniList       MAL
-        Source      Source      Source
-            │          │          │
-            └──────────┼──────────┘
-                       ▼
-                AnimeAggregator
-                       │
-                       ▼
-                AggregatedAnime
-                       │
-                       ▼
-              Telegram rich card
+/anime или /search
+        │
+        ▼
+ Search providers
+        │
+        ▼
+SearchCandidate (MAL ID + известные cross-ID)
+        │
+        ├── при необходимости: MAL -> Shikimori ID resolver
+        │
+        ▼
+ metadata sources
+ Shikimori + AniList + MAL
+        │
+        ▼
+ AnimeAggregator
+        │
+        ▼
+ AggregatedAnime
+        │
+        ▼
+ Telegram rich card
+        │
+        ├── Авторы и команда -> lazy people loaders
+        └── Сэйю             -> lazy people loaders
 ```
 
----
+## SearchService
 
-# Search providers
-
-Поисковые адаптеры находятся только в:
-
-```text
-search/providers/
-```
-
-Они отвечают за поиск, но не за подробную карточку.
-
-Общий контракт:
-
-```python
-async def search(
-    query: str,
-    *,
-    page: int,
-    limit: int,
-) -> SearchPage:
-    ...
-```
-
-Каждый найденный элемент приводится к `SearchCandidate`.
-
-Главное требование — наличие MAL ID. Именно MAL ID сейчас является каноническим ключом проекта.
-
-## Shikimori Search
-
-Полезен для русского поиска и дополнительно даёт Shikimori ID.
-
-Например:
-
-```text
-MAL: 37430
-Shikimori: 39607
-О моём перерождении в слизь
-```
-
-## MyAnimeList Search
-
-Работает через MAL API v2 и даёт:
-
-- MAL ID;
-- canonical title;
-- alternative titles;
-- год;
-- оценку.
-
-Для публичного API нужен `MAL_CLIENT_ID`.
-
-## AniList Search
-
-Доступен через `/search`, но не входит в стандартный `/anime`.
-
-Результаты без `idMal` отбрасываются, потому что дальше система работает через MAL ID.
-
----
-
-# SearchService
-
-Файл:
-
-```text
-services/search.py
-```
-
-SearchService:
+`services/search.py`:
 
 1. нормализует запрос;
-2. параллельно вызывает выбранные search providers;
-3. не ломает всю выдачу при сбое одного поисковика;
-4. объединяет совпадения строго по MAL ID;
-5. объединяет aliases, cross-ID и найденные оценки;
-6. предпочитает русское название Shikimori для кириллического запроса;
-7. кеширует результаты в RAM.
+2. параллельно вызывает выбранные поисковики;
+3. изолирует ошибку одного провайдера;
+4. объединяет записи по MAL ID;
+5. объединяет aliases, cross-ID и оценки;
+6. для кириллического запроса предпочитает русское название Shikimori;
+7. ограничивает объединённую страницу реальным `page_size`;
+8. использует RAM LRU-кеш успешных страниц.
 
-Пример объединения:
+Частично сломанная страница с ошибкой одного провайдера **не кешируется**, поэтому временный сбой не остаётся в памяти на весь TTL.
 
-```text
-Shikimori
-MAL 37430
-Shikimori 39607
-О моём перерождении в слизь
-
-MyAnimeList
-MAL 37430
-Tensei Shitara Slime Datta Ken
-
-                ↓
-
-один SearchCandidate
-MAL 37430
-Shikimori 39607
-aliases: ...
-```
-
----
-
-# Кэш поиска
-
-По умолчанию:
+Настройки:
 
 ```env
 SEARCH_CACHE_TTL_SECONDS=21600
 SEARCH_CACHE_MAX_ENTRIES=500
 ```
 
-`21600` секунд = 6 часов.
+## Metadata contracts
 
-Повторный одинаковый запрос/страница в пределах TTL не обращается к API повторно.
+Search provider:
 
-Отключить:
-
-```env
-SEARCH_CACHE_TTL_SECONDS=0
+```python
+async def search(query: str, *, page: int, limit: int) -> SearchPage:
+    ...
 ```
 
-Кэш пока находится в RAM процесса и очищается после перезапуска.
-
----
-
-# Metadata sources
-
-Metadata adapters находятся в:
-
-```text
-sources/
-```
-
-Они **не выполняют текстовый поиск**.
-
-Контракт:
+Metadata source:
 
 ```python
 async def get_details(
@@ -291,422 +181,114 @@ async def get_details(
     ...
 ```
 
-`known_ids` может содержать:
+Тяжёлые источники людей дополнительно могут предоставлять:
+
+```python
+async def load_staff(mal_id: str, known_ids: dict[str, str]) -> list[PersonCredit]: ...
+async def load_voices(mal_id: str, known_ids: dict[str, str]) -> list[PersonCredit]: ...
+```
+
+Metadata source сам не должен выполнять текстовый поиск.
+
+## Персонал и портреты
+
+`PersonCredit` хранит:
+
+- предпочтительное имя;
+- aliases на других языках;
+- роли;
+- source-local external IDs;
+- source-keyed portraits.
+
+Пример provenance:
 
 ```python
 {
-    "mal": "37430",
-    "shikimori": "39607",
-    "anilist": "101280",
+    "AniList": ["..."],
+    "Shikimori": ["..."],
 }
 ```
 
-## ShikimoriSource
+При слиянии внешний ID используется как сильный сигнал идентичности. Если два человека имеют одинаковое имя, но конфликтующие ID одной базы, они не объединяются только по имени.
 
-Получает уже известный Shikimori ID, загружает запись и сверяет её `malId`.
+Локализационные/dub credits удаляются из оригинального staff целиком. Для сэйю сохраняется только оригинальная японская озвучка из соответствующих связей источника.
 
-Никакого скрытого повторного поиска по названию в metadata source нет.
+В Telegram страница `0` показывает людей без портрета, затем идёт один человек на страницу; при наличии нескольких портретов используется rich slideshow. Кнопки конкретного источника появляются только если у этого источника действительно есть портреты.
 
-## AniListSource
+## Описания и названия
 
-Использует прямой GraphQL lookup:
+Названия, staff и voices сохраняют source buckets для переключения источника. Описания также сохраняются по источнику и выбираются пользователем в UI — бот не заменяет их одним «самым длинным» текстом.
 
-```graphql
-Media(idMal: ...)
-```
+## Кеши персонала
 
-Поэтому ему достаточно MAL ID.
-
-## MALSource
-
-Использует:
-
-```text
-GET /v2/anime/{mal_id}
-```
-
-и добавляет в общую модель не только стандартную метадату, но и:
-
-- rank;
-- popularity;
-- количество пользователей в списках;
-- количество поставивших оценку;
-- favorites;
-- первоисточник;
-- broadcast schedule;
-- background;
-- дополнительные изображения.
-
-Отдельного ключа для MAL metadata не нужно — используется тот же `MAL_CLIENT_ID`.
-
----
-
-# Семантическое агрегирование
-
-Файл:
-
-```text
-services/aggregator.py
-```
-
-Главное правило: **источник — это способ получить данные, а не отдельная категория в карточке**.
-
-Например:
-
-```text
-Shikimori genres: Action, Adventure
-MAL genres:       Action, Adventure, Fantasy
-AniList genres:   Adventure, Fantasy
-```
-
-Итог:
-
-```text
-Жанры: Action, Adventure, Fantasy
-```
-
-Никаких трёх отдельных списков жанров.
-
-## Списочные поля
-
-Объединяются без повторений:
-
-- жанры;
-- студии;
-- лицензиаты;
-- первоисточники;
-- расписание;
-- синонимы;
-- постеры;
-- external IDs;
-- staff;
-- сэйю.
-
-Для персонала одинаковый человек объединяется, а его роли дополняются.
-
-## Названия
-
-Для каждой категории выбирается одно основное значение:
-
-```text
-russian
-romaji
-english
-japanese
-licensed_ru
-```
-
-Если другой источник дал другое название той же категории, оно не теряется — уходит в aliases/synonyms.
-
-## Одиночные поля
-
-Для типа, статуса, рейтинга, сезона, дат и похожих полей используется консенсус доступных источников.
-
-Если одинаковое значение дали несколько баз — оно имеет приоритет.
-
-Для количества серий при ничьей выбирается более полное значение.
-
-Для числа уже вышедших серий берётся максимальный доступный прогресс.
-
-## Оценка
-
-Источник-специфичные оценки сохраняются внутренне, но пользователю показывается одна агрегированная оценка:
-
-```text
-Средняя оценка: 8.31 (3 источника)
-```
-
-Все входные оценки предварительно приводятся источниками к шкале 0–10.
-
-## Описание
-
-Вместо отдельных блоков:
-
-```text
-[Shikimori]
-...
-
-[AniList]
-...
-
-[MAL]
-...
-```
-
-выбирается наиболее полное непустое описание.
-
-`background` хранится отдельно как дополнительная информация и показывается под описанием.
-
-## Популярность
-
-Поля `rank`, `popularity_rank`, `list_users`, `scoring_users`, `favorites` являются универсальными полями модели.
-
-Сейчас их в основном заполняет MAL, но они не называются `mal_rank` и не привязаны архитектурно к MAL. Если позже другая база сможет дополнить то же поле, агрегатор применит к нему общие правила.
-
----
-
-# Telegram-карточка
-
-Пример:
-
-```text
-О моём перерождении в слизь
-
-Основное:
-Тип: TV
-Статус: вышло
-Серии: 24/24
-Длительность серии: 23 мин.
-Возрастной рейтинг: PG-13
-
-Выход:
-Сезон: Осень 2018
-Начало/Конец показа: 2018-10-02/2019-03-19
-Расписание: Вторник 23:00
-
-Производство:
-Первоисточник: Ранобэ
-Жанры: Приключения, Фэнтези, Комедия
-Студии: 8bit
-
-Оценка и популярность:
-Средняя оценка: 8.31 (3 источника)
-Рейтинг: #123
-Популярность: #45
-В списках пользователей: 1 200 000
-Поставили оценку: 800 000
-В избранном: 30 000
-
-Источники:
-Базы данных: Shikimori, AniList, MyAnimeList
-ID: MAL: ... | SHIKIMORI: ... | ANILIST: ...
-...
-```
-
-Название источника остаётся только там, где оно действительно является частью значения: например URL или внешний ID.
-
----
-
-# Rich messages
-
-Основная карточка использует `sendRichMessage`.
-
-Постер находится в том же сообщении, что и текст.
-
-Разделы:
-
-- `Описание`;
-- `Все названия`;
-- `Авторы и команда`;
-- `Сэйю`;
-
-реализованы как callback-ссылки внутри rich message.
-
-`← Назад` и пагинация `◀️ / ▶️` остаются обычными inline-кнопками.
-
-Если rich message не проходит, бот использует fallback на обычный `sendMessage`.
-
----
-
-# Постеры
-
-Каждый source adapter должен возвращать лучшие реальные изображения, а не несколько размеров одного и того же файла.
-
-Агрегатор удаляет точные дубликаты URL.
-
-Если после объединения осталось несколько реальных изображений, Telegram показывает их как rich slideshow.
-
----
-
-# MyAnimeList Client ID
-
-Чтобы включить MAL Search и MAL metadata:
-
-1. войди в MyAnimeList;
-2. открой `https://myanimelist.net/apiconfig`;
-3. создай API application;
-4. скопируй Client ID;
-5. добавь его в `.env`.
+Shikimori:
 
 ```env
-MAL_CLIENT_ID=your_client_id
-MAL_API_URL=https://api.myanimelist.net/v2
+SHIKIMORI_PEOPLE_CACHE_TTL_SECONDS=21600
+SHIKIMORI_REST_MIN_INTERVAL_SECONDS=0.24
 ```
 
-Client Secret и OAuth access token для публичного поиска/metadata не нужны.
-
-Если `MAL_CLIENT_ID` пустой, бот всё равно запускается, но MAL Search и MALSource будут недоступны. Shikimori/AniList продолжат работать.
-
----
-
-# `.env`
-
-Минимум:
+AniList:
 
 ```env
-BOT_TOKEN=...
-```
-
-Рекомендуемый вариант:
-
-```env
-BOT_TOKEN=...
-
-TELEGRAM_BOT_API_URL=
-TELEGRAM_BOT_API_LOCAL=false
-
-MAL_CLIENT_ID=...
-MAL_API_URL=https://api.myanimelist.net/v2
-
-SHIKIMORI_API_URL=https://shikimori.io/api/graphql
-SHIKIMORI_SITE_URL=https://shikimori.io
-
-ANILIST_API_URL=https://graphql.anilist.co
-ANILIST_ACCESS_TOKEN=
 ANILIST_PEOPLE_MAX_PAGES=4
-
-SEARCH_CACHE_TTL_SECONDS=21600
-SEARCH_CACHE_MAX_ENTRIES=500
+ANILIST_PEOPLE_CACHE_TTL_SECONDS=21600
 ```
 
----
+Кеши находятся в RAM и очищаются при перезапуске процесса.
 
-# Telegram API modes
+## Зависимости
 
-Если:
+Прямые runtime-зависимости закреплены точными версиями в `requirements.txt`, чтобы обычный `./start.sh` не подтягивал неожиданно новую minor/patch-версию основного пакета.
 
-```env
-TELEGRAM_BOT_API_URL=
-```
+## Тесты и CI
 
-используется официальный `https://api.telegram.org`.
-
-Если указан self-hosted endpoint:
-
-```env
-TELEGRAM_BOT_API_URL=http://127.0.0.1:8081
-```
-
-используется `bots.tgapi`.
-
-`TELEGRAM_BOT_API_LOCAL=true` нужен только если сам `telegram-bot-api` запущен с `--local`.
-
----
-
-# Установка
-
-Ubuntu/Debian:
+GitHub Actions запускает на Python 3.11, 3.12 и 3.13:
 
 ```bash
-sudo apt update
-sudo apt install python3 python3-venv python3-pip tmux git
+python -m compileall -q bots core search services sources tests
+python -m unittest discover -s tests -v
 ```
 
-Клонирование:
+Regression-тесты покрывают:
+
+- ограничение объединённой поисковой страницы;
+- кеширование успешных и повторный запрос ошибочных search pages;
+- идентичность персонала по source IDs;
+- фильтрацию localization staff;
+- source-keyed portrait merge;
+- Shikimori `character -> seyu` parsing;
+- отсутствие AniList people pagination в initial metadata path.
+
+`start.sh` дополнительно выполняет быстрые smoke checks перед запуском процесса.
+
+## Запуск
 
 ```bash
-git clone git@github.com:Winbil/anime-db-bot.git
-cd anime-db-bot
 cp .env.example .env
 nano .env
 ./start.sh
 ```
 
----
+Минимально нужен:
 
-# Обновление
-
-```bash
-cd anime-db-bot
-git pull
-./start.sh
+```env
+BOT_TOKEN=...
 ```
 
-Если уже запущена tmux-сессия:
+Для MAL Search/metadata нужен:
 
-```text
-Restart the bot? [y/N]:
+```env
+MAL_CLIENT_ID=...
 ```
 
-ответить:
+`start.sh`:
 
-```text
-y
-```
+1. проверяет файлы и системные команды;
+2. создаёт/проверяет `.venv`;
+3. устанавливает закреплённые зависимости;
+4. выполняет `pip check` и smoke checks;
+5. запускает бота в `tmux`;
+6. пишет runtime-лог в `logs/bot.log` (`logs/` исключён из Git).
 
----
-
-# tmux и логи
-
-Подключиться:
-
-```bash
-tmux attach -t anime-db-bot
-```
-
-Логи:
-
-```bash
-tail -f logs/bot.log
-```
-
-Последние строки:
-
-```bash
-tail -n 100 logs/bot.log
-```
-
----
-
-# `start.sh`
-
-Скрипт проверяет:
-
-- Python;
-- tmux;
-- venv/pip;
-- зависимости;
-- импорты core/search/services/sources/bots;
-- search registry;
-- metadata registry;
-- `.env`;
-- `BOT_TOKEN`;
-- режим Telegram API.
-
-Пустой `MAL_CLIENT_ID` является предупреждением, а не фатальной ошибкой.
-
----
-
-# Будущий локальный индекс
-
-Позже планируется локальная база соответствий и названий.
-
-Она должна находиться в search-слое и решать задачи:
-
-```text
-название → MAL ID
-MAL ID ↔ AniList ID
-MAL ID ↔ Shikimori ID
-MAL ID ↔ AniDB ID
-...
-```
-
-Это позволит:
-
-- снизить число внешних поисковых запросов;
-- улучшить поиск по альтернативным/русским названиям;
-- получать cross-ID даже если пользователь выбрал только один внешний поисковик.
-
-Metadata sources и AnimeAggregator при этом менять не потребуется.
-
----
-
-# Главный принцип проекта
-
-```text
-Search providers находят сущность.
-Metadata sources знают только свой API.
-Core models описывают смысл данных, а не конкретную базу.
-AnimeAggregator объединяет одинаковые поля без повторений.
-Telegram показывает одну итоговую карточку.
-```
+Если `TELEGRAM_BOT_API_URL` пуст, используется официальный Bot API. Если указан — запускается transport для custom/self-hosted Telegram Bot API.
