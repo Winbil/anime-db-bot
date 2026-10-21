@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 from typing import Any
@@ -15,6 +16,8 @@ SECTION_TITLES = {
 }
 
 _INSTALLED = False
+_LAZY_VOICE_DONE: set[str] = set()
+_LAZY_VOICE_TASKS: dict[str, asyncio.Task[None]] = {}
 
 
 def _dedupe(values: list[str]) -> list[str]:
@@ -285,6 +288,77 @@ def _keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+async def _ensure_lazy_voices(
+    common: Any,
+    token: str,
+    anime: AggregatedAnime,
+    message: Message,
+) -> None:
+    """Populate deferred Shikimori seiyuu once for this anime-card session."""
+    if token in _LAZY_VOICE_DONE:
+        return
+
+    running = _LAZY_VOICE_TASKS.get(token)
+    if running is not None:
+        await running
+        return
+
+    async def load() -> None:
+        try:
+            source = next(
+                (
+                    item
+                    for item in common.SOURCES
+                    if item.name == "Shikimori" and hasattr(item, "load_voices")
+                ),
+                None,
+            )
+            if source is None:
+                return
+
+            mal_id = str(anime.external_ids.get("mal") or "").strip()
+            shikimori_id = str(anime.external_ids.get("shikimori") or "").strip()
+            if not mal_id.isdigit() or not shikimori_id.isdigit():
+                return
+
+            try:
+                await message.edit_text(
+                    text="Загружаю сэйю Shikimori…",
+                    reply_markup=None,
+                )
+            except Exception:
+                logging.debug(
+                    "Could not show lazy Shikimori seiyuu loading state",
+                    exc_info=True,
+                )
+
+            voices = await source.load_voices(mal_id, anime.external_ids)
+            common.AGGREGATOR.merge_people_source(
+                anime,
+                source_name="Shikimori",
+                people=voices,
+                section="voices",
+            )
+            logging.info(
+                "Lazy Shikimori seiyuu loaded for MAL %s: %d people",
+                mal_id,
+                len(voices),
+            )
+        except Exception:
+            # AniList (and any future already-loaded sources) remain usable.
+            # A new anime-card session can retry a temporary Shikimori failure.
+            logging.exception("Lazy Shikimori seiyuu load failed")
+        finally:
+            _LAZY_VOICE_DONE.add(token)
+
+    task = asyncio.create_task(load())
+    _LAZY_VOICE_TASKS[token] = task
+    try:
+        await task
+    finally:
+        _LAZY_VOICE_TASKS.pop(token, None)
+
+
 async def _edit_people_view(
     common: Any,
     message: Message,
@@ -294,6 +368,9 @@ async def _edit_people_view(
     source_index: int | None,
     page: int,
 ) -> None:
+    if section == "voices":
+        await _ensure_lazy_voices(common, token, anime, message)
+
     sources = common._source_section_sources(anime, section)
     source: str | None = None
     if source_index is not None:
@@ -342,7 +419,8 @@ def install(common: Any) -> None:
 
     The existing title/description/link handlers stay untouched. Staff and
     seiyuu reuse the same av:/as: callback namespaces, so source selection and
-    portrait pagination remain part of one anime-card session.
+    portrait pagination remain part of one anime-card session. Expensive
+    Shikimori character/seiyuu data is loaded only on first entry to voices.
     """
 
     global _INSTALLED
