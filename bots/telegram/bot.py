@@ -8,6 +8,8 @@ from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message
 from dotenv import load_dotenv
 
+load_dotenv()
+
 from bots.telegram.admin import TelegramModerationMiddleware, register_admin_handlers
 from bots.telegram.card.handlers import build_dispatcher
 from bots.telegram.card.service import SEARCH_SERVICE, SOURCES, aggregate_and_send
@@ -20,8 +22,6 @@ from core.models import SearchCandidate
 from localization import text
 from services.access_control import telegram_admin_ids
 from services.user_settings import get_user_locale
-
-load_dotenv()
 
 
 def select_transport() -> TelegramTransport:
