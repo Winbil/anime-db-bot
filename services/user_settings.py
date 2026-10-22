@@ -63,6 +63,15 @@ class SQLiteUserSettingsStore:
                     )
                     """
                 )
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO known_users (
+                        platform, user_id, first_seen_at, last_seen_at
+                    )
+                    SELECT 'telegram', user_id, updated_at, updated_at
+                    FROM user_settings
+                    """
+                )
             self._initialized = True
 
     def get(self, user_id: int | None) -> UserSettings:
