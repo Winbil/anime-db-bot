@@ -60,7 +60,7 @@ class AnimeAggregator(_MergeAnimeAggregator):
 
     async def aggregate(self, candidate: SearchCandidate) -> AggregatedAnime:
         titles_for_resolution = [candidate.title, *candidate.aliases]
-        identity = await enrich_identity(candidate.identity, titles_for_resolution)
+        identity = (await enrich_identity(candidate.identity, titles_for_resolution)).copy()
         if identity.is_empty():
             raise RuntimeError("Search result does not contain any external database ID")
 
@@ -71,6 +71,7 @@ class AnimeAggregator(_MergeAnimeAggregator):
             except Exception as exc:
                 return source.name, None, f"{type(exc).__name__}: {exc}"
 
+        first_pass_fingerprint = identity.fingerprint()
         first_results = await asyncio.gather(
             *(run(source, identity) for source in self._sources)
         )
@@ -93,15 +94,12 @@ class AnimeAggregator(_MergeAnimeAggregator):
             records_by_source[source_name] = record
             self._merge_record_identity(identity, record)
 
+        identity_expanded = identity.fingerprint() != first_pass_fingerprint
         before_enrichment = identity.fingerprint()
-        identity = await enrich_identity(identity, titles_for_resolution)
-        identity_expanded = identity.fingerprint() != before_enrichment
-
-        if records_by_source:
-            for record in records_by_source.values():
-                before = identity.fingerprint()
-                self._merge_record_identity(identity, record)
-                identity_expanded = identity_expanded or identity.fingerprint() != before
+        identity = (await enrich_identity(identity, titles_for_resolution)).copy()
+        identity_expanded = (
+            identity_expanded or identity.fingerprint() != before_enrichment
+        )
 
         # A successful source may reveal a new cross-database ID (for example an
         # AniList result can reveal MAL). Give only sources that were simply
