@@ -31,6 +31,12 @@ class AdminCommandTests(unittest.TestCase):
         self.assertIsNone(_parse_ban_arguments("/ban"))
         self.assertIsNone(_parse_ban_arguments("/ban nope 60"))
 
+    def test_non_positive_duration_is_rejected_in_both_positions(self) -> None:
+        self.assertIsNone(_parse_ban_arguments("/ban 123 0"))
+        self.assertIsNone(_parse_ban_arguments("/ban 123 -60 spam"))
+        self.assertIsNone(_parse_ban_arguments("/ban 123 spam 0"))
+        self.assertIsNone(_parse_ban_arguments("/ban 123 spam -60"))
+
     def test_long_users_output_is_split_below_telegram_limit(self) -> None:
         chunks = _chunk_user_ids(list(range(1, 1500)), "ru")
         self.assertGreater(len(chunks), 1)
