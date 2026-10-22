@@ -358,12 +358,12 @@ async def _ensure_lazy_people(
                     exc_info=True,
                 )
 
-            mal_id = str(anime.external_ids.get("mal") or "").strip()
-            if not mal_id.isdigit():
+            identity = anime.identity
+            if identity.is_empty():
                 return True
 
             async def load_source(source: Any, loader: Any):
-                people = await loader(mal_id, anime.external_ids)
+                people = await loader(identity.copy())
                 return source, people
 
             results = await asyncio.gather(
@@ -391,10 +391,10 @@ async def _ensure_lazy_people(
                     section=section,
                 )
                 logging.info(
-                    "Lazy %s loaded from %s for MAL %s: %d people",
+                    "Lazy %s loaded from %s for %s: %d people",
                     section,
                     source.name,
-                    mal_id,
+                    identity.describe(),
                     len(people),
                 )
             return success
