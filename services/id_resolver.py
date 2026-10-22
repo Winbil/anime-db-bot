@@ -64,6 +64,22 @@ async def _resolve_shikimori_from_mal(
     return None
 
 
+async def resolve_shikimori_id(
+    mal_id: str,
+    titles: list[str],
+) -> str | None:
+    """Compatibility wrapper for the pre-identity aggregator.
+
+    New application code should call :func:`enrich_identity`. Keeping this
+    wrapper temporarily lets old merge-focused tests/modules import while the
+    MAL-primary aggregator is being removed in the same refactor.
+    """
+    mal_id = str(mal_id or "").strip()
+    if not mal_id.isdigit():
+        return None
+    return await _resolve_shikimori_from_mal(mal_id, titles)
+
+
 async def enrich_identity(
     identity: AnimeIdentity,
     titles: list[str],
