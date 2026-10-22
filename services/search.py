@@ -268,7 +268,10 @@ def _merge_results(
     ranked_items: list[tuple[tuple[int, int, int], SearchCandidate]] = []
 
     for candidate_group in groups:
-        group = candidate_group.entries
+        group = sorted(
+            candidate_group.entries,
+            key=lambda entry: (entry[0], entry[2]),
+        )
         preferred = next(
             (
                 candidate
