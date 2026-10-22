@@ -17,6 +17,7 @@ from bots.telegram.transports.official import TRANSPORT as OFFICIAL_TRANSPORT
 from bots.telegram.transports.tgapi import TRANSPORT as TGAPI_TRANSPORT
 from core.models import SearchCandidate
 from localization import text
+from services.access_control import telegram_admin_ids
 from services.user_settings import get_user_locale
 
 load_dotenv()
@@ -93,6 +94,7 @@ async def run_bot(transport: TelegramTransport | None = None) -> None:
     )
     logging.info("Bot platform: Telegram")
     logging.info("Telegram transport: %s", transport.mode_name)
+    logging.info("Configured Telegram administrators: %d", len(telegram_admin_ids()))
     logging.info("Default search providers: %s", SEARCH_SERVICE.provider_name)
     logging.info("Metadata sources: %s", ", ".join(source.name for source in SOURCES))
     logging.info("Selectable /search providers are enabled")
