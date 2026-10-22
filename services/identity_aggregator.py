@@ -8,8 +8,8 @@ from core.contracts import AnimeSource
 from core.identity import AnimeIdentity
 from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate
 from localization import canonicalize_domain_value
-from services.aggregator import (
-    AnimeAggregator as _MergeAnimeAggregator,
+from services.aggregation_merge import (
+    AggregationMergeSupport,
     _average_score,
     _best_text,
     _clean,
@@ -28,7 +28,7 @@ from services.aggregator import (
 from services.id_resolver import enrich_identity
 
 
-class AnimeAggregator(_MergeAnimeAggregator):
+class AnimeAggregator(AggregationMergeSupport):
     """Identity-native metadata aggregation with no mandatory database key.
 
     Sources are queried with all IDs known at that moment. IDs discovered from
@@ -37,9 +37,6 @@ class AnimeAggregator(_MergeAnimeAggregator):
     Shikimori-only search result expand into other databases without choosing a
     global primary ID.
     """
-
-    def __init__(self, sources: tuple[AnimeSource, ...] | list[AnimeSource]) -> None:
-        super().__init__(sources)
 
     @staticmethod
     def _record_conflict(
@@ -101,9 +98,6 @@ class AnimeAggregator(_MergeAnimeAggregator):
             identity_expanded or identity.fingerprint() != before_enrichment
         )
 
-        # A successful source may reveal a new cross-database ID (for example an
-        # AniList result can reveal MAL). Give only sources that were simply
-        # inapplicable in the first pass one chance with the richer graph.
         if identity_expanded and unavailable:
             retry_sources = [
                 source for source in self._sources if source.name in unavailable
