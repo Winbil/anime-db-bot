@@ -3,10 +3,11 @@ from __future__ import annotations
 import logging
 import time
 
+from core.identity import AnimeIdentity
 from search.providers.shikimori import ShikimoriSearchProvider
 
 
-_RESOLVER = ShikimoriSearchProvider()
+_SHIKIMORI_RESOLVER = ShikimoriSearchProvider()
 _CACHE_TTL_SECONDS = 21600.0
 _NEGATIVE_CACHE_TTL_SECONDS = 1800.0
 _CACHE: dict[str, tuple[float, str | None]] = {}
@@ -24,21 +25,10 @@ def _dedupe(values: list[str]) -> list[str]:
     return result
 
 
-async def resolve_shikimori_id(
+async def _resolve_shikimori_from_mal(
     mal_id: str,
     titles: list[str],
 ) -> str | None:
-    """Resolve MAL -> Shikimori without coupling metadata sources to text search.
-
-    Default /anime results already carry a Shikimori ID because Shikimori is
-    one of the search providers. This fallback exists for explicit MAL-only or
-    AniList-only searches: it searches Shikimori only until it finds a result
-    whose MAL ID exactly matches the already-selected anime.
-    """
-    mal_id = str(mal_id or "").strip()
-    if not mal_id.isdigit():
-        return None
-
     now = time.monotonic()
     cached = _CACHE.get(mal_id)
     if cached is not None and cached[0] > now:
@@ -46,13 +36,12 @@ async def resolve_shikimori_id(
     if cached is not None:
         _CACHE.pop(mal_id, None)
 
-    queries = _dedupe(titles)[:5]
-    for query in queries:
+    for query in _dedupe(titles)[:5]:
         try:
-            page = await _RESOLVER.search(query, page=1, limit=20)
+            page = await _SHIKIMORI_RESOLVER.search(query, page=1, limit=20)
         except Exception:
             logging.warning(
-                "Could not resolve Shikimori ID for MAL %s via query %r",
+                "Could not resolve Shikimori ID from MAL %s via query %r",
                 mal_id,
                 query,
                 exc_info=True,
@@ -60,25 +49,44 @@ async def resolve_shikimori_id(
             continue
 
         for candidate in page.items:
-            if str(candidate.external_ids.get("mal") or "").strip() != mal_id:
+            candidate_identity = candidate.identity
+            if candidate_identity.get("mal") != mal_id:
                 continue
-            shikimori_id = str(
-                candidate.external_ids.get("shikimori") or ""
-            ).strip()
-            if shikimori_id.isdigit():
+            shikimori_id = candidate_identity.get("shikimori")
+            if shikimori_id and shikimori_id.isdigit():
                 _CACHE[mal_id] = (
                     time.monotonic() + _CACHE_TTL_SECONDS,
                     shikimori_id,
                 )
+                return shikimori_id
+
+    _CACHE[mal_id] = (time.monotonic() + _NEGATIVE_CACHE_TTL_SECONDS, None)
+    return None
+
+
+async def enrich_identity(
+    identity: AnimeIdentity,
+    titles: list[str],
+) -> AnimeIdentity:
+    """Best-effort cross-database identity enrichment.
+
+    This is deliberately a resolver *registry boundary*, not a primary-key rule.
+    At the moment the only fallback resolver is MAL -> Shikimori because
+    Shikimori search exposes both IDs. Future resolvers can add other edges
+    without changing source contracts or making any one database mandatory.
+    """
+    enriched = identity.copy()
+
+    if not enriched.has("shikimori"):
+        mal_id = enriched.get("mal")
+        if mal_id and mal_id.isdigit():
+            shikimori_id = await _resolve_shikimori_from_mal(mal_id, titles)
+            if shikimori_id:
+                enriched.merge_missing({"shikimori": shikimori_id})
                 logging.info(
-                    "Resolved Shikimori ID %s for MAL %s",
+                    "Identity enriched with shikimori:%s from mal:%s",
                     shikimori_id,
                     mal_id,
                 )
-                return shikimori_id
 
-    _CACHE[mal_id] = (
-        time.monotonic() + _NEGATIVE_CACHE_TTL_SECONDS,
-        None,
-    )
-    return None
+    return enriched
