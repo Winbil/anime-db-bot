@@ -17,11 +17,11 @@ class UserSettings:
 
 
 class SQLiteUserSettingsStore:
-    """Persistent repository for per-user interface preferences.
+    """Persistent repository for per-user preferences and known platform IDs.
 
-    Only the requested row is read, so the number of registered users does not
-    translate into an equally large in-memory settings map. The repository API
-    can later grow with the broader user database without changing bot handlers.
+    Only requested rows are read during normal operation. Known user IDs are
+    stored in a small registry table so administrator tooling can enumerate
+    accounts the bot has actually seen without keeping them all in RAM.
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -49,6 +49,17 @@ class SQLiteUserSettingsStore:
                         user_id INTEGER PRIMARY KEY,
                         locale TEXT NOT NULL DEFAULT 'ru',
                         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS known_users (
+                        platform TEXT NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (platform, user_id)
                     )
                     """
                 )
@@ -83,10 +94,43 @@ class SQLiteUserSettingsStore:
             )
         return UserSettings(locale=normalized)
 
+    def touch_user(self, platform: str, user_id: int) -> None:
+        platform_key = (platform or "").strip().casefold()
+        if not platform_key:
+            raise ValueError("platform must not be empty")
+        user_id = int(user_id)
+        if user_id <= 0:
+            raise ValueError("user_id must be positive")
+
+        self._ensure_schema()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO known_users (platform, user_id, first_seen_at, last_seen_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT(platform, user_id) DO UPDATE SET
+                    last_seen_at = CURRENT_TIMESTAMP
+                """,
+                (platform_key, user_id),
+            )
+
+    def list_user_ids(self, platform: str) -> list[int]:
+        platform_key = (platform or "").strip().casefold()
+        if not platform_key:
+            return []
+        self._ensure_schema()
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT user_id FROM known_users WHERE platform = ? ORDER BY user_id",
+                (platform_key,),
+            ).fetchall()
+        return [int(row[0]) for row in rows]
+
     def clear(self) -> None:
         self._ensure_schema()
         with self._connect() as connection:
             connection.execute("DELETE FROM user_settings")
+            connection.execute("DELETE FROM known_users")
 
 
 def _default_db_path() -> str:
@@ -103,3 +147,11 @@ def get_user_locale(user_id: int | None) -> str:
 
 def set_user_locale(user_id: int, locale: str) -> str:
     return USER_SETTINGS.set_locale(user_id, locale).locale
+
+
+def touch_platform_user(platform: str, user_id: int) -> None:
+    USER_SETTINGS.touch_user(platform, user_id)
+
+
+def list_platform_user_ids(platform: str) -> list[int]:
+    return USER_SETTINGS.list_user_ids(platform)
