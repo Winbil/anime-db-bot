@@ -8,6 +8,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message
 from dotenv import load_dotenv
 
+from bots.telegram.admin import TelegramModerationMiddleware, register_admin_handlers
 from bots.telegram.card.handlers import build_dispatcher
 from bots.telegram.card.service import SEARCH_SERVICE, SOURCES, aggregate_and_send
 from bots.telegram.people_portraits import handle_people_callback
@@ -109,8 +110,12 @@ async def run_bot(transport: TelegramTransport | None = None) -> None:
             logging.warning("Telegram transport health: degraded — %s", health.detail)
 
         dp = build_dispatcher(mode_name=transport.mode_name)
+        moderation = TelegramModerationMiddleware()
+        dp.message.outer_middleware(moderation)
+        dp.callback_query.outer_middleware(moderation)
         dp.callback_query.outer_middleware(_CallbackRoutingMiddleware())
 
+        register_admin_handlers(dp)
         register_search_handlers(
             dp,
             aggregate_callback=_aggregate_and_cleanup_search,
