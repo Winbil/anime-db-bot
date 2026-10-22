@@ -27,7 +27,6 @@ _ADMIN_TEXT = {
             "Без seconds бан постоянный. Также поддерживается: /ban <user_id> <reason> <seconds>."
         ),
         "invalid_id": "user_id должен быть положительным числом.",
-        "invalid_duration": "Время бана должно быть положительным числом секунд.",
         "admin_target": "Администратора нельзя заблокировать.",
         "ban_permanent": "Пользователь {user_id} заблокирован навсегда.{reason}",
         "ban_temporary": "Пользователь {user_id} заблокирован на {seconds} сек.{reason}",
@@ -47,7 +46,6 @@ _ADMIN_TEXT = {
             "Without seconds the ban is permanent. Also supported: /ban <user_id> <reason> <seconds>."
         ),
         "invalid_id": "user_id must be a positive number.",
-        "invalid_duration": "Ban duration must be a positive number of seconds.",
         "admin_target": "An administrator cannot be banned.",
         "ban_permanent": "User {user_id} was banned permanently.{reason}",
         "ban_temporary": "User {user_id} was banned for {seconds} seconds.{reason}",
@@ -91,6 +89,11 @@ def _parse_positive_int(raw: str) -> int | None:
     return value if value > 0 else None
 
 
+def _looks_like_integer(raw: str) -> bool:
+    value = raw.strip()
+    return bool(value) and value.lstrip("+-").isdecimal()
+
+
 def _parse_ban_arguments(text_value: str | None) -> tuple[int, int | None, str | None] | None:
     parts = (text_value or "").split()
     if len(parts) < 2:
@@ -102,16 +105,16 @@ def _parse_ban_arguments(text_value: str | None) -> tuple[int, int | None, str |
 
     remaining = parts[2:]
     duration: int | None = None
-    if remaining:
-        candidate = _parse_positive_int(remaining[0])
-        if candidate is not None:
-            duration = candidate
-            remaining = remaining[1:]
-        elif len(remaining) > 1:
-            candidate = _parse_positive_int(remaining[-1])
-            if candidate is not None:
-                duration = candidate
-                remaining = remaining[:-1]
+    if remaining and _looks_like_integer(remaining[0]):
+        duration = _parse_positive_int(remaining[0])
+        if duration is None:
+            return None
+        remaining = remaining[1:]
+    elif len(remaining) > 1 and _looks_like_integer(remaining[-1]):
+        duration = _parse_positive_int(remaining[-1])
+        if duration is None:
+            return None
+        remaining = remaining[:-1]
 
     reason = " ".join(remaining).strip() or None
     return user_id, duration, reason
