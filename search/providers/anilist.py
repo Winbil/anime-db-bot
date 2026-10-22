@@ -101,10 +101,11 @@ class AniListSearchProvider:
         items: list[SearchCandidate] = []
 
         for raw in page_data.get("media") or []:
-            mal_id = str(raw.get("idMal") or "").strip()
-            if not mal_id:
+            anilist_id = str(raw.get("id") or "").strip()
+            if not anilist_id:
                 continue
 
+            mal_id = str(raw.get("idMal") or "").strip()
             titles = raw.get("title") or {}
             romaji = _clean(titles.get("romaji"))
             english = _clean(titles.get("english"))
@@ -128,15 +129,17 @@ class AniListSearchProvider:
             except (TypeError, ValueError):
                 pass
 
+            external_ids = {"anilist": anilist_id}
+            if mal_id:
+                external_ids["mal"] = mal_id
+
             items.append(
                 SearchCandidate(
                     title=title,
+                    romaji_title=romaji or None,
                     aliases=aliases,
                     year=raw.get("seasonYear"),
-                    external_ids={
-                        "mal": mal_id,
-                        "anilist": str(raw.get("id") or ""),
-                    },
+                    external_ids=external_ids,
                     scores=scores,
                 )
             )
