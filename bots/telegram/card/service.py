@@ -28,7 +28,7 @@ async def aggregate_and_send(
     locale = get_user_locale(owner_user_id)
     identity = candidate.identity
     if identity.is_empty():
-        await message.answer(text("service", "missing_external_id", locale=locale))
+        await message.answer(text("search", "result_unavailable", locale=locale))
         return
 
     try:
@@ -41,9 +41,7 @@ async def aggregate_and_send(
             exc,
             exc_info=True,
         )
-        await message.answer(
-            text("service", "aggregation_failed", locale=locale)
-        )
+        await message.answer(text("search", "get_result_failed", locale=locale))
         return
 
     token = remember_anime(anime, owner_user_id)
