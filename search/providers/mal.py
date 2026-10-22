@@ -111,6 +111,7 @@ class MALSearchProvider:
             items.append(
                 SearchCandidate(
                     title=title,
+                    romaji_title=title,
                     aliases=aliases,
                     year=year,
                     external_ids={"mal": mal_id},
