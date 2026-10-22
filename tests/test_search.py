@@ -213,6 +213,161 @@ class SearchServiceTests(unittest.IsolatedAsyncioTestCase):
             {"10", "11"},
         )
 
+    async def test_second_layer_merges_independent_ids_by_exact_romaji(self) -> None:
+        anilist = FakeProvider(
+            "AniList",
+            [
+                SearchCandidate(
+                    title="That Time I Got Reincarnated as a Slime",
+                    romaji_title="Tensei shitara Slime Datta Ken",
+                    year=2018,
+                    external_ids={"anilist": "101280"},
+                )
+            ],
+        )
+        future = FakeProvider(
+            "AniLiberty",
+            [
+                SearchCandidate(
+                    title="О моём перерождении в слизь",
+                    romaji_title="Tensei Shitara Slime Datta Ken",
+                    year=2018,
+                    external_ids={"aniliberty": "777"},
+                )
+            ],
+        )
+        service = SearchService((anilist, future))
+
+        page = await service.search("slime")
+
+        self.assertEqual(len(page.items), 1)
+        self.assertEqual(
+            page.items[0].external_ids,
+            {"anilist": "101280", "aniliberty": "777"},
+        )
+        self.assertEqual(
+            page.items[0].romaji_title,
+            "Tensei shitara Slime Datta Ken",
+        )
+
+    async def test_romaji_layer_normalizes_punctuation_and_spacing(self) -> None:
+        first = FakeProvider(
+            "ProviderA",
+            [
+                SearchCandidate(
+                    title="Title A",
+                    romaji_title="Kono Subarashii Sekai ni Shukufuku wo!",
+                    external_ids={"a": "1"},
+                )
+            ],
+        )
+        second = FakeProvider(
+            "ProviderB",
+            [
+                SearchCandidate(
+                    title="Title B",
+                    romaji_title="  Kono Subarashii Sekai ni Shukufuku wo  ",
+                    external_ids={"b": "2"},
+                )
+            ],
+        )
+        service = SearchService((first, second))
+
+        page = await service.search("konosuba")
+
+        self.assertEqual(len(page.items), 1)
+        self.assertEqual(page.items[0].external_ids, {"a": "1", "b": "2"})
+
+    async def test_romaji_layer_does_not_merge_different_known_years(self) -> None:
+        first = FakeProvider(
+            "ProviderA",
+            [
+                SearchCandidate(
+                    title="Original",
+                    romaji_title="Same Name",
+                    year=2001,
+                    external_ids={"a": "1"},
+                )
+            ],
+        )
+        second = FakeProvider(
+            "ProviderB",
+            [
+                SearchCandidate(
+                    title="Remake",
+                    romaji_title="Same Name",
+                    year=2026,
+                    external_ids={"b": "2"},
+                )
+            ],
+        )
+        service = SearchService((first, second))
+
+        page = await service.search("same name")
+
+        self.assertEqual(len(page.items), 2)
+
+    async def test_romaji_layer_never_overrides_same_database_id_conflict(self) -> None:
+        first = FakeProvider(
+            "ProviderA",
+            [
+                SearchCandidate(
+                    title="First",
+                    romaji_title="Shared Romaji",
+                    year=2020,
+                    external_ids={"anilist": "10"},
+                )
+            ],
+        )
+        second = FakeProvider(
+            "ProviderB",
+            [
+                SearchCandidate(
+                    title="Second",
+                    romaji_title="Shared Romaji",
+                    year=2020,
+                    external_ids={"anilist": "11", "futuredb": "20"},
+                )
+            ],
+        )
+        service = SearchService((first, second))
+
+        page = await service.search("shared")
+
+        self.assertEqual(len(page.items), 2)
+        self.assertEqual(
+            {item.external_ids.get("anilist") for item in page.items},
+            {"10", "11"},
+        )
+
+    async def test_shared_id_layer_wins_even_when_romaji_differs(self) -> None:
+        first = FakeProvider(
+            "ProviderA",
+            [
+                SearchCandidate(
+                    title="First",
+                    romaji_title="Romanization A",
+                    external_ids={"mal": "100"},
+                )
+            ],
+        )
+        second = FakeProvider(
+            "ProviderB",
+            [
+                SearchCandidate(
+                    title="Second",
+                    romaji_title="Romanization B",
+                    external_ids={"mal": "100", "futuredb": "200"},
+                )
+            ],
+        )
+        service = SearchService((first, second))
+
+        page = await service.search("test")
+
+        self.assertEqual(len(page.items), 1)
+        self.assertEqual(page.items[0].external_ids, {"mal": "100", "futuredb": "200"})
+
 
 if __name__ == "__main__":
     unittest.main()
