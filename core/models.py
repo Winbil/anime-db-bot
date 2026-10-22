@@ -15,11 +15,11 @@ class SearchCandidate:
     """
 
     title: str
-    romaji_title: str | None = None
     aliases: list[str] = field(default_factory=list)
     year: int | None = None
     external_ids: dict[str, str] = field(default_factory=dict)
     scores: dict[str, float] = field(default_factory=dict)
+    romaji_title: str | None = None
 
     @property
     def identity(self) -> AnimeIdentity:
