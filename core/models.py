@@ -7,9 +7,15 @@ from core.identity import AnimeIdentity
 
 @dataclass(slots=True)
 class SearchCandidate:
-    """One anime candidate discovered by one or more search providers."""
+    """One anime candidate discovered by one or more search providers.
+
+    ``romaji_title`` is an explicit cross-provider title-matching hint. It is
+    kept separate from ``title``/``aliases`` so search merge does not have to
+    guess which display title is the romanized Japanese title.
+    """
 
     title: str
+    romaji_title: str | None = None
     aliases: list[str] = field(default_factory=list)
     year: int | None = None
     external_ids: dict[str, str] = field(default_factory=dict)
