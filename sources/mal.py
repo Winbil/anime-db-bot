@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from core.http_config import USER_AGENT
+from core.identity import AnimeIdentity
 from core.models import AnimeRecord, BroadcastSlot
 from localization import source_value_key
 
@@ -267,12 +268,8 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
 class MALSource:
     name = "MyAnimeList"
 
-    async def get_details(
-        self,
-        mal_id: str,
-        known_ids: dict[str, str],
-    ) -> AnimeRecord | None:
-        mal_id = str(mal_id).strip()
+    async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
+        mal_id = str(identity.get("mal") or "").strip()
         if not mal_id.isdigit():
             return None
 
