@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass
 
 from core.contracts import AnimeSearchProvider
+from core.identity import AnimeIdentity
 from core.models import SearchCandidate, SearchPage
 
 
@@ -17,15 +18,12 @@ class _CacheEntry:
 
 
 class SearchService:
-    """Search through dedicated providers and merge their results by MAL ID."""
+    """Search dedicated providers and merge results by shared external IDs."""
 
     def __init__(self, providers: tuple[AnimeSearchProvider, ...] | list[AnimeSearchProvider]) -> None:
         self._providers = tuple(providers)
         if not self._providers:
             raise ValueError("SearchService requires at least one search provider")
-
-        # Regular dicts preserve insertion order. Cache hits are moved to the
-        # end so eviction is least-recently-used instead of first-in-first-out.
         self._cache: dict[tuple[str, int, int], _CacheEntry] = {}
 
     @property
@@ -65,7 +63,6 @@ class SearchService:
         cached = self._cache.get(cache_key)
         now = time.monotonic()
         if cached is not None and cached.expires_at > now:
-            # LRU touch.
             self._cache.pop(cache_key, None)
             self._cache[cache_key] = cached
             return cached.page
@@ -82,9 +79,6 @@ class SearchService:
         results = await asyncio.gather(*(run(provider) for provider in self._providers))
         merged = _merge_results(query, results, page=page, page_size=page_size)
 
-        # Do not keep a temporary provider outage in RAM for the full cache TTL.
-        # Successful complete pages are safe to cache; partial/error pages are
-        # fetched again on the next request so a recovered provider reappears.
         ttl = self._cache_ttl()
         if ttl > 0 and not merged.errors:
             self._cache[cache_key] = _CacheEntry(
@@ -108,8 +102,7 @@ def _merge_results(
     use_russian_title = bool(re.search(r"[а-яё]", query, flags=re.IGNORECASE))
     preferred_provider = "Shikimori" if use_russian_title else "MyAnimeList"
 
-    merged: dict[str, SearchCandidate] = {}
-    rank: dict[str, tuple[int, int]] = {}
+    entries: list[tuple[int, str, int, SearchCandidate]] = []
     errors: dict[str, str] = {}
     provider_has_next = False
 
@@ -119,69 +112,96 @@ def _merge_results(
             continue
         if provider_page is None:
             continue
-
         provider_has_next = provider_has_next or provider_page.has_next
+        entries.extend(
+            (provider_index, provider_name, item_index, candidate)
+            for item_index, candidate in enumerate(provider_page.items)
+        )
 
-        for item_index, candidate in enumerate(provider_page.items):
-            mal_id = candidate.external_ids.get("mal")
-            if not mal_id:
-                continue
+    parent = list(range(len(entries)))
 
-            current = merged.get(mal_id)
-            if current is None:
-                merged[mal_id] = SearchCandidate(
-                    title=candidate.title,
-                    aliases=_dedupe(candidate.aliases),
-                    year=candidate.year,
-                    external_ids=dict(candidate.external_ids),
-                    scores=dict(candidate.scores),
-                )
-                rank[mal_id] = (
-                    0 if provider_name == preferred_provider else 1,
-                    item_index,
-                )
-                continue
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
 
-            old_title = current.title
-            if provider_name == preferred_provider and candidate.title:
-                current.title = candidate.title
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parent[right_root] = left_root
 
-            current.aliases = _dedupe(
-                [
-                    *current.aliases,
-                    old_title,
-                    candidate.title,
-                    *candidate.aliases,
-                ]
-            )
-            current.aliases = [
-                value
-                for value in current.aliases
-                if value.casefold() != current.title.casefold()
-            ]
+    identities = [candidate.identity for _, _, _, candidate in entries]
+    for right in range(len(entries)):
+        if identities[right].is_empty():
+            continue
+        for left in range(right):
+            if identities[left].matches(identities[right]):
+                union(left, right)
 
-            if current.year is None:
-                current.year = candidate.year
-            current.external_ids.update(
-                {key: value for key, value in candidate.external_ids.items() if value}
-            )
-            current.scores.update(candidate.scores)
+    groups: dict[int, list[tuple[int, str, int, SearchCandidate]]] = {}
+    for index, entry in enumerate(entries):
+        groups.setdefault(find(index), []).append(entry)
 
-            candidate_rank = (
+    ranked_items: list[tuple[tuple[int, int, int], SearchCandidate]] = []
+    for group in groups.values():
+        preferred = next(
+            (
+                candidate
+                for _, provider_name, _, candidate in group
+                if provider_name == preferred_provider and candidate.title
+            ),
+            group[0][3],
+        )
+        title = preferred.title or group[0][3].title
+        aliases: list[str] = []
+        year: int | None = None
+        scores: dict[str, float] = {}
+        identity = AnimeIdentity()
+
+        rank = min(
+            (
                 0 if provider_name == preferred_provider else 1,
+                provider_index,
                 item_index,
             )
-            if candidate_rank < rank[mal_id]:
-                rank[mal_id] = candidate_rank
+            for provider_index, provider_name, item_index, _ in group
+        )
 
-    items = list(merged.values())
-    items.sort(
+        for _, _, _, candidate in group:
+            aliases.extend([candidate.title, *candidate.aliases])
+            if year is None:
+                year = candidate.year
+            scores.update(candidate.scores)
+            identity.merge_missing(candidate.external_ids)
+
+        aliases = [
+            value
+            for value in _dedupe(aliases)
+            if value.casefold() != title.casefold()
+        ]
+        ranked_items.append(
+            (
+                rank,
+                SearchCandidate(
+                    title=title,
+                    aliases=aliases,
+                    year=year,
+                    external_ids=dict(identity.external_ids),
+                    scores=scores,
+                ),
+            )
+        )
+
+    ranked_items.sort(
         key=lambda item: (
-            rank.get(item.external_ids.get("mal", ""), (9, 9999)),
-            -len(item.scores),
-            item.title.casefold(),
+            item[0],
+            -len(item[1].scores),
+            item[1].title.casefold(),
         )
     )
+    items = [candidate for _, candidate in ranked_items]
 
     overflow = len(items) > page_size
     return SearchPage(
