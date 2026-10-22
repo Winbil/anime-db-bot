@@ -7,6 +7,7 @@ from typing import Any, Awaitable, Callable, TypeVar
 
 import httpx
 
+from core.identity import AnimeIdentity
 from core.models import AnimeRecord, PersonCredit
 
 T = TypeVar("T")
@@ -80,15 +81,11 @@ class RetryingSourceProxy:
         self._source = source
         self.name = source.name
 
-    async def get_details(
-        self,
-        mal_id: str,
-        known_ids: dict[str, str],
-    ) -> AnimeRecord | None:
+    async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
         return await _retry_call(
             self.name,
             "metadata",
-            lambda: self._source.get_details(mal_id, known_ids),
+            lambda: self._source.get_details(identity),
         )
 
     def __getattr__(self, name: str) -> Any:
@@ -98,77 +95,28 @@ class RetryingSourceProxy:
 class PeopleRetryingSourceProxy(RetryingSourceProxy):
     """Retry optional lazy people operations exposed by the wrapped source."""
 
-    async def load_staff(
-        self,
-        mal_id: str,
-        known_ids: dict[str, str],
-    ) -> list[PersonCredit]:
+    async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
         loader = getattr(self._source, "load_staff", None)
         if not callable(loader):
             return []
         return await _retry_call(
             self.name,
             "staff",
-            lambda: loader(mal_id, known_ids),
+            lambda: loader(identity),
         )
 
-    async def load_voices(
-        self,
-        mal_id: str,
-        known_ids: dict[str, str],
-    ) -> list[PersonCredit]:
+    async def load_voices(self, identity: AnimeIdentity) -> list[PersonCredit]:
         loader = getattr(self._source, "load_voices", None)
         if not callable(loader):
             return []
         return await _retry_call(
             self.name,
             "voices",
-            lambda: loader(mal_id, known_ids),
+            lambda: loader(identity),
         )
 
 
-class AniListSourceProxy(PeopleRetryingSourceProxy):
-    async def _ensure_media_id(
-        self,
-        mal_id: str,
-        known_ids: dict[str, str],
-    ) -> str:
-        media_id = str(known_ids.get("anilist") or "").strip()
-        if media_id.isdigit():
-            return media_id
-
-        record = await self.get_details(mal_id, known_ids)
-        if record is None:
-            return ""
-        media_id = str(record.external_ids.get("anilist") or record.source_id).strip()
-        if media_id.isdigit():
-            known_ids["anilist"] = media_id
-        return media_id
-
-    async def load_staff(
-        self,
-        mal_id: str,
-        known_ids: dict[str, str],
-    ) -> list[PersonCredit]:
-        media_id = await self._ensure_media_id(mal_id, known_ids)
-        if not media_id:
-            return []
-        return await super().load_staff(mal_id, known_ids)
-
-    async def load_voices(
-        self,
-        mal_id: str,
-        known_ids: dict[str, str],
-    ) -> list[PersonCredit]:
-        media_id = await self._ensure_media_id(mal_id, known_ids)
-        if not media_id:
-            return []
-        return await super().load_voices(mal_id, known_ids)
-
-
 def resilient_source(source: Any) -> RetryingSourceProxy:
-    if source.name == "AniList":
-        return AniListSourceProxy(source)
     if callable(getattr(source, "load_staff", None)) or callable(
         getattr(source, "load_voices", None)
     ):
