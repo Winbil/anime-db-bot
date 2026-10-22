@@ -82,6 +82,104 @@ class SearchServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(good.calls, 2)
         self.assertEqual(bad.calls, 2)
 
+    async def test_result_without_mal_id_is_not_dropped(self) -> None:
+        provider = FakeProvider(
+            "AniList",
+            [SearchCandidate(title="AniList only", external_ids={"anilist": "10"})],
+        )
+        service = SearchService((provider,))
+
+        page = await service.search("anilist only")
+
+        self.assertEqual(len(page.items), 1)
+        self.assertEqual(page.items[0].external_ids, {"anilist": "10"})
+
+    async def test_results_merge_by_shared_non_mal_id(self) -> None:
+        first = FakeProvider(
+            "AniList",
+            [
+                SearchCandidate(
+                    title="First title",
+                    aliases=["Alias A"],
+                    external_ids={"anilist": "10"},
+                )
+            ],
+        )
+        second = FakeProvider(
+            "FutureProvider",
+            [
+                SearchCandidate(
+                    title="Second title",
+                    aliases=["Alias B"],
+                    external_ids={"anilist": "10", "futuredb": "50"},
+                )
+            ],
+        )
+        service = SearchService((first, second))
+
+        page = await service.search("test")
+
+        self.assertEqual(len(page.items), 1)
+        self.assertEqual(
+            page.items[0].external_ids,
+            {"anilist": "10", "futuredb": "50"},
+        )
+        self.assertIn("Alias A", page.items[0].aliases)
+        self.assertIn("Alias B", page.items[0].aliases)
+
+    async def test_identity_merge_is_transitive_across_database_edges(self) -> None:
+        first = FakeProvider(
+            "ProviderA",
+            [SearchCandidate(title="A", external_ids={"anilist": "10"})],
+        )
+        bridge = FakeProvider(
+            "ProviderBridge",
+            [
+                SearchCandidate(
+                    title="Bridge",
+                    external_ids={"anilist": "10", "shikimori": "30"},
+                )
+            ],
+        )
+        third = FakeProvider(
+            "ProviderC",
+            [SearchCandidate(title="C", external_ids={"shikimori": "30"})],
+        )
+        service = SearchService((first, bridge, third))
+
+        page = await service.search("test")
+
+        self.assertEqual(len(page.items), 1)
+        self.assertEqual(
+            page.items[0].external_ids,
+            {"anilist": "10", "shikimori": "30"},
+        )
+
+    async def test_conflicting_ids_are_not_merged(self) -> None:
+        first = FakeProvider(
+            "ProviderA",
+            [
+                SearchCandidate(
+                    title="A",
+                    external_ids={"mal": "20", "anilist": "10"},
+                )
+            ],
+        )
+        second = FakeProvider(
+            "ProviderB",
+            [
+                SearchCandidate(
+                    title="B",
+                    external_ids={"mal": "20", "anilist": "11"},
+                )
+            ],
+        )
+        service = SearchService((first, second))
+
+        page = await service.search("test")
+
+        self.assertEqual(len(page.items), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
