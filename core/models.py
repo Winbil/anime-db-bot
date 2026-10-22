@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from core.identity import AnimeIdentity
+
 
 @dataclass(slots=True)
 class SearchCandidate:
@@ -12,6 +14,10 @@ class SearchCandidate:
     year: int | None = None
     external_ids: dict[str, str] = field(default_factory=dict)
     scores: dict[str, float] = field(default_factory=dict)
+
+    @property
+    def identity(self) -> AnimeIdentity:
+        return AnimeIdentity.from_mapping(self.external_ids)
 
 
 @dataclass(slots=True)
@@ -57,6 +63,7 @@ class AnimeRecord:
     Source adapters map external enum values to canonical keys. Translation is a
     platform/UI responsibility and must not happen inside adapters or aggregation.
     Unknown upstream values are preserved as raw strings for forward compatibility.
+    ``external_ids`` is a peer set of source IDs: no database is the primary key.
     """
 
     source: str
@@ -98,6 +105,19 @@ class AnimeRecord:
     urls: dict[str, str] = field(default_factory=dict)
     staff: list[PersonCredit] = field(default_factory=list)
     voices: list[PersonCredit] = field(default_factory=list)
+
+    @property
+    def identity(self) -> AnimeIdentity:
+        values = dict(self.external_ids)
+        source_key = self.source.strip().casefold()
+        if source_key and self.source_id:
+            aliases = {
+                "myanimelist": "mal",
+                "anilist": "anilist",
+                "shikimori": "shikimori",
+            }
+            values.setdefault(aliases.get(source_key, source_key), str(self.source_id))
+        return AnimeIdentity.from_mapping(values)
 
 
 @dataclass(slots=True)
@@ -151,3 +171,7 @@ class AggregatedAnime:
     staff: list[PersonCredit] = field(default_factory=list)
     voices: list[PersonCredit] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def identity(self) -> AnimeIdentity:
+        return AnimeIdentity.from_mapping(self.external_ids)
