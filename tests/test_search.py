@@ -180,6 +180,39 @@ class SearchServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(page.items), 2)
 
+    async def test_weak_bridge_cannot_transitively_hide_id_conflict(self) -> None:
+        first = FakeProvider(
+            "ProviderA",
+            [
+                SearchCandidate(
+                    title="A",
+                    external_ids={"mal": "20", "anilist": "10"},
+                )
+            ],
+        )
+        weak_bridge = FakeProvider(
+            "ProviderBridge",
+            [SearchCandidate(title="Bridge", external_ids={"mal": "20"})],
+        )
+        conflicting = FakeProvider(
+            "ProviderC",
+            [
+                SearchCandidate(
+                    title="C",
+                    external_ids={"mal": "20", "anilist": "11"},
+                )
+            ],
+        )
+        service = SearchService((first, weak_bridge, conflicting))
+
+        page = await service.search("test")
+
+        self.assertEqual(len(page.items), 2)
+        self.assertEqual(
+            {item.external_ids.get("anilist") for item in page.items},
+            {"10", "11"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
