@@ -17,6 +17,12 @@ class _CacheEntry:
     page: SearchPage
 
 
+@dataclass(slots=True)
+class _CandidateGroup:
+    identity: AnimeIdentity
+    entries: list[tuple[int, str, int, SearchCandidate]]
+
+
 class SearchService:
     """Search dedicated providers and merge results by shared external IDs."""
 
@@ -92,6 +98,63 @@ class SearchService:
         return merged
 
 
+def _group_entries(
+    entries: list[tuple[int, str, int, SearchCandidate]],
+) -> list[_CandidateGroup]:
+    """Build conflict-safe identity clusters.
+
+    A new candidate may bridge multiple existing groups only when the combined
+    identity remains internally consistent. This prevents transitive merges from
+    silently joining two different IDs from the same database through a weaker
+    shared edge.
+    """
+    groups: list[_CandidateGroup] = []
+
+    for entry in entries:
+        candidate_identity = entry[3].identity
+        if candidate_identity.is_empty():
+            groups.append(_CandidateGroup(candidate_identity, [entry]))
+            continue
+
+        matching_indexes = [
+            index
+            for index, group in enumerate(groups)
+            if not group.identity.is_empty() and group.identity.matches(candidate_identity)
+        ]
+        if not matching_indexes:
+            groups.append(_CandidateGroup(candidate_identity.copy(), [entry]))
+            continue
+
+        combined = candidate_identity.copy()
+        ambiguous = False
+        for index in matching_indexes:
+            group_identity = groups[index].identity
+            if combined.conflicting_ids(group_identity):
+                ambiguous = True
+                break
+            combined.merge_missing(group_identity)
+
+        if ambiguous:
+            groups.append(_CandidateGroup(candidate_identity.copy(), [entry]))
+            continue
+
+        target_index = matching_indexes[0]
+        target_entries = [entry]
+        for index in matching_indexes:
+            target_entries.extend(groups[index].entries)
+
+        for index in reversed(matching_indexes):
+            groups.pop(index)
+
+        insertion_index = min(target_index, len(groups))
+        groups.insert(
+            insertion_index,
+            _CandidateGroup(combined, target_entries),
+        )
+
+    return groups
+
+
 def _merge_results(
     query: str,
     results: list[tuple[str, SearchPage | None, str | None]],
@@ -118,34 +181,11 @@ def _merge_results(
             for item_index, candidate in enumerate(provider_page.items)
         )
 
-    parent = list(range(len(entries)))
-
-    def find(index: int) -> int:
-        while parent[index] != index:
-            parent[index] = parent[parent[index]]
-            index = parent[index]
-        return index
-
-    def union(left: int, right: int) -> None:
-        left_root = find(left)
-        right_root = find(right)
-        if left_root != right_root:
-            parent[right_root] = left_root
-
-    identities = [candidate.identity for _, _, _, candidate in entries]
-    for right in range(len(entries)):
-        if identities[right].is_empty():
-            continue
-        for left in range(right):
-            if identities[left].matches(identities[right]):
-                union(left, right)
-
-    groups: dict[int, list[tuple[int, str, int, SearchCandidate]]] = {}
-    for index, entry in enumerate(entries):
-        groups.setdefault(find(index), []).append(entry)
-
+    groups = _group_entries(entries)
     ranked_items: list[tuple[tuple[int, int, int], SearchCandidate]] = []
-    for group in groups.values():
+
+    for candidate_group in groups:
+        group = candidate_group.entries
         preferred = next(
             (
                 candidate
@@ -158,7 +198,6 @@ def _merge_results(
         aliases: list[str] = []
         year: int | None = None
         scores: dict[str, float] = {}
-        identity = AnimeIdentity()
 
         rank = min(
             (
@@ -174,7 +213,6 @@ def _merge_results(
             if year is None:
                 year = candidate.year
             scores.update(candidate.scores)
-            identity.merge_missing(candidate.external_ids)
 
         aliases = [
             value
@@ -188,7 +226,7 @@ def _merge_results(
                     title=title,
                     aliases=aliases,
                     year=year,
-                    external_ids=dict(identity.external_ids),
+                    external_ids=dict(candidate_group.identity.external_ids),
                     scores=scores,
                 ),
             )
