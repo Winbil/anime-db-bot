@@ -9,7 +9,7 @@ from bots.telegram.card.state import remember_anime
 from core.models import SearchCandidate
 from localization import text
 from search.registry import get_search_providers
-from services.aggregator import AnimeAggregator
+from services.identity_aggregator import AnimeAggregator
 from services.search import SearchService
 from services.user_settings import get_user_locale
 from sources.registry import get_sources
@@ -26,23 +26,23 @@ async def aggregate_and_send(
     owner_user_id: int,
 ) -> None:
     locale = get_user_locale(owner_user_id)
-    mal_id = candidate.external_ids.get("mal")
-    if not mal_id:
-        await message.answer(text("service", "missing_mal_id", locale=locale))
+    identity = candidate.identity
+    if identity.is_empty():
+        await message.answer(text("service", "missing_external_id", locale=locale))
         return
 
     try:
         anime = await AGGREGATOR.aggregate(candidate)
     except Exception as exc:
         logging.error(
-            "Anime aggregation failed for MAL %s: %s: %s",
-            mal_id,
+            "Anime aggregation failed for %s: %s: %s",
+            identity.describe(),
             type(exc).__name__,
             exc,
             exc_info=True,
         )
         await message.answer(
-            text("service", "aggregation_failed", locale=locale, mal_id=mal_id)
+            text("service", "aggregation_failed", locale=locale)
         )
         return
 
