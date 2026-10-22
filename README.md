@@ -2,17 +2,38 @@
 
 Telegram-бот для поиска аниме и сборки одной общей карточки из нескольких баз данных.
 
-Главный принцип проекта: **поиск, metadata sources, агрегирование, локализация и UI конкретной платформы — отдельные слои**. Канонический ID между интеграциями пока остаётся MAL ID.
+Главный принцип проекта: **поиск, identity, metadata sources, агрегирование, локализация и UI конкретной платформы — отдельные слои**. У аниме больше нет обязательного «главного» ID одной базы: `AnimeIdentity` хранит граф внешних идентификаторов (`mal`, `anilist`, `shikimori` и будущие `anidb`, `kinopoisk` и другие) как равноправные связи.
 
 ## Что подключено
 
 ### Поиск
 
-Обычный `/anime <название>` параллельно использует Shikimori Search и MyAnimeList Search. Результаты объединяются по MAL ID.
+Обычный `/anime <название>` параллельно использует Shikimori Search и MyAnimeList Search. Результаты объединяются по любому подтверждённому общему external ID, а не только по MAL ID. Результат без MAL ID больше не отбрасывается.
 
 Legacy-команда `/search` пока позволяет явно выбрать MAL, Shikimori, AniList, несколько providers или все сразу. В roadmap она будет удалена, а выбор поисковых источников перейдёт в `/anime`.
 
+Search merge использует conflict-safe identity clusters: совпадение хотя бы одного внешнего ID может связать результаты, но конфликт двух разных ID одной и той же базы запрещает склейку, в том числе через транзитивный «мост».
+
 После выбора результата metadata собирается из всех доступных источников, независимо от того, какой provider нашёл результат.
+
+### Source-independent identity
+
+```text
+SearchCandidate
+      │
+      ▼
+AnimeIdentity
+├── mal: ...
+├── anilist: ...
+├── shikimori: ...
+└── future-source: ...
+```
+
+Ни один из этих ключей не является primary ID. Каждый metadata source получает целый `AnimeIdentity` и сам выбирает ID, который умеет использовать. Если первый успешно ответивший source обнаружил новый внешний ID, aggregator расширяет identity graph и даёт ранее неприменимым sources второй проход.
+
+Например, результат может начать путь только с `anilist:10`, AniList metadata добавить `mal:20`, после чего MyAnimeList сможет подключиться без требования иметь MAL ID ещё на этапе поиска.
+
+Best-effort resolver также может добавлять новые связи. Сейчас есть fallback MAL → Shikimori, потому что Shikimori search умеет вернуть оба ID; это только один resolver edge, а не глобальное правило identity.
 
 ### Metadata sources
 
@@ -21,6 +42,8 @@ Legacy-команда `/search` пока позволяет явно выбра�
 - MyAnimeList.
 
 `AnimeAggregator` объединяет названия, жанры, студии, даты, статусы, оценки, персонал и другие поля. Provenance сохраняется там, где он действительно нужен: внешние ID/URL, описания, source-specific варианты названий, staff/voices и портреты.
+
+Чистые merge-функции вынесены в `services/aggregation_merge.py`, а identity-aware orchestration находится в `services/identity_aggregator.py`. `services/aggregator.py` оставлен только как compatibility import surface и больше не содержит MAL-primary реализации.
 
 ## Команды
 
@@ -35,6 +58,11 @@ Legacy-команда `/search` пока позволяет явно выбра�
 /search anilist <название>
 /search all <название>
 /search mal,shikimori <название>
+
+# admin-only
+/users
+/ban <user_id> [seconds] [reason]
+/unban <user_id>
 ```
 
 ## Локализация и `/settings`
@@ -142,6 +170,8 @@ EN: Voice: Rimuru Tempest
 - AniList Japanese voice actors — при первом открытии voice-раздела;
 - Shikimori original Japanese seiyuu — `anime roles -> character -> seyu`, тоже только по запросу UI.
 
+Lazy people loaders тоже получают `AnimeIdentity`, поэтому AniList-only или Shikimori-only карточка не требует MAL ID для открытия персонала.
+
 Данные вливаются в уже существующую `AggregatedAnime`, поэтому основная metadata карточки повторно не запрашивается.
 
 Для Shikimori REST действует общий process-wide rate limiter и retry после HTTP 429 с `Retry-After`.
@@ -154,6 +184,7 @@ anime-db-bot/
 │   ├── session_store.py
 │   └── telegram/
 │       ├── bot.py
+│       ├── admin.py
 │       ├── settings.py
 │       ├── search_ui.py
 │       ├── people_portraits.py
@@ -169,6 +200,7 @@ anime-db-bot/
 │           ├── official.py
 │           └── tgapi.py
 ├── core/
+│   ├── identity.py
 │   ├── canonicalization.py
 │   ├── contracts.py
 │   ├── http_config.py
@@ -181,9 +213,13 @@ anime-db-bot/
 │   ├── registry.py
 │   └── providers/
 ├── services/
+│   ├── aggregation_merge.py
+│   ├── identity_aggregator.py
 │   ├── aggregator.py
 │   ├── id_resolver.py
 │   ├── search.py
+│   ├── bans.py
+│   ├── access_control.py
 │   └── user_settings.py
 ├── sources/
 ├── tests/
@@ -197,27 +233,33 @@ anime-db-bot/
 
 `bots/telegram/transports/official.py` и `tgapi.py` — реальные backend-реализации official Bot API и локального `tg-bot-api`. Они создают Bot/session, участвуют в health-check и shutdown lifecycle.
 
-`bots/telegram/card/` — обычная anime-card логика. `people_portraits.py` содержит lazy people/portrait UI. `settings.py` отвечает за Telegram settings UI.
+`bots/telegram/card/` — обычная anime-card логика. `people_portraits.py` содержит lazy people/portrait UI. `settings.py` отвечает за Telegram settings UI. `admin.py` содержит moderation middleware и admin-only команды.
 
 `bots/` не считается синонимом Telegram: будущий Discord implementation можно добавить отдельным `bots/discord/`, не меняя `core/`, `localization/`, `search/`, `services/` и `sources/`.
 
 ## Поток данных
 
 ```text
-Search provider
+Search providers
       │
       ▼
-SearchCandidate
+SearchCandidate(s)
+      │
+      ▼
+conflict-safe AnimeIdentity graph
       │
       ▼
 metadata sources
       │
+      ├── discover extra external IDs
+      │             │
+      │             └── optional second source pass
       ▼
 AnimeAggregator
       │
       ▼
 AggregatedAnime
-(locale-neutral canonical values)
+(locale-neutral canonical values + external ID graph)
       │
       ├── locale=ru
       │      ▼
@@ -244,7 +286,7 @@ SHIKIMORI_PEOPLE_CACHE_TTL_SECONDS=21600
 SHIKIMORI_REST_MIN_INTERVAL_SECONDS=0.24
 ```
 
-Краткоживущий callback/cache state очищается после restart. Пользовательский `locale` хранится отдельно в SQLite и сохраняется.
+Краткоживущий callback/cache state очищается после restart. Пользовательский `locale` и registry известных пользователей хранятся в SQLite. Баны хранятся отдельно в `data/bans.sqlite3`.
 
 ## Telegram transport
 
@@ -291,7 +333,12 @@ python -m unittest discover -s tests -v
 Regression coverage включает:
 
 - поиск, cache и pagination contracts;
-- cross-ID enrichment;
+- source-independent `AnimeIdentity`;
+- search result без MAL ID;
+- merge по AniList/Shikimori/другому external ID;
+- transitive identity graph и защиту от conflict-merge;
+- двухфазное metadata aggregation с обнаружением новых IDs;
+- отсутствие mutation исходного `SearchCandidate`;
 - source resilience/capability preservation;
 - Shikimori `character -> seyu` parsing;
 - lazy people loading;
@@ -300,15 +347,16 @@ Regression coverage включает:
 - canonical RU/EN localization;
 - одну domain model, рендерящуюся на RU и EN;
 - raw person-name rendering без повторного вложения;
-- persistent SQLite user locale settings.
+- persistent SQLite user locale settings и moderation storage.
 
 ## Известные архитектурные ограничения
 
 Главные ещё не закрытые ограничения находятся во внешнем refactor-audit. Среди них:
 
-- MAL ID пока остаётся обязательной общей identity;
+- cross-ID resolver graph пока неполный: сейчас best-effort fallback явно реализован только для MAL → Shikimori; новые базы должны добавлять собственные resolver edges там, где это действительно нужно;
 - fused search pagination может терять overflow;
 - нет typed capabilities/source errors/shared HTTP lifecycle;
 - нет общего source-health/circuit breaker;
-- кроме interface locale, остальное пользовательское состояние ещё не перенесено в persistent DB;
+- часть старых source modules всё ещё содержит внутренние legacy helper/class boundaries, хотя активный registry уже использует identity-native adapters;
+- кроме interface locale/known-user registry, остальное пользовательское состояние ещё не перенесено в persistent DB;
 - legacy `/search` ещё не удалён.
