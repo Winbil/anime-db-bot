@@ -28,6 +28,27 @@ class UserSettingsStoreTests(unittest.TestCase):
             store = SQLiteUserSettingsStore(Path(directory) / "settings.sqlite3")
             self.assertEqual(store.set_locale(123, "de").locale, "ru")
 
+    def test_known_users_are_platform_scoped_and_persistent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "settings.sqlite3"
+            first = SQLiteUserSettingsStore(path)
+            first.touch_user("telegram", 300)
+            first.touch_user("telegram", 100)
+            first.touch_user("discord", 200)
+
+            second = SQLiteUserSettingsStore(path)
+            self.assertEqual(second.list_user_ids("telegram"), [100, 300])
+            self.assertEqual(second.list_user_ids("discord"), [200])
+
+    def test_existing_settings_rows_are_backfilled_into_known_telegram_users(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "settings.sqlite3"
+            first = SQLiteUserSettingsStore(path)
+            first.set_locale(777, "en")
+
+            second = SQLiteUserSettingsStore(path)
+            self.assertEqual(second.list_user_ids("telegram"), [777])
+
 
 if __name__ == "__main__":
     unittest.main()
