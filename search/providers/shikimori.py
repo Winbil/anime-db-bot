@@ -79,10 +79,11 @@ class ShikimoriSearchProvider:
         items: list[SearchCandidate] = []
 
         for raw in raw_items:
-            mal_id = str(raw.get("malId") or "").strip()
-            if not mal_id:
+            shikimori_id = str(raw.get("id") or "").strip()
+            if not shikimori_id:
                 continue
 
+            mal_id = str(raw.get("malId") or "").strip()
             russian = _clean(raw.get("russian"))
             romaji = _clean(raw.get("name"))
             english = _clean(raw.get("english"))
@@ -105,15 +106,17 @@ class ShikimoriSearchProvider:
             except (TypeError, ValueError):
                 pass
 
+            external_ids = {"shikimori": shikimori_id}
+            if mal_id:
+                external_ids["mal"] = mal_id
+
             items.append(
                 SearchCandidate(
                     title=title,
+                    romaji_title=romaji or None,
                     aliases=aliases,
                     year=(raw.get("airedOn") or {}).get("year"),
-                    external_ids={
-                        "mal": mal_id,
-                        "shikimori": str(raw.get("id") or ""),
-                    },
+                    external_ids=external_ids,
                     scores=scores,
                 )
             )
