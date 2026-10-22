@@ -6,6 +6,7 @@ import re
 import time
 from dataclasses import dataclass
 
+from core.canonicalization import normalize_key
 from core.contracts import AnimeSearchProvider
 from core.identity import AnimeIdentity
 from core.models import SearchCandidate, SearchPage
@@ -24,7 +25,12 @@ class _CandidateGroup:
 
 
 class SearchService:
-    """Search dedicated providers and merge results by shared external IDs."""
+    """Search providers and merge candidates through layered identity matching.
+
+    Layer 1 uses confirmed shared external IDs. Layer 2 is a conservative
+    fallback for databases without cross-ID mappings and matches exact normalized
+    romaji titles while respecting source-ID conflicts and known release years.
+    """
 
     def __init__(self, providers: tuple[AnimeSearchProvider, ...] | list[AnimeSearchProvider]) -> None:
         self._providers = tuple(providers)
@@ -98,16 +104,10 @@ class SearchService:
         return merged
 
 
-def _group_entries(
+def _group_entries_by_identity(
     entries: list[tuple[int, str, int, SearchCandidate]],
 ) -> list[_CandidateGroup]:
-    """Build conflict-safe identity clusters.
-
-    A new candidate may bridge multiple existing groups only when the combined
-    identity remains internally consistent. This prevents transitive merges from
-    silently joining two different IDs from the same database through a weaker
-    shared edge.
-    """
+    """Layer 1: build conflict-safe clusters from confirmed external IDs."""
     groups: list[_CandidateGroup] = []
 
     for entry in entries:
@@ -155,6 +155,88 @@ def _group_entries(
     return groups
 
 
+def _romaji_keys(group: _CandidateGroup) -> set[str]:
+    result: set[str] = set()
+    for _, _, _, candidate in group.entries:
+        value = normalize_key(candidate.romaji_title or "")
+        if value:
+            result.add(value)
+    return result
+
+
+def _years(group: _CandidateGroup) -> set[int]:
+    return {
+        candidate.year
+        for _, _, _, candidate in group.entries
+        if isinstance(candidate.year, int) and not isinstance(candidate.year, bool)
+    }
+
+
+def _years_compatible(left: set[int], right: set[int]) -> bool:
+    return not left or not right or bool(left & right)
+
+
+def _merge_groups_by_romaji(groups: list[_CandidateGroup]) -> list[_CandidateGroup]:
+    """Layer 2: merge unresolved groups by exact normalized romaji title.
+
+    This fallback deliberately does not use fuzzy similarity. It also refuses to
+    join groups when they contain conflicting IDs for the same database or when
+    both sides have known, non-overlapping release years.
+    """
+    merged: list[_CandidateGroup] = []
+
+    for group in groups:
+        keys = _romaji_keys(group)
+        if not keys:
+            merged.append(group)
+            continue
+
+        group_years = _years(group)
+        matching_indexes = [
+            index
+            for index, existing in enumerate(merged)
+            if keys & _romaji_keys(existing)
+            and not group.identity.conflicting_ids(existing.identity)
+            and _years_compatible(group_years, _years(existing))
+        ]
+        if not matching_indexes:
+            merged.append(group)
+            continue
+
+        combined_identity = group.identity.copy()
+        combined_entries = list(group.entries)
+        combined_years = set(group_years)
+        ambiguous = False
+
+        for index in matching_indexes:
+            existing = merged[index]
+            if combined_identity.conflicting_ids(existing.identity):
+                ambiguous = True
+                break
+            if not _years_compatible(combined_years, _years(existing)):
+                ambiguous = True
+                break
+            combined_identity.merge_missing(existing.identity)
+            combined_entries.extend(existing.entries)
+            combined_years.update(_years(existing))
+
+        if ambiguous:
+            merged.append(group)
+            continue
+
+        target_index = matching_indexes[0]
+        for index in reversed(matching_indexes):
+            merged.pop(index)
+
+        insertion_index = min(target_index, len(merged))
+        merged.insert(
+            insertion_index,
+            _CandidateGroup(combined_identity, combined_entries),
+        )
+
+    return merged
+
+
 def _merge_results(
     query: str,
     results: list[tuple[str, SearchPage | None, str | None]],
@@ -181,7 +263,8 @@ def _merge_results(
             for item_index, candidate in enumerate(provider_page.items)
         )
 
-    groups = _group_entries(entries)
+    identity_groups = _group_entries_by_identity(entries)
+    groups = _merge_groups_by_romaji(identity_groups)
     ranked_items: list[tuple[tuple[int, int, int], SearchCandidate]] = []
 
     for candidate_group in groups:
@@ -195,6 +278,14 @@ def _merge_results(
             group[0][3],
         )
         title = preferred.title or group[0][3].title
+        romaji_title = preferred.romaji_title or next(
+            (
+                candidate.romaji_title
+                for _, _, _, candidate in group
+                if candidate.romaji_title
+            ),
+            None,
+        )
         aliases: list[str] = []
         year: int | None = None
         scores: dict[str, float] = {}
@@ -228,6 +319,7 @@ def _merge_results(
                     year=year,
                     external_ids=dict(candidate_group.identity.external_ids),
                     scores=scores,
+                    romaji_title=romaji_title,
                 ),
             )
         )
