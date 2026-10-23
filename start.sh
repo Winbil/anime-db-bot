@@ -106,16 +106,17 @@ BOT_TOKEN_VALUE="$(sed -n 's/^[[:space:]]*BOT_TOKEN[[:space:]]*=[[:space:]]*//p'
 MAL_CLIENT_ID_VALUE="$(sed -n 's/^[[:space:]]*MAL_CLIENT_ID[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
 if [[ -z "$MAL_CLIENT_ID_VALUE" ]]; then
     info "MAL_CLIENT_ID is empty: MyAnimeList search and metadata will be unavailable."
-    info "Shikimori search plus Shikimori/AniList metadata can still work."
+    info "Available non-MAL sources can still provide partial search and metadata results."
     info "Optional MAL setup: https://myanimelist.net/apiconfig"
 fi
 
 info "Telegram runtime: $BOT_MODULE"
-info "Telegram transport is selected inside bot.py from TELEGRAM_BOT_API_URL."
-info "Default search: Shikimori + MyAnimeList, merged by MAL ID."
-info "Selectable /search providers include MAL, Shikimori and AniList."
+info "Telegram transport is selected from TELEGRAM_BOT_API_URL."
+info "Default /anime search: Shikimori + MyAnimeList."
+info "Interactive /anime sources: All / MAL / Shikimori / AniList."
+info "Direct external-ID lookup is source-independent."
 info "Metadata sources: Shikimori + AniList + MyAnimeList."
-info "People data is loaded lazily when staff/seiyuu sections are opened."
+info "Staff/seiyuu data is loaded lazily when those sections are opened."
 
 mkdir -p "$LOG_DIR"
 
