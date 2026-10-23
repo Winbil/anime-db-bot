@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import html
 import logging
+import os
+import re
 import secrets
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
@@ -8,17 +11,26 @@ from typing import Awaitable, Callable
 from aiogram import Dispatcher, F
 from aiogram.filters import Command
 from aiogram.filters.command import CommandObject
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InputRichMessage,
+    Message,
+)
 
 from bots.session_store import ExpiringSessionStore
-from core.models import SearchCandidate, SearchPage
+from bots.telegram.card.renderer import plain_text_to_rich_html
+from core.models import SearchCandidate, SearchResultSet
 from localization import text
 from search.registry import DEFAULT_SEARCH_PROVIDER_KEYS, get_search_provider_map
+from services.direct_lookup import DirectIdLookupService
 from services.search import SearchService
 from services.user_settings import get_user_locale
 
-SEARCH_PAGE_SIZE = 10
 MAX_SEARCH_SESSIONS = 200
+MAX_SCOPE_SESSIONS = 200
+MAX_PENDING_INPUTS = 500
 
 PROVIDERS = get_search_provider_map()
 ALL_PROVIDER_KEYS = tuple(PROVIDERS)
@@ -34,36 +46,97 @@ PROVIDER_ALIASES = {
     "ani": "anilist",
 }
 
-SCOPE_ALIASES = {
-    "default": DEFAULT_SEARCH_PROVIDER_KEYS,
-    "main": DEFAULT_SEARCH_PROVIDER_KEYS,
-    "основной": DEFAULT_SEARCH_PROVIDER_KEYS,
-    "all": ALL_PROVIDER_KEYS,
-    "все": ALL_PROVIDER_KEYS,
+_SOURCE_LABELS = {
+    "mal": "MAL",
+    "myanimelist": "MAL",
+    "anilist": "AniList",
+    "shikimori": "Shikimori",
 }
 
-SCOPE_CALLBACKS = {
-    "default": DEFAULT_SEARCH_PROVIDER_KEYS,
-    "all": ALL_PROVIDER_KEYS,
-    "mal": ("mal",),
-    "shikimori": ("shikimori",),
-    "anilist": ("anilist",),
+_DIRECT_ID_RE = re.compile(r"^(?:(?P<source>[a-zA-Z0-9_-]+):)?(?P<id>[0-9]+)$")
+
+_UI = {
+    "ru": {
+        "choose_source": "Где искать аниме? После выбора отправь название или ID.",
+        "all": "Все",
+        "cancel": "Отмена",
+        "waiting": "Источник выбран: {scope}. Отправь название аниме или ID следующим сообщением.\n\nОтмена: /cancel",
+        "cancelled": "Поиск отменён.",
+        "nothing_pending": "Нет активного пошагового поиска.",
+        "expired": "Этот поиск устарел. Запусти /anime ещё раз.",
+        "details": "Подробнее",
+        "result": "Результат поиска",
+        "year": "Год: {year}",
+        "ids": "ID источников:",
+        "no_ids": "ID источников не найдены.",
+        "unavailable": "Недоступны: {sources}",
+        "unknown_direct_source": "Источник ID «{source}» не поддерживается.",
+        "scope_mismatch": "Этот пошаговый поиск ограничен источником {scope}.",
+        "failed": "Не удалось выполнить поиск. Причина записана в лог.",
+    },
+    "en": {
+        "choose_source": "Where should I search? After choosing, send an anime title or ID.",
+        "all": "All",
+        "cancel": "Cancel",
+        "waiting": "Selected source: {scope}. Send an anime title or ID in your next message.\n\nCancel: /cancel",
+        "cancelled": "Search cancelled.",
+        "nothing_pending": "There is no active step-by-step search.",
+        "expired": "This search expired. Start /anime again.",
+        "details": "Details",
+        "result": "Search result",
+        "year": "Year: {year}",
+        "ids": "Source IDs:",
+        "no_ids": "No source IDs found.",
+        "unavailable": "Unavailable: {sources}",
+        "unknown_direct_source": "ID source “{source}” is not supported.",
+        "scope_mismatch": "This step-by-step search is restricted to {scope}.",
+        "failed": "Search failed. The reason was written to the log.",
+    },
 }
 
 
 @dataclass(slots=True)
 class SearchSession:
     query: str
-    owner_user_id: int = 0
-    provider_keys: tuple[str, ...] = ()
-    pages: dict[int, SearchPage] = field(default_factory=dict)
-    show_scope_label: bool = True
+    owner_user_id: int
+    items: list[SearchCandidate] = field(default_factory=list)
+    complete: bool = True
+    errors: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class ScopeSelectionSession:
+    owner_user_id: int
+    chat_id: int
+
+
+@dataclass(slots=True)
+class PendingAnimeInput:
+    owner_user_id: int
+    chat_id: int
+    provider_keys: tuple[str, ...]
+    direct_source_keys: tuple[str, ...] | None
+    scope_label: str
 
 
 SESSIONS: ExpiringSessionStore[SearchSession] = ExpiringSessionStore(
     max_entries=MAX_SEARCH_SESSIONS,
 )
+SCOPE_SESSIONS: ExpiringSessionStore[ScopeSelectionSession] = ExpiringSessionStore(
+    max_entries=MAX_SCOPE_SESSIONS,
+    ttl_seconds=max(60, _env_int("ANIME_INPUT_TTL_SECONDS", 300)),
+)
+PENDING_INPUTS: ExpiringSessionStore[PendingAnimeInput] = ExpiringSessionStore(
+    max_entries=MAX_PENDING_INPUTS,
+    ttl_seconds=max(60, _env_int("ANIME_INPUT_TTL_SECONDS", 300)),
+)
 SERVICES: dict[tuple[str, ...], SearchService] = {}
+
+
+def _ui(locale: str, key: str, **kwargs) -> str:
+    language = "en" if str(locale).casefold().startswith("en") else "ru"
+    value = _UI[language][key]
+    return value.format(**kwargs) if kwargs else value
 
 
 def _normalize_provider_keys(keys: tuple[str, ...] | list[str]) -> tuple[str, ...]:
@@ -88,14 +161,20 @@ def _service_for(
     return service
 
 
+def _source_label(key: str) -> str:
+    return _SOURCE_LABELS.get(key.casefold(), key.upper())
+
+
 def _scope_label(provider_keys: tuple[str, ...]) -> str:
-    return " + ".join(PROVIDERS[key].name for key in provider_keys)
+    return " + ".join(_source_label(key) for key in provider_keys)
 
 
 def _parse_scope(value: str) -> tuple[str, ...] | None:
     value = value.strip().casefold()
-    if value in SCOPE_ALIASES:
-        return _normalize_provider_keys(SCOPE_ALIASES[value])
+    if value in {"all", "все"}:
+        return ALL_PROVIDER_KEYS
+    if value in {"default", "main", "основной"}:
+        return DEFAULT_SEARCH_PROVIDER_KEYS
 
     parts = [part.strip() for part in value.replace("+", ",").split(",") if part.strip()]
     if not parts:
@@ -103,206 +182,305 @@ def _parse_scope(value: str) -> tuple[str, ...] | None:
 
     keys: list[str] = []
     for part in parts:
-        key = PROVIDER_ALIASES.get(part)
+        key = PROVIDER_ALIASES.get(part, part if part in PROVIDERS else None)
         if key is None:
             return None
         keys.append(key)
     return _normalize_provider_keys(keys)
 
 
-def _remember(
+def _parse_direct_query(
+    value: str,
+    supported_source_keys: tuple[str, ...] | list[str],
+) -> tuple[str | None, str] | None:
+    match = _DIRECT_ID_RE.fullmatch((value or "").strip())
+    if match is None:
+        return None
+
+    external_id = match.group("id")
+    raw_source = (match.group("source") or "").casefold()
+    if not raw_source:
+        return None, external_id
+
+    supported = {str(key).casefold() for key in supported_source_keys}
+    source_key = PROVIDER_ALIASES.get(raw_source, raw_source)
+    if source_key not in supported:
+        return None
+    return source_key, external_id
+
+
+def _scope_keyboard(token: str, locale: str) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = [[
+        InlineKeyboardButton(
+            text=_ui(locale, "all"),
+            callback_data=f"sc:{token}:all",
+        )
+    ]]
+
+    provider_buttons = [
+        InlineKeyboardButton(
+            text=_source_label(key),
+            callback_data=f"sc:{token}:{key}",
+        )
+        for key in ALL_PROVIDER_KEYS
+    ]
+    rows.extend(
+        provider_buttons[index:index + 2]
+        for index in range(0, len(provider_buttons), 2)
+    )
+    rows.append([
+        InlineKeyboardButton(
+            text=_ui(locale, "cancel"),
+            callback_data=f"sx:{token}",
+        )
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _waiting_keyboard(token: str, locale: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text=_ui(locale, "cancel"),
+            callback_data=f"sx:{token}",
+        )
+    ]])
+
+
+def _preview_keyboard(
+    token: str,
+    index: int,
+    total: int,
+    *,
+    complete: bool,
+    locale: str,
+) -> InlineKeyboardMarkup:
+    nav: list[InlineKeyboardButton] = []
+    if index > 0:
+        nav.append(
+            InlineKeyboardButton(text="◀️", callback_data=f"sr:{token}:{index - 1}")
+        )
+
+    suffix = "" if complete else "+"
+    nav.append(
+        InlineKeyboardButton(
+            text=f"{index + 1}/{total}{suffix}",
+            callback_data="noop",
+        )
+    )
+    if index + 1 < total:
+        nav.append(
+            InlineKeyboardButton(text="▶️", callback_data=f"sr:{token}:{index + 1}")
+        )
+
+    return InlineKeyboardMarkup(inline_keyboard=[
+        nav,
+        [
+            InlineKeyboardButton(
+                text=_ui(locale, "details"),
+                callback_data=f"sd:{token}:{index}",
+            )
+        ],
+    ])
+
+
+def _preview_text(
+    session: SearchSession,
+    candidate: SearchCandidate,
+    *,
+    locale: str,
+) -> str:
+    lines = [_ui(locale, "result"), "", candidate.title]
+    if candidate.year:
+        lines.append(_ui(locale, "year", year=candidate.year))
+
+    lines.extend(["", _ui(locale, "ids")])
+    if candidate.external_ids:
+        preferred = ["mal", "anilist", "shikimori"]
+        ordered = [key for key in preferred if key in candidate.external_ids]
+        ordered.extend(sorted(set(candidate.external_ids) - set(ordered)))
+        lines.extend(
+            f"{_source_label(key)}: {candidate.external_ids[key]}"
+            for key in ordered
+        )
+    else:
+        lines.append(_ui(locale, "no_ids"))
+
+    if session.errors:
+        lines.extend([
+            "",
+            _ui(locale, "unavailable", sources=", ".join(session.errors)),
+        ])
+    return "\n".join(lines)
+
+
+def _image_html(urls: list[str]) -> str:
+    clean: list[str] = []
+    seen: set[str] = set()
+    for value in urls:
+        value = str(value or "").strip()
+        if value and value not in seen:
+            seen.add(value)
+            clean.append(value)
+        if len(clean) >= 6:
+            break
+    if not clean:
+        return ""
+    images = "".join(
+        f'<img src="{html.escape(url, quote=True)}"/>'
+        for url in clean
+    )
+    return images if len(clean) == 1 else f"<tg-slideshow>{images}</tg-slideshow>"
+
+
+def _preview_rich(text_value: str, candidate: SearchCandidate) -> InputRichMessage:
+    return InputRichMessage(
+        html=_image_html(candidate.posters) + plain_text_to_rich_html(text_value)
+    )
+
+
+def _remember_results(
     query: str,
     owner_user_id: int,
-    provider_keys: tuple[str, ...] = (),
-    *,
-    show_scope_label: bool = True,
+    result_set: SearchResultSet,
 ) -> str:
     token = secrets.token_urlsafe(6)
     SESSIONS[token] = SearchSession(
         query=query,
         owner_user_id=int(owner_user_id),
-        provider_keys=provider_keys,
-        show_scope_label=show_scope_label,
+        items=list(result_set.items),
+        complete=result_set.complete,
+        errors=dict(result_set.errors),
     )
     return token
 
 
-def _scope_keyboard(token: str, locale: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=text("search", "default_scope", locale=locale),
-                    callback_data=f"xs:{token}:default",
-                )
-            ],
-            [
-                InlineKeyboardButton(text="MAL", callback_data=f"xs:{token}:mal"),
-                InlineKeyboardButton(
-                    text="Shikimori",
-                    callback_data=f"xs:{token}:shikimori",
-                ),
-                InlineKeyboardButton(
-                    text="AniList",
-                    callback_data=f"xs:{token}:anilist",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=text("search", "all_scope", locale=locale),
-                    callback_data=f"xs:{token}:all",
-                )
-            ],
-        ]
+def _remember_scope(owner_user_id: int, chat_id: int) -> str:
+    token = secrets.token_urlsafe(6)
+    SCOPE_SESSIONS[token] = ScopeSelectionSession(
+        owner_user_id=int(owner_user_id),
+        chat_id=int(chat_id),
     )
+    return token
 
 
-def _candidate_button_text(candidate: SearchCandidate) -> str:
-    value = f"{candidate.title} ({candidate.year})" if candidate.year else candidate.title
-    mal_id = candidate.external_ids.get("mal")
-    if mal_id:
-        value += f" · MAL {mal_id}"
-    return value if len(value) <= 64 else value[:61] + "..."
+def _pending_key(user_id: int) -> str:
+    return str(int(user_id))
 
 
-def _results_keyboard(page: SearchPage, token: str, locale: str) -> InlineKeyboardMarkup:
-    rows = [
-        [
-            InlineKeyboardButton(
-                text=_candidate_button_text(candidate),
-                callback_data=f"xk:{token}:{page.page}:{index}",
-            )
-        ]
-        for index, candidate in enumerate(page.items)
-    ]
-
-    nav: list[InlineKeyboardButton] = []
-    if page.page > 1:
-        nav.append(
-            InlineKeyboardButton(
-                text="◀️",
-                callback_data=f"xp:{token}:{page.page - 1}",
-            )
-        )
-    nav.append(
-        InlineKeyboardButton(
-            text=text("search", "page", locale=locale, page=page.page),
-            callback_data="noop",
-        )
-    )
-    if page.has_next:
-        nav.append(
-            InlineKeyboardButton(
-                text="▶️",
-                callback_data=f"xp:{token}:{page.page + 1}",
-            )
-        )
-    rows.append(nav)
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+def _clear_pending(user_id: int) -> bool:
+    key = _pending_key(user_id)
+    if PENDING_INPUTS.get(key) is None:
+        return False
+    try:
+        del PENDING_INPUTS[key]
+    except KeyError:
+        return False
+    return True
 
 
-def _result_text(session: SearchSession, page: SearchPage, locale: str = "ru") -> str:
-    if session.show_scope_label:
-        value = text(
-            "search",
-            "scoped_results",
-            locale=locale,
-            scope=_scope_label(session.provider_keys),
-            query=session.query,
-        )
-        unavailable_label = text("search", "unavailable", locale=locale)
-    else:
-        value = text("search", "results", locale=locale, query=session.query)
-        unavailable_label = text("search", "unavailable_providers", locale=locale)
-
-    if page.errors:
-        value += f"\n\n{unavailable_label}: " + ", ".join(page.errors)
-    return value
-
-
-async def _load_page(
-    session: SearchSession,
-    page_number: int,
-    default_service: SearchService,
-) -> SearchPage:
-    page_number = max(1, int(page_number))
-    if page_number not in session.pages:
-        service = _service_for(session.provider_keys, default_service)
-        session.pages[page_number] = await service.search(
-            session.query,
-            page=page_number,
-            page_size=SEARCH_PAGE_SIZE,
-        )
-    return session.pages[page_number]
-
-
-async def _show_results(
+async def _send_preview(
     message: Message,
     token: str,
     session: SearchSession,
-    default_service: SearchService,
-    aggregate_callback: Callable[[Message, SearchCandidate, int], Awaitable[None]],
+    index: int,
     *,
     edit: bool,
 ) -> None:
     locale = get_user_locale(session.owner_user_id)
+    if not session.items:
+        value = text("search", "nothing", locale=locale)
+        if session.errors:
+            value = text(
+                "search",
+                "no_results_unavailable",
+                locale=locale,
+                sources=", ".join(session.errors),
+            )
+        if edit:
+            await message.edit_text(value, reply_markup=None)
+        else:
+            await message.answer(value)
+        return
+
+    index = max(0, min(index, len(session.items) - 1))
+    candidate = session.items[index]
+    text_value = _preview_text(session, candidate, locale=locale)
+    keyboard = _preview_keyboard(
+        token,
+        index,
+        len(session.items),
+        complete=session.complete,
+        locale=locale,
+    )
+
     try:
-        page = await _load_page(session, 1, default_service)
+        if edit:
+            await message.edit_text(
+                rich_message=_preview_rich(text_value, candidate),
+                reply_markup=keyboard,
+            )
+        else:
+            await message.answer(
+                rich_message=_preview_rich(text_value, candidate),
+                reply_markup=keyboard,
+            )
+    except Exception:
+        logging.debug("Rich search preview failed; using plain text", exc_info=True)
+        if edit:
+            await message.edit_text(text_value, reply_markup=keyboard)
+        else:
+            await message.answer(text_value, reply_markup=keyboard)
+
+
+async def _execute_query(
+    message: Message,
+    query: str,
+    owner_user_id: int,
+    *,
+    provider_keys: tuple[str, ...],
+    direct_source_keys: tuple[str, ...] | None,
+    default_service: SearchService,
+    direct_lookup: DirectIdLookupService,
+) -> None:
+    locale = get_user_locale(owner_user_id)
+    parsed_direct = _parse_direct_query(query, direct_lookup.source_keys)
+
+    try:
+        if parsed_direct is not None:
+            explicit_source, external_id = parsed_direct
+            if explicit_source is not None:
+                if direct_source_keys is not None and explicit_source not in direct_source_keys:
+                    await message.answer(
+                        _ui(
+                            locale,
+                            "scope_mismatch",
+                            scope=_scope_label(provider_keys),
+                        )
+                    )
+                    return
+                lookup_keys: tuple[str, ...] | None = (explicit_source,)
+            else:
+                lookup_keys = direct_source_keys
+            result_set = await direct_lookup.lookup(
+                external_id,
+                source_keys=lookup_keys,
+            )
+        else:
+            service = _service_for(provider_keys, default_service)
+            result_set = await service.collect(query)
     except Exception as exc:
         logging.error(
-            "Search failed (%s): %s: %s",
-            _scope_label(session.provider_keys),
+            "Anime search failed for %r: %s: %s",
+            query,
             type(exc).__name__,
             exc,
             exc_info=True,
         )
-        value = text(
-            "search",
-            "failed_scoped" if session.show_scope_label else "failed",
-            locale=locale,
-        )
-        if edit:
-            await message.edit_text(value)
-        else:
-            await message.answer(value)
+        await message.answer(_ui(locale, "failed"))
         return
 
-    if not page.items:
-        if page.errors:
-            key = "nothing_unavailable" if session.show_scope_label else "no_results_unavailable"
-            value = text(
-                "search",
-                key,
-                locale=locale,
-                sources=", ".join(page.errors),
-            )
-        else:
-            value = text(
-                "search",
-                "nothing_scoped" if session.show_scope_label else "nothing",
-                locale=locale,
-            )
-        if edit:
-            await message.edit_text(value)
-        else:
-            await message.answer(value)
-        return
-
-    if len(page.items) == 1 and not page.has_next:
-        if edit:
-            try:
-                await message.edit_reply_markup(reply_markup=None)
-            except Exception:
-                logging.debug("Could not clear single-result search keyboard", exc_info=True)
-        await aggregate_callback(message, page.items[0], session.owner_user_id)
-        return
-
-    value = _result_text(session, page, locale)
-    keyboard = _results_keyboard(page, token, locale)
-    if edit:
-        await message.edit_text(value, reply_markup=keyboard)
-    else:
-        await message.answer(value, reply_markup=keyboard)
+    token = _remember_results(query, owner_user_id, result_set)
+    await _send_preview(message, token, SESSIONS[token], 0, edit=False)
 
 
 def register_search_handlers(
@@ -310,109 +488,147 @@ def register_search_handlers(
     *,
     aggregate_callback: Callable[[Message, SearchCandidate, int], Awaitable[None]],
     default_service: SearchService,
+    direct_lookup: DirectIdLookupService,
 ) -> None:
-    """Register both /anime and legacy /search on one shared search flow."""
+    """Register the single public anime-search command and its interactive flow."""
 
     @dp.message(Command("anime"))
     async def anime_handler(message: Message, command: CommandObject) -> None:
         user_id = message.from_user.id if message.from_user else 0
         locale = get_user_locale(user_id)
         query = (command.args or "").strip()
-        if not query:
-            await message.answer(text("search", "anime_usage", locale=locale))
-            return
 
-        token = _remember(
-            query,
-            user_id,
-            DEFAULT_SEARCH_PROVIDER_KEYS,
-            show_scope_label=False,
-        )
-        await _show_results(
-            message,
-            token,
-            SESSIONS[token],
-            default_service,
-            aggregate_callback,
-            edit=False,
-        )
-
-    @dp.message(Command("search"))
-    async def search_handler(message: Message, command: CommandObject) -> None:
-        user_id = message.from_user.id if message.from_user else 0
-        locale = get_user_locale(user_id)
-        args = (command.args or "").strip()
-        if not args:
-            await message.answer(text("search", "search_usage", locale=locale))
-            return
-
-        first, separator, rest = args.partition(" ")
-        parsed_scope = _parse_scope(first)
-
-        if parsed_scope is not None and separator and rest.strip():
-            query = rest.strip()
-            token = _remember(query, user_id, parsed_scope)
-            await _show_results(
+        if query:
+            await _execute_query(
                 message,
-                token,
-                SESSIONS[token],
-                default_service,
-                aggregate_callback,
-                edit=False,
+                query,
+                user_id,
+                provider_keys=DEFAULT_SEARCH_PROVIDER_KEYS,
+                # Fast numeric /anime IDs are intentionally checked against all
+                # metadata sources, not just the default text-search providers.
+                direct_source_keys=None,
+                default_service=default_service,
+                direct_lookup=direct_lookup,
             )
             return
 
-        query = args
-        token = _remember(query, user_id)
+        token = _remember_scope(user_id, message.chat.id)
         await message.answer(
-            text("search", "where", locale=locale, query=query),
+            _ui(locale, "choose_source"),
             reply_markup=_scope_keyboard(token, locale),
         )
 
-    @dp.callback_query(F.data.startswith("xs:"))
-    async def search_scope_callback(callback: CallbackQuery) -> None:
+    @dp.message(Command("cancel"))
+    async def cancel_search_handler(message: Message) -> None:
+        user_id = message.from_user.id if message.from_user else 0
+        locale = get_user_locale(user_id)
+        if _clear_pending(user_id):
+            await message.answer(_ui(locale, "cancelled"))
+        else:
+            await message.answer(_ui(locale, "nothing_pending"))
+
+    @dp.callback_query(F.data.startswith("sc:"))
+    async def scope_callback(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        data = (callback.data or "").split(":")
-        if len(data) != 3:
+        parts = (callback.data or "").split(":")
+        if len(parts) != 3:
             await callback.answer(text("search", "invalid_provider", locale=locale), show_alert=True)
             return
 
-        _, token, scope_name = data
-        session = SESSIONS.get(token)
-        provider_keys = SCOPE_CALLBACKS.get(scope_name)
-        if session is None or provider_keys is None:
-            await callback.answer(text("search", "expired", locale=locale), show_alert=True)
+        _, token, selected = parts
+        scope_session = SCOPE_SESSIONS.get(token)
+        if scope_session is None:
+            await callback.answer(_ui(locale, "expired"), show_alert=True)
             return
-        if session.owner_user_id != callback.from_user.id:
+        if scope_session.owner_user_id != callback.from_user.id:
             await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
             return
         if callback.message is None:
             await callback.answer()
             return
 
-        session.provider_keys = _normalize_provider_keys(provider_keys)
-        session.pages.clear()
+        if selected == "all":
+            provider_keys = ALL_PROVIDER_KEYS
+            direct_source_keys = None
+            scope_label = _ui(locale, "all")
+        elif selected in PROVIDERS:
+            provider_keys = (selected,)
+            direct_source_keys = (selected,)
+            scope_label = _source_label(selected)
+        else:
+            await callback.answer(text("search", "invalid_provider", locale=locale), show_alert=True)
+            return
+
+        PENDING_INPUTS[_pending_key(callback.from_user.id)] = PendingAnimeInput(
+            owner_user_id=callback.from_user.id,
+            chat_id=scope_session.chat_id,
+            provider_keys=provider_keys,
+            direct_source_keys=direct_source_keys,
+            scope_label=scope_label,
+        )
         await callback.answer()
-        await _show_results(
-            callback.message,
-            token,
-            session,
-            default_service,
-            aggregate_callback,
-            edit=True,
+        await callback.message.edit_text(
+            _ui(locale, "waiting", scope=scope_label),
+            reply_markup=_waiting_keyboard(token, locale),
         )
 
-    @dp.callback_query(F.data.startswith("xp:"))
-    async def search_page_callback(callback: CallbackQuery) -> None:
+    @dp.callback_query(F.data.startswith("sx:"))
+    async def cancel_scope_callback(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        data = (callback.data or "").split(":")
-        if len(data) != 3 or not data[2].isdigit():
+        parts = (callback.data or "").split(":")
+        if len(parts) != 2:
+            await callback.answer()
+            return
+        _, token = parts
+        scope_session = SCOPE_SESSIONS.get(token)
+        if scope_session is not None and scope_session.owner_user_id != callback.from_user.id:
+            await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
+            return
+
+        _clear_pending(callback.from_user.id)
+        try:
+            del SCOPE_SESSIONS[token]
+        except KeyError:
+            pass
+        await callback.answer()
+        if callback.message is not None:
+            await callback.message.edit_text(_ui(locale, "cancelled"), reply_markup=None)
+
+    @dp.message(F.text & ~F.text.startswith("/"))
+    async def pending_anime_input_handler(message: Message) -> None:
+        user_id = message.from_user.id if message.from_user else 0
+        pending = PENDING_INPUTS.get(_pending_key(user_id))
+        if pending is None or pending.chat_id != message.chat.id:
+            return
+
+        # Consume before doing network work: duplicate Telegram deliveries or a
+        # second user message cannot accidentally launch the same pending flow.
+        _clear_pending(user_id)
+        query = (message.text or "").strip()
+        if not query:
+            return
+
+        await _execute_query(
+            message,
+            query,
+            user_id,
+            provider_keys=pending.provider_keys,
+            direct_source_keys=pending.direct_source_keys,
+            default_service=default_service,
+            direct_lookup=direct_lookup,
+        )
+
+    @dp.callback_query(F.data.startswith("sr:"))
+    async def result_page_callback(callback: CallbackQuery) -> None:
+        locale = get_user_locale(callback.from_user.id)
+        parts = (callback.data or "").split(":")
+        if len(parts) != 3 or not parts[2].isdigit():
             await callback.answer(text("search", "invalid_page", locale=locale), show_alert=True)
             return
 
-        _, token, page_text = data
+        _, token, index_text = parts
         session = SESSIONS.get(token)
-        if session is None or not session.provider_keys:
+        if session is None:
             await callback.answer(text("search", "expired", locale=locale), show_alert=True)
             return
         if session.owner_user_id != callback.from_user.id:
@@ -420,61 +636,49 @@ def register_search_handlers(
             return
         if callback.message is None:
             await callback.answer()
-            return
-
-        try:
-            page = await _load_page(session, int(page_text), default_service)
-        except Exception:
-            logging.exception("Search page failed")
-            await callback.answer(text("search", "load_page_failed", locale=locale), show_alert=True)
-            return
-
-        if not page.items:
-            await callback.answer(text("search", "no_more", locale=locale), show_alert=True)
-            return
-
-        await callback.answer()
-        await callback.message.edit_text(
-            _result_text(session, page, locale),
-            reply_markup=_results_keyboard(page, token, locale),
-        )
-
-    @dp.callback_query(F.data.startswith("xk:"))
-    async def search_pick_callback(callback: CallbackQuery) -> None:
-        locale = get_user_locale(callback.from_user.id)
-        data = (callback.data or "").split(":")
-        if len(data) != 4 or not data[2].isdigit() or not data[3].isdigit():
-            await callback.answer(text("search", "invalid_result", locale=locale), show_alert=True)
-            return
-
-        _, token, page_text, index_text = data
-        session = SESSIONS.get(token)
-        if session is None or not session.provider_keys:
-            await callback.answer(text("search", "expired", locale=locale), show_alert=True)
-            return
-        if session.owner_user_id != callback.from_user.id:
-            await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
-            return
-        if callback.message is None:
-            await callback.answer()
-            return
-
-        try:
-            page = await _load_page(session, int(page_text), default_service)
-        except Exception:
-            logging.exception("Could not reload search page")
-            await callback.answer(text("search", "get_result_failed", locale=locale), show_alert=True)
             return
 
         index = int(index_text)
-        if index < 0 or index >= len(page.items):
+        if index < 0 or index >= len(session.items):
             await callback.answer(text("search", "result_unavailable", locale=locale), show_alert=True)
             return
 
-        candidate = page.items[index]
         await callback.answer()
-        try:
-            await callback.message.edit_reply_markup(reply_markup=None)
-        except Exception:
-            logging.debug("Could not remove search keyboard", exc_info=True)
+        await _send_preview(callback.message, token, session, index, edit=True)
+
+    @dp.callback_query(F.data.startswith("sd:"))
+    async def result_details_callback(callback: CallbackQuery) -> None:
+        locale = get_user_locale(callback.from_user.id)
+        parts = (callback.data or "").split(":")
+        if len(parts) != 3 or not parts[2].isdigit():
+            await callback.answer(text("search", "invalid_result", locale=locale), show_alert=True)
+            return
+
+        _, token, index_text = parts
+        session = SESSIONS.get(token)
+        if session is None:
+            await callback.answer(text("search", "expired", locale=locale), show_alert=True)
+            return
+        if session.owner_user_id != callback.from_user.id:
+            await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
+            return
+        if callback.message is None:
+            await callback.answer()
+            return
+
+        index = int(index_text)
+        if index < 0 or index >= len(session.items):
+            await callback.answer(text("search", "result_unavailable", locale=locale), show_alert=True)
+            return
+
+        candidate = session.items[index]
+        await callback.answer()
         await aggregate_callback(callback.message, candidate, session.owner_user_id)
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return default
