@@ -160,6 +160,30 @@ class SearchCollectionTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_collection_ranks_exact_title_before_related_title(self) -> None:
+        provider = PagedProvider(
+            "Provider",
+            {
+                1: SearchPage(
+                    items=[
+                        item("Naruto Shippuden", {"x": "2"}),
+                        item("Naruto", {"x": "1"}),
+                    ],
+                    page=1,
+                    page_size=10,
+                    has_next=False,
+                )
+            },
+        )
+        service = SearchService((provider,))
+
+        result = await service.collect("Naruto")
+
+        self.assertEqual(
+            [entry.title for entry in result.items],
+            ["Naruto", "Naruto Shippuden"],
+        )
+
     def test_relevance_policy_prefers_exact_prefix_and_tokens(self) -> None:
         exact = item(
             "That Time I Got Reincarnated as a Slime",
@@ -174,6 +198,33 @@ class SearchCollectionTests(unittest.IsolatedAsyncioTestCase):
             100,
         )
         self.assertGreaterEqual(_relevance_score("Naruto", related), 90)
+        self.assertLess(_relevance_score("Naruto", unrelated), 55)
+
+    def test_common_english_word_does_not_create_false_positive(self) -> None:
+        unrelated = item(
+            "The Iceblade Sorcerer Shall Rule the World",
+            {"mal": "1"},
+        )
+
+        self.assertLess(
+            _relevance_score("The Eminence In Shadow", unrelated),
+            55,
+        )
+
+    def test_short_russian_preposition_does_not_create_false_positive(self) -> None:
+        unrelated = item("Восхождение Героя Щита", {"shikimori": "1"})
+
+        self.assertLess(
+            _relevance_score("Восхождение в тени", unrelated),
+            55,
+        )
+
+    def test_naruto_does_not_match_unrelated_harukanaru_title(self) -> None:
+        unrelated = item(
+            "Harukanaru Toki no Naka de: Hachiyou Shou",
+            {"mal": "247"},
+        )
+
         self.assertLess(_relevance_score("Naruto", unrelated), 55)
 
     def test_relevance_policy_preserves_native_script_aliases(self) -> None:
