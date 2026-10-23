@@ -9,7 +9,7 @@ DEFAULT_SEARCH_PROVIDER_KEYS = ("shikimori", "mal")
 
 
 def get_search_provider_map() -> dict[str, AnimeSearchProvider]:
-    """Return every search backend available for explicit selection."""
+    """Return every text-search backend available for /anime selection."""
     return {
         "shikimori": ShikimoriSearchProvider(),
         "mal": MALSearchProvider(),
@@ -18,11 +18,11 @@ def get_search_provider_map() -> dict[str, AnimeSearchProvider]:
 
 
 def get_search_providers() -> tuple[AnimeSearchProvider, ...]:
-    """Return providers used by the default /anime search.
+    """Return providers used by fast ``/anime <title>`` search.
 
-    AniList is intentionally excluded from the default search to avoid spending
-    its stricter rate limit on every user query. It remains available through
-    the explicit /search command.
+    AniList is intentionally excluded from the default text search to avoid
+    spending its stricter rate limit on every user query. It remains available
+    through the interactive ``/anime`` source chooser and the ``All`` scope.
     """
     providers = get_search_provider_map()
     return tuple(providers[key] for key in DEFAULT_SEARCH_PROVIDER_KEYS)
