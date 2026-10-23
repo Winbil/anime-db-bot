@@ -109,7 +109,7 @@ class MALSearchProvider:
                 pass
 
             picture = node.get("main_picture") or {}
-            poster = str(picture.get("large") or picture.get("medium") or "").strip()
+            poster = str(picture.get("medium") or picture.get("large") or "").strip()
 
             items.append(
                 SearchCandidate(
