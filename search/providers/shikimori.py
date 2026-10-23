@@ -118,13 +118,13 @@ class ShikimoriSearchProvider:
                 external_ids["mal"] = mal_id
 
             poster = raw.get("poster") or {}
-            posters = _dedupe([
-                _clean(poster.get("originalUrl")),
-                _clean(poster.get("main2xUrl")),
-                _clean(poster.get("mainUrl")),
-                _clean(poster.get("preview2xUrl")),
-                _clean(poster.get("previewUrl")),
-            ])
+            poster_url = _clean(
+                poster.get("mainUrl")
+                or poster.get("main2xUrl")
+                or poster.get("preview2xUrl")
+                or poster.get("originalUrl")
+                or poster.get("previewUrl")
+            )
 
             items.append(
                 SearchCandidate(
@@ -134,7 +134,7 @@ class ShikimoriSearchProvider:
                     year=(raw.get("airedOn") or {}).get("year"),
                     external_ids=external_ids,
                     scores=scores,
-                    posters=posters,
+                    posters=[poster_url] if poster_url else [],
                 )
             )
 
