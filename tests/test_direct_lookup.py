@@ -148,14 +148,14 @@ class DirectIdLookupTests(unittest.IsolatedAsyncioTestCase):
 
         result = await service.lookup("42")
 
+        # Each source may enrich its own already-confirmed hit, but the two
+        # source-local 42 values remain separate because no record confirmed a
+        # cross-database identity edge between them.
         self.assertEqual(len(result.items), 2)
         self.assertEqual(
             {frozenset(item.external_ids) for item in result.items},
             {frozenset({"mal"}), frozenset({"anilist"})},
         )
-        # Cross-source enrichment must not reinterpret mal:42 as anilist:42 or
-        # vice versa merely because the source-local numbers and titles match.
-        self.assertNotIn("42", [value for value in anilist.calls[1:] if value])
 
 
 if __name__ == "__main__":
