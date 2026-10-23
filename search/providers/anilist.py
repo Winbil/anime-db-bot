@@ -22,6 +22,7 @@ query SearchAnime($search: String!, $page: Int!, $perPage: Int!) {
       synonyms
       seasonYear
       averageScore
+      coverImage { extraLarge large medium }
     }
   }
 }
@@ -33,7 +34,7 @@ class AniListSearchProvider:
 
     This provider is intentionally not part of the default /anime search so the
     AniList rate limit is only spent when the user explicitly selects AniList
-    (or selects every search provider through /search).
+    (or selects every provider through the interactive /anime flow).
     """
 
     name = "AniList"
@@ -133,6 +134,13 @@ class AniListSearchProvider:
             if mal_id:
                 external_ids["mal"] = mal_id
 
+            cover = raw.get("coverImage") or {}
+            posters = _dedupe([
+                _clean(cover.get("extraLarge")),
+                _clean(cover.get("large")),
+                _clean(cover.get("medium")),
+            ])
+
             items.append(
                 SearchCandidate(
                     title=title,
@@ -141,6 +149,7 @@ class AniListSearchProvider:
                     year=raw.get("seasonYear"),
                     external_ids=external_ids,
                     scores=scores,
+                    posters=posters,
                 )
             )
 
