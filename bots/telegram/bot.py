@@ -21,7 +21,10 @@ from bots.telegram.transports.tgapi import TRANSPORT as TGAPI_TRANSPORT
 from core.models import SearchCandidate
 from localization import text
 from services.access_control import telegram_admin_ids
+from services.direct_lookup import DirectIdLookupService
 from services.user_settings import get_user_locale
+
+DIRECT_ID_LOOKUP = DirectIdLookupService(SOURCES)
 
 
 def select_transport() -> TelegramTransport:
@@ -36,7 +39,7 @@ async def _aggregate_and_cleanup_search(
     candidate: SearchCandidate,
     owner_user_id: int,
 ) -> None:
-    """Replace/remove a bot-authored search list around metadata aggregation."""
+    """Replace/remove a bot-authored search preview around card aggregation."""
     locale = get_user_locale(owner_user_id)
     is_bot_search_message = bool(message.from_user and message.from_user.is_bot)
 
@@ -48,7 +51,7 @@ async def _aggregate_and_cleanup_search(
             )
         except Exception:
             logging.debug(
-                "Could not replace search results with loading state",
+                "Could not replace search preview with loading state",
                 exc_info=True,
             )
 
@@ -98,7 +101,7 @@ async def run_bot(transport: TelegramTransport | None = None) -> None:
     logging.info("Configured Telegram administrators: %d", len(telegram_admin_ids()))
     logging.info("Default search providers: %s", SEARCH_SERVICE.provider_name)
     logging.info("Metadata sources: %s", ", ".join(source.name for source in SOURCES))
-    logging.info("Selectable /search providers are enabled")
+    logging.info("Interactive /anime provider selection and direct-ID lookup are enabled")
 
     bot = transport.create_bot()
     try:
@@ -120,6 +123,7 @@ async def run_bot(transport: TelegramTransport | None = None) -> None:
             dp,
             aggregate_callback=_aggregate_and_cleanup_search,
             default_service=SEARCH_SERVICE,
+            direct_lookup=DIRECT_ID_LOOKUP,
         )
 
         await dp.start_polling(bot)
