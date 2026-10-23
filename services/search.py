@@ -14,6 +14,36 @@ from core.identity import AnimeIdentity
 from core.models import SearchCandidate, SearchPage, SearchResultSet
 
 
+_LOW_SIGNAL_TOKENS = frozenset({
+    "the",
+    "and",
+    "for",
+    "with",
+    "from",
+    "into",
+    "that",
+    "this",
+    "как",
+    "что",
+    "это",
+    "для",
+    "при",
+    "под",
+    "над",
+    "без",
+    "про",
+    "kak",
+    "chto",
+    "eto",
+    "dlya",
+    "pri",
+    "pod",
+    "nad",
+    "bez",
+    "pro",
+})
+
+
 @dataclass(slots=True)
 class _CacheEntry:
     expires_at: float
@@ -224,6 +254,7 @@ class SearchService:
                 errors[provider.name] = error
 
         items = _merge_entries(query, entries, allow_title_merge=True)
+        items.sort(key=lambda candidate: -_relevance_score(query, candidate))
         if len(items) > max_items:
             items = items[:max_items]
             complete = False
@@ -551,6 +582,18 @@ def _normalized_variants(value: str) -> set[str]:
     return variants
 
 
+def _meaningful_tokens(value: str) -> set[str]:
+    tokens = set(value.split())
+    meaningful = {
+        token
+        for token in tokens
+        if len(token) >= 3 and token not in _LOW_SIGNAL_TOKENS
+    }
+    # A short one-token title such as "86" must remain searchable. Only discard
+    # low-signal words when the query also contains something more informative.
+    return meaningful or tokens
+
+
 def _relevance_score(query: str, candidate: SearchCandidate) -> int:
     """Return a conservative source-independent title relevance score (0..100)."""
     query_variants = _normalized_variants(query)
@@ -565,9 +608,9 @@ def _relevance_score(query: str, candidate: SearchCandidate) -> int:
 
     best = 0.0
     for query_key in query_variants:
-        query_tokens = set(query_key.split())
+        query_tokens = _meaningful_tokens(query_key)
         for candidate_key in candidate_variants:
-            candidate_tokens = set(candidate_key.split())
+            candidate_tokens = _meaningful_tokens(candidate_key)
             if query_key == candidate_key:
                 return 100
             if candidate_key.startswith(query_key) or query_key.startswith(candidate_key):
@@ -577,16 +620,14 @@ def _relevance_score(query: str, candidate: SearchCandidate) -> int:
             if len(query_key) >= 3 and query_key in candidate_key:
                 best = max(best, 86.0)
 
-            overlap = (
-                len(query_tokens & candidate_tokens) / len(query_tokens)
-                if query_tokens
-                else 0.0
-            )
+            matched_tokens = len(query_tokens & candidate_tokens)
+            overlap = matched_tokens / len(query_tokens) if query_tokens else 0.0
             ratio = SequenceMatcher(None, query_key, candidate_key).ratio()
-            if overlap:
-                best = max(best, 52.0 + overlap * 32.0 + ratio * 8.0)
-            elif ratio >= 0.68:
-                best = max(best, 42.0 + ratio * 38.0)
+            minimum_matches = 1 if len(query_tokens) <= 1 else 2
+            if matched_tokens >= minimum_matches and overlap >= 0.5:
+                best = max(best, 48.0 + overlap * 34.0 + ratio * 8.0)
+            elif ratio >= 0.84:
+                best = max(best, 35.0 + ratio * 45.0)
 
     return max(0, min(100, round(best)))
 
