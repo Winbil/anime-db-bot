@@ -59,8 +59,8 @@ def expansion_queries(
 
     Opposite-script variants are preferred because they bridge providers that do
     not search the user's input language. Same-script aliases are only a fallback.
-    Values come exclusively from candidates already enriched through confirmed
-    identities; this function never translates or invents a title.
+    Values come exclusively from source-returned candidates or metadata records;
+    this function never translates or invents a title.
     """
     limit = max(0, int(limit))
     if limit == 0:
@@ -116,18 +116,28 @@ async def expand_text_search(
     if max_seeds == 0 or max_queries == 0:
         return initial
 
-    async def enrich(candidate: SearchCandidate) -> SearchCandidate:
-        try:
-            return await direct_lookup.enrich_candidate(candidate)
-        except Exception:
-            # Expansion is optional discovery. A failure must not discard the
-            # already valid primary search result set.
-            return candidate
+    seed_items = list(initial.items[:max_seeds])
+    queries = expansion_queries(query, seed_items, limit=max_queries)
+    enriched_seeds: list[SearchCandidate] = []
 
-    enriched_seeds = list(
-        await asyncio.gather(*(enrich(item) for item in initial.items[:max_seeds]))
-    )
-    queries = expansion_queries(query, enriched_seeds, limit=max_queries)
+    # Search providers such as Shikimori already return multiple title variants.
+    # Reuse those first: there is no reason to fetch full metadata merely to
+    # rediscover an alias we already have. Metadata identity expansion is only a
+    # fallback when the first search set has no useful alternate-language title.
+    if not queries:
+        async def enrich(candidate: SearchCandidate) -> SearchCandidate:
+            try:
+                return await direct_lookup.enrich_candidate(candidate)
+            except Exception:
+                # Expansion is optional discovery. A failure must not discard the
+                # already valid primary search result set.
+                return candidate
+
+        enriched_seeds = list(
+            await asyncio.gather(*(enrich(item) for item in seed_items))
+        )
+        queries = expansion_queries(query, enriched_seeds, limit=max_queries)
+
     if not queries:
         merged = merge_candidates(
             [*initial.items, *enriched_seeds],
