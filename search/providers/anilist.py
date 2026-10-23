@@ -135,11 +135,11 @@ class AniListSearchProvider:
                 external_ids["mal"] = mal_id
 
             cover = raw.get("coverImage") or {}
-            posters = _dedupe([
-                _clean(cover.get("extraLarge")),
-                _clean(cover.get("large")),
-                _clean(cover.get("medium")),
-            ])
+            poster_url = _clean(
+                cover.get("large")
+                or cover.get("medium")
+                or cover.get("extraLarge")
+            )
 
             items.append(
                 SearchCandidate(
@@ -149,7 +149,7 @@ class AniListSearchProvider:
                     year=raw.get("seasonYear"),
                     external_ids=external_ids,
                     scores=scores,
-                    posters=posters,
+                    posters=[poster_url] if poster_url else [],
                 )
             )
 
