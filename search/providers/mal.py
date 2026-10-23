@@ -49,7 +49,7 @@ class MALSearchProvider:
             "q": query,
             "limit": limit,
             "offset": offset,
-            "fields": "alternative_titles,start_date,mean",
+            "fields": "alternative_titles,start_date,mean,main_picture",
         }
 
         async with httpx.AsyncClient(
@@ -108,6 +108,9 @@ class MALSearchProvider:
             except (TypeError, ValueError):
                 pass
 
+            picture = node.get("main_picture") or {}
+            poster = str(picture.get("large") or picture.get("medium") or "").strip()
+
             items.append(
                 SearchCandidate(
                     title=title,
@@ -116,6 +119,7 @@ class MALSearchProvider:
                     year=year,
                     external_ids={"mal": mal_id},
                     scores=scores,
+                    posters=[poster] if poster else [],
                 )
             )
 
