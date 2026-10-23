@@ -106,6 +106,44 @@ class UnifiedSearchUiTests(unittest.TestCase):
         self.assertEqual(nav[2].text, "▶️")
         self.assertEqual(keyboard.inline_keyboard[1][0].text, "Подробнее")
 
+    def test_preview_uses_only_first_cover_as_explicit_media(self) -> None:
+        candidate = SearchCandidate(
+            title="Naruto",
+            external_ids={"mal": "20"},
+            posters=[
+                "https://example.invalid/first.jpg",
+                "https://example.invalid/second.jpg",
+            ],
+        )
+
+        rich = search_ui._preview_rich("Result", candidate)
+
+        self.assertIn('tg://photo?id=cover', rich.html or "")
+        self.assertIsNotNone(rich.media)
+        self.assertEqual(len(rich.media or []), 1)
+        self.assertEqual(
+            (rich.media or [])[0].media.media,
+            "https://example.invalid/first.jpg",
+        )
+
+    def test_preview_can_reuse_cached_telegram_file_id(self) -> None:
+        candidate = SearchCandidate(
+            title="Naruto",
+            external_ids={"mal": "20"},
+            posters=["https://example.invalid/cover.jpg"],
+        )
+
+        rich = search_ui._preview_rich(
+            "Result",
+            candidate,
+            media_value="telegram-file-id",
+        )
+
+        self.assertEqual(
+            (rich.media or [])[0].media.media,
+            "telegram-file-id",
+        )
+
     def test_legacy_search_command_is_not_registered(self) -> None:
         source = inspect.getsource(search_ui.register_search_handlers)
         self.assertNotIn('Command("search")', source)
