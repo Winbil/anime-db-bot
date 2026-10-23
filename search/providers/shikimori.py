@@ -119,10 +119,10 @@ class ShikimoriSearchProvider:
 
             poster = raw.get("poster") or {}
             poster_url = _clean(
-                poster.get("mainUrl")
+                poster.get("originalUrl")
                 or poster.get("main2xUrl")
+                or poster.get("mainUrl")
                 or poster.get("preview2xUrl")
-                or poster.get("originalUrl")
                 or poster.get("previewUrl")
             )
 
