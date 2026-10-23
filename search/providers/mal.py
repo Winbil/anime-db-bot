@@ -7,6 +7,7 @@ import httpx
 
 from core.http_config import USER_AGENT
 from core.models import SearchCandidate, SearchPage
+from services.rate_limits import wait_for_upstream
 
 DEFAULT_MAL_API_URL = "https://api.myanimelist.net/v2"
 MAL_MAX_PAGE_SIZE = 100
@@ -52,6 +53,7 @@ class MALSearchProvider:
             "fields": "alternative_titles,start_date,mean,main_picture",
         }
 
+        await wait_for_upstream("mal", "search")
         async with httpx.AsyncClient(
             timeout=20.0,
             headers=headers,
