@@ -112,7 +112,8 @@ fi
 
 info "Telegram runtime: $BOT_MODULE"
 info "Telegram transport is selected from TELEGRAM_BOT_API_URL."
-info "Default /anime search: Shikimori + MyAnimeList."
+info "Default /anime search: Shikimori + MyAnimeList + AniList."
+info "Multi-source search can expand through confirmed cross-source titles/IDs."
 info "Interactive /anime sources: All / MAL / Shikimori / AniList."
 info "Direct external-ID lookup is source-independent."
 info "Metadata sources: Shikimori + AniList + MyAnimeList."
