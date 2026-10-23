@@ -8,11 +8,26 @@ Telegram-бот для поиска аниме и сборки одной общ
 
 ### Поиск
 
-Обычный `/anime <название>` параллельно использует Shikimori Search и MyAnimeList Search. Результаты объединяются по любому подтверждённому общему external ID, а не только по MAL ID. Результат без MAL ID больше не отбрасывается.
+Единственная пользовательская команда поиска — `/anime`.
 
-Legacy-команда `/search` пока позволяет явно выбрать MAL, Shikimori, AniList, несколько providers или все сразу. В roadmap она будет удалена, а выбор поисковых источников перейдёт в `/anime`.
+Быстрый режим `/anime <название>` параллельно использует Shikimori Search и MyAnimeList Search. `/anime` без аргументов показывает inline-выбор `Все`, MAL, Shikimori, AniList и переводит пользователя в короткоживущее user/chat-scoped состояние ожидания следующего сообщения. Состояние можно отменить через `/cancel`, и оно автоматически истекает.
 
-Search merge использует conflict-safe identity clusters: совпадение хотя бы одного внешнего ID может связать результаты, но конфликт двух разных ID одной и той же базы запрещает склейку, в том числе через транзитивный «мост».
+Числовой аргумент рассматривается как direct external ID. `/anime 37430` проверяет этот ID во всех зарегистрированных identity-native metadata sources, а явный вариант вроде `/anime mal:37430` ограничивает direct lookup конкретной базой. При пошаговом выборе MAL/Shikimori/AniList обычный числовой ID проверяется только в выбранном источнике. Direct lookup построен через `source_key`/registry, поэтому будущие базы подключаются без MAL-specific веток в Telegram handlers.
+
+Одинаковое числовое значение в двух разных базах само по себе не означает одну сущность: direct-ID результаты объединяются только по подтверждённым external-ID связям, которые реально вернули источники.
+
+Текстовый search merge двухслойный:
+
+1. conflict-safe merge по подтверждённым общим external IDs;
+2. fallback по точному нормализованному romaji, если ID-граф ещё не связывает базы.
+
+Конфликт двух разных ID одной и той же базы всегда запрещает склейку, в том числе через транзитивный «мост». Результаты без MAL ID сохраняются.
+
+Перед Telegram-пагинацией `SearchService.collect()` формирует query-scoped relevant result set. Relevance policy учитывает display title, romaji, native-script и aliases, exact/prefix/token matches, русскую транслитерацию и консервативный similarity fallback. Если очередная полная upstream-страница уже не содержит релевантных кандидатов, дальнейший fetch этого provider останавливается. Есть также hard caps на глубину/количество результатов для защиты API quota.
+
+После relevance filtering выполняются ID/title merge и dedupe. Telegram затем листает **зафиксированный merged result set локально**, поэтому на дальних страницах не подмешивается новый нерелевантный хвост API.
+
+Поисковая выдача показывает один тайтл за раз: обложку/обложки, название, год и найденные external IDs. Inline-пагинация выглядит как `◀ 3/18 ▶`, а кнопка `Подробнее` открывает полноценную агрегированную карточку текущего `AnimeIdentity`. Если сбор остановлен hard cap или часть источников недоступна и точный итог не гарантирован, счётчик честно отображается как `3/18+`.
 
 После выбора результата metadata собирается из всех доступных источников, независимо от того, какой provider нашёл результат.
 
@@ -51,13 +66,13 @@ Best-effort resolver также может добавлять новые свя�
 /start
 /ping
 /settings
+/anime
 /anime <название>
-/search <название>
-/search mal <название>
-/search shikimori <название>
-/search anilist <название>
-/search all <название>
-/search mal,shikimori <название>
+/anime <external_id>
+/anime mal:<id>
+/anime anilist:<id>
+/anime shikimori:<id>
+/cancel
 
 # admin-only
 /users
@@ -216,6 +231,7 @@ anime-db-bot/
 │   ├── aggregation_merge.py
 │   ├── identity_aggregator.py
 │   ├── aggregator.py
+│   ├── direct_lookup.py
 │   ├── id_resolver.py
 │   ├── search.py
 │   ├── bans.py
@@ -240,37 +256,44 @@ anime-db-bot/
 ## Поток данных
 
 ```text
-Search providers
+Text search providers
       │
       ▼
-SearchCandidate(s)
+provider pages
       │
       ▼
-conflict-safe AnimeIdentity graph
+relevance filtering + irrelevant-tail stop
       │
       ▼
-metadata sources
-      │
-      ├── discover extra external IDs
-      │             │
-      │             └── optional second source pass
-      ▼
-AnimeAggregator
+query-scoped SearchResultSet
       │
       ▼
-AggregatedAnime
-(locale-neutral canonical values + external ID graph)
+ID merge -> romaji fallback -> dedupe
       │
-      ├── locale=ru
-      │      ▼
-      │   Russian renderer
+      ▼
+local Telegram preview pagination
       │
-      └── locale=en
-             ▼
-          English renderer
+      └── Подробнее
+              │
+              ▼
+          AnimeIdentity
+              │
+              ▼
+       metadata sources
+              │
+              ├── discover extra external IDs
+              │             │
+              │             └── optional second source pass
+              ▼
+       AnimeAggregator
+              │
+              ▼
+       AggregatedAnime
 ```
 
-Карточки и search sessions привязаны к владельцу по Telegram user ID. Другой пользователь не может продолжить чужой callback flow.
+Direct-ID search joins the same pipeline at `AnimeIdentity`: each registered source receives its own source-local ID and only confirmed cross-ID edges can merge hits.
+
+Карточки, search-preview sessions и пошаговый `/anime` flow привязаны к владельцу по Telegram user ID; pending input дополнительно привязан к chat ID. Другой пользователь или другой чат не может продолжить чужой flow.
 
 ## Кеши и runtime state
 
@@ -278,8 +301,14 @@ Search и anime-card callback sessions используют bounded in-memory st
 
 ```env
 TELEGRAM_SESSION_TTL_SECONDS=3600
+ANIME_INPUT_TTL_SECONDS=300
 SEARCH_CACHE_TTL_SECONDS=21600
 SEARCH_CACHE_MAX_ENTRIES=500
+SEARCH_COLLECTION_PAGE_SIZE=20
+SEARCH_COLLECTION_MAX_PAGES=4
+SEARCH_COLLECTION_MAX_ITEMS=120
+SEARCH_RELEVANCE_THRESHOLD=55
+SEARCH_IRRELEVANT_TAIL_PAGES=1
 ANILIST_PEOPLE_MAX_PAGES=4
 ANILIST_PEOPLE_CACHE_TTL_SECONDS=21600
 SHIKIMORI_PEOPLE_CACHE_TTL_SECONDS=21600
@@ -332,11 +361,15 @@ python -m unittest discover -s tests -v
 
 Regression coverage включает:
 
-- поиск, cache и pagination contracts;
+- page-level search/cache contracts;
+- query-scoped relevance collection и остановку нерелевантного хвоста;
+- точный/неполный (`N`/`N+`) search result count;
+- native-script/romaji/alias relevance;
 - source-independent `AnimeIdentity`;
 - search result без MAL ID;
 - merge по AniList/Shikimori/другому external ID;
 - transitive identity graph и защиту от conflict-merge;
+- direct-ID lookup, source restriction и защиту от same-number false merge;
 - двухфазное metadata aggregation с обнаружением новых IDs;
 - отсутствие mutation исходного `SearchCandidate`;
 - source resilience/capability preservation;
@@ -354,9 +387,7 @@ Regression coverage включает:
 Главные ещё не закрытые ограничения находятся во внешнем refactor-audit. Среди них:
 
 - cross-ID resolver graph пока неполный: сейчас best-effort fallback явно реализован только для MAL → Shikimori; новые базы должны добавлять собственные resolver edges там, где это действительно нужно;
-- fused search pagination может терять overflow;
 - нет typed capabilities/source errors/shared HTTP lifecycle;
 - нет общего source-health/circuit breaker;
 - часть старых source modules всё ещё содержит внутренние legacy helper/class boundaries, хотя активный registry уже использует identity-native adapters;
-- кроме interface locale/known-user registry, остальное пользовательское состояние ещё не перенесено в persistent DB;
-- legacy `/search` ещё не удалён.
+- кроме interface locale/known-user registry, остальное пользовательское состояние ещё не перенесено в persistent DB.
