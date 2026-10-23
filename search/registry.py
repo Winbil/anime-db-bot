@@ -5,7 +5,7 @@ from search.providers.anilist import AniListSearchProvider
 from search.providers.mal import MALSearchProvider
 from search.providers.shikimori import ShikimoriSearchProvider
 
-DEFAULT_SEARCH_PROVIDER_KEYS = ("shikimori", "mal")
+DEFAULT_SEARCH_PROVIDER_KEYS = ("shikimori", "mal", "anilist")
 
 
 def get_search_provider_map() -> dict[str, AnimeSearchProvider]:
@@ -20,9 +20,10 @@ def get_search_provider_map() -> dict[str, AnimeSearchProvider]:
 def get_search_providers() -> tuple[AnimeSearchProvider, ...]:
     """Return providers used by fast ``/anime <title>`` search.
 
-    AniList is intentionally excluded from the default text search to avoid
-    spending its stricter rate limit on every user query. It remains available
-    through the interactive ``/anime`` source chooser and the ``All`` scope.
+    Fast search intentionally uses every registered text-search provider. The
+    result set is merged by source-independent identities, while later bounded
+    alias expansion can use confirmed titles from those identities to bridge
+    language differences between providers.
     """
     providers = get_search_provider_map()
     return tuple(providers[key] for key in DEFAULT_SEARCH_PROVIDER_KEYS)
