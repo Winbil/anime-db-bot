@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import logging
 import os
 import re
@@ -15,7 +14,9 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    InputMediaPhoto,
     InputRichMessage,
+    InputRichMessageMedia,
     Message,
 )
 
@@ -109,6 +110,7 @@ class SearchSession:
     items: list[SearchCandidate] = field(default_factory=list)
     complete: bool = True
     errors: dict[str, str] = field(default_factory=dict)
+    poster_file_ids: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -321,29 +323,65 @@ def _preview_text(
     return "\n".join(lines)
 
 
-def _image_html(urls: list[str]) -> str:
-    clean: list[str] = []
-    seen: set[str] = set()
-    for value in urls:
+def _preview_poster_url(candidate: SearchCandidate) -> str:
+    for value in candidate.posters:
         value = str(value or "").strip()
-        if value and value not in seen:
-            seen.add(value)
-            clean.append(value)
-        if len(clean) >= 6:
-            break
-    if not clean:
-        return ""
-    images = "".join(
-        f'<img src="{html.escape(url, quote=True)}"/>'
-        for url in clean
-    )
-    return images if len(clean) == 1 else f"<tg-slideshow>{images}</tg-slideshow>"
+        if value:
+            return value
+    return ""
 
 
-def _preview_rich(text_value: str, candidate: SearchCandidate) -> InputRichMessage:
+def _preview_rich(
+    text_value: str,
+    candidate: SearchCandidate,
+    *,
+    media_value: str | None = None,
+) -> InputRichMessage:
+    body = plain_text_to_rich_html(text_value)
+    poster_url = _preview_poster_url(candidate)
+    if not poster_url:
+        return InputRichMessage(html=body)
+
+    media_id = "cover"
     return InputRichMessage(
-        html=_image_html(candidate.posters) + plain_text_to_rich_html(text_value)
+        html=f'<img src="tg://photo?id={media_id}"/>{body}',
+        media=[
+            InputRichMessageMedia(
+                id=media_id,
+                media=InputMediaPhoto(media=media_value or poster_url),
+            )
+        ],
     )
+
+
+def _remember_preview_file_id(
+    session: SearchSession,
+    candidate: SearchCandidate,
+    result: Message | bool | None,
+) -> None:
+    if not isinstance(result, Message):
+        return
+    poster_url = _preview_poster_url(candidate)
+    if not poster_url:
+        return
+
+    rich_message = getattr(result, "rich_message", None)
+    blocks = getattr(rich_message, "blocks", None) or []
+    for block in blocks:
+        photos = getattr(block, "photo", None) or []
+        if not photos:
+            continue
+        best = max(
+            photos,
+            key=lambda photo: (
+                int(getattr(photo, "width", 0) or 0)
+                * int(getattr(photo, "height", 0) or 0)
+            ),
+        )
+        file_id = str(getattr(best, "file_id", "") or "").strip()
+        if file_id:
+            session.poster_file_ids[poster_url] = file_id
+            return
 
 
 def _remember_results(
@@ -430,24 +468,52 @@ async def _send_preview(
         complete=session.complete,
         locale=locale,
     )
+    poster_url = _preview_poster_url(candidate)
+    cached_file_id = session.poster_file_ids.get(poster_url) if poster_url else None
+
+    async def send_rich(media_value: str | None) -> Message | bool:
+        rich_message = _preview_rich(
+            text_value,
+            candidate,
+            media_value=media_value,
+        )
+        if edit:
+            return await message.edit_text(
+                rich_message=rich_message,
+                reply_markup=keyboard,
+            )
+        return await message.answer(
+            rich_message=rich_message,
+            reply_markup=keyboard,
+        )
 
     try:
-        if edit:
-            await message.edit_text(
-                rich_message=_preview_rich(text_value, candidate),
-                reply_markup=keyboard,
-            )
-        else:
-            await message.answer(
-                rich_message=_preview_rich(text_value, candidate),
-                reply_markup=keyboard,
-            )
+        result = await send_rich(cached_file_id)
+        _remember_preview_file_id(session, candidate, result)
+        return
     except Exception:
-        logging.debug("Rich search preview failed; using plain text", exc_info=True)
-        if edit:
-            await message.edit_text(text_value, reply_markup=keyboard)
+        if cached_file_id and poster_url:
+            session.poster_file_ids.pop(poster_url, None)
+            logging.debug(
+                "Cached Telegram search cover failed; retrying source URL",
+                exc_info=True,
+            )
+            try:
+                result = await send_rich(poster_url)
+                _remember_preview_file_id(session, candidate, result)
+                return
+            except Exception:
+                logging.debug(
+                    "Rich search preview retry failed; using plain text",
+                    exc_info=True,
+                )
         else:
-            await message.answer(text_value, reply_markup=keyboard)
+            logging.debug("Rich search preview failed; using plain text", exc_info=True)
+
+    if edit:
+        await message.edit_text(text_value, reply_markup=keyboard)
+    else:
+        await message.answer(text_value, reply_markup=keyboard)
 
 
 async def _execute_query(
