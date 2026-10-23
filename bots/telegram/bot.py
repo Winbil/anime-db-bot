@@ -14,6 +14,7 @@ from bots.telegram.admin import TelegramModerationMiddleware, register_admin_han
 from bots.telegram.card.handlers import build_dispatcher
 from bots.telegram.card.service import SEARCH_SERVICE, SOURCES, aggregate_and_send
 from bots.telegram.people_portraits import handle_people_callback
+from bots.telegram.rate_limit import TelegramRateLimitMiddleware
 from bots.telegram.search_ui import register_search_handlers
 from bots.telegram.transports import TelegramTransport
 from bots.telegram.transports.official import TRANSPORT as OFFICIAL_TRANSPORT
@@ -22,6 +23,7 @@ from core.models import SearchCandidate
 from localization import text
 from services.access_control import telegram_admin_ids
 from services.direct_lookup import DirectIdLookupService
+from services.rate_limits import PERSONAL_RATE_LIMITER
 from services.user_settings import get_user_locale
 
 DIRECT_ID_LOOKUP = DirectIdLookupService(SOURCES)
@@ -99,6 +101,11 @@ async def run_bot(transport: TelegramTransport | None = None) -> None:
     logging.info("Bot platform: Telegram")
     logging.info("Telegram transport: %s", transport.mode_name)
     logging.info("Configured Telegram administrators: %d", len(telegram_admin_ids()))
+    logging.info(
+        "Personal rate limit: %d/min/user, %d/hour/user (admins bypass personal limit)",
+        PERSONAL_RATE_LIMITER.per_minute,
+        PERSONAL_RATE_LIMITER.per_hour,
+    )
     logging.info("Default search providers: %s", SEARCH_SERVICE.provider_name)
     logging.info("Metadata sources: %s", ", ".join(source.name for source in SOURCES))
     logging.info("Interactive /anime provider selection and direct-ID lookup are enabled")
@@ -114,8 +121,11 @@ async def run_bot(transport: TelegramTransport | None = None) -> None:
 
         dp = build_dispatcher(mode_name=transport.mode_name)
         moderation = TelegramModerationMiddleware()
+        rate_limit = TelegramRateLimitMiddleware()
         dp.message.outer_middleware(moderation)
+        dp.message.outer_middleware(rate_limit)
         dp.callback_query.outer_middleware(moderation)
+        dp.callback_query.outer_middleware(rate_limit)
         dp.callback_query.outer_middleware(_CallbackRoutingMiddleware())
 
         register_admin_handlers(dp)
