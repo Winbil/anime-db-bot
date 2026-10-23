@@ -11,7 +11,9 @@ class SearchCandidate:
 
     ``romaji_title`` is an explicit cross-provider title-matching hint. It is
     kept separate from ``title``/``aliases`` so search merge does not have to
-    guess which display title is the romanized Japanese title.
+    guess which display title is the romanized Japanese title. ``posters`` keeps
+    lightweight preview artwork returned by search/direct-ID lookups so Telegram
+    can render a result preview without loading the full anime card first.
     """
 
     title: str
@@ -20,6 +22,7 @@ class SearchCandidate:
     external_ids: dict[str, str] = field(default_factory=dict)
     scores: dict[str, float] = field(default_factory=dict)
     romaji_title: str | None = None
+    posters: list[str] = field(default_factory=list)
 
     @property
     def identity(self) -> AnimeIdentity:
@@ -32,6 +35,20 @@ class SearchPage:
     page: int
     page_size: int
     has_next: bool
+    errors: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class SearchResultSet:
+    """Query-scoped merged results used by interactive search pagination.
+
+    ``complete`` is false when collection stopped because of a configured
+    upstream page/candidate safety cap while relevant provider results were still
+    available. UI code must then present the accumulated count as non-final.
+    """
+
+    items: list[SearchCandidate]
+    complete: bool = True
     errors: dict[str, str] = field(default_factory=dict)
 
 
