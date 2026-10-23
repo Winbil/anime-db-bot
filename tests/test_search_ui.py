@@ -3,10 +3,25 @@ from __future__ import annotations
 import inspect
 import unittest
 
+from aiogram import Dispatcher
+
 from bots.telegram import search_ui
 from bots.telegram.card.service import SEARCH_PROVIDERS
 from core.models import SearchCandidate
+from services.direct_lookup import DirectIdLookupService
 from services.search import SearchService
+
+
+class DummyDirectSource:
+    source_key = "dummy"
+    name = "Dummy"
+
+    async def get_details(self, identity):
+        return None
+
+
+async def _noop_aggregate(message, candidate, owner_user_id):
+    return None
 
 
 class UnifiedSearchUiTests(unittest.TestCase):
@@ -95,6 +110,27 @@ class UnifiedSearchUiTests(unittest.TestCase):
         source = inspect.getsource(search_ui.register_search_handlers)
         self.assertNotIn('Command("search")', source)
         self.assertIn('Command("anime")', source)
+
+    def test_handlers_register_on_real_dispatcher(self) -> None:
+        dispatcher = Dispatcher()
+        initial_message_handlers = len(dispatcher.message.handlers)
+        initial_callback_handlers = len(dispatcher.callback_query.handlers)
+
+        search_ui.register_search_handlers(
+            dispatcher,
+            aggregate_callback=_noop_aggregate,
+            default_service=SearchService(SEARCH_PROVIDERS),
+            direct_lookup=DirectIdLookupService((DummyDirectSource(),)),
+        )
+
+        self.assertEqual(
+            len(dispatcher.message.handlers) - initial_message_handlers,
+            3,
+        )
+        self.assertEqual(
+            len(dispatcher.callback_query.handlers) - initial_callback_handlers,
+            4,
+        )
 
     def test_search_ui_keeps_card_runtime_outside_search_module(self) -> None:
         self.assertFalse(hasattr(search_ui, "ANIME_SESSIONS"))
