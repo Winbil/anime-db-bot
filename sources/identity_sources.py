@@ -4,6 +4,7 @@ import logging
 
 from core.identity import AnimeIdentity
 from core.models import AnimeRecord, PersonCredit
+from core.people_loading import PeopleBatch
 from sources.anilist import _cached_people as _anilist_cached_people
 from sources.anilist import _graphql as _anilist_graphql
 from sources.anilist import _record as _anilist_record
@@ -13,6 +14,7 @@ from sources.shikimori import _get_raw as _shikimori_get_raw
 from sources.shikimori import _get_staff_raw as _shikimori_get_staff_raw
 from sources.shikimori import _record as _shikimori_record
 from sources.shikimori_people import _load_shikimori_voices
+from sources.shikimori_people_batches import load_shikimori_voices_batch
 
 
 ANILIST_BY_ID_QUERY = """
@@ -77,6 +79,38 @@ class AniListIdentitySource:
             return []
         return await _anilist_cached_people(media_id, "voices")
 
+    async def load_staff_batch(
+        self,
+        identity: AnimeIdentity,
+        *,
+        cursor: str | None = None,
+        portrait_limit: int = 50,
+    ) -> PeopleBatch:
+        if cursor is not None:
+            return PeopleBatch(complete=True)
+        people = await self.load_staff(identity)
+        return PeopleBatch(
+            people=people,
+            complete=True,
+            total_count=len(people),
+        )
+
+    async def load_voices_batch(
+        self,
+        identity: AnimeIdentity,
+        *,
+        cursor: str | None = None,
+        portrait_limit: int = 50,
+    ) -> PeopleBatch:
+        if cursor is not None:
+            return PeopleBatch(complete=True)
+        people = await self.load_voices(identity)
+        return PeopleBatch(
+            people=people,
+            complete=True,
+            total_count=len(people),
+        )
+
 
 class ShikimoriIdentitySource:
     """Shikimori adapter keyed only by its own ID, with no MAL requirement."""
@@ -112,3 +146,35 @@ class ShikimoriIdentitySource:
         if not anime_id.isdigit():
             return []
         return await _load_shikimori_voices(anime_id)
+
+    async def load_staff_batch(
+        self,
+        identity: AnimeIdentity,
+        *,
+        cursor: str | None = None,
+        portrait_limit: int = 50,
+    ) -> PeopleBatch:
+        if cursor is not None:
+            return PeopleBatch(complete=True)
+        people = await self.load_staff(identity)
+        return PeopleBatch(
+            people=people,
+            complete=True,
+            total_count=len(people),
+        )
+
+    async def load_voices_batch(
+        self,
+        identity: AnimeIdentity,
+        *,
+        cursor: str | None = None,
+        portrait_limit: int = 50,
+    ) -> PeopleBatch:
+        anime_id = str(identity.get("shikimori") or "").strip()
+        if not anime_id.isdigit():
+            return PeopleBatch(complete=True)
+        return await load_shikimori_voices_batch(
+            anime_id,
+            cursor=cursor,
+            portrait_limit=portrait_limit,
+        )
