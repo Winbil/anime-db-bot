@@ -24,12 +24,13 @@ class AnimeSearchProvider(Protocol):
 class AnimeSource(Protocol):
     """Metadata source operating on a source-independent anime identity.
 
-    Sources never perform user-facing text search. Each adapter selects whichever
-    external ID it understands from ``AnimeIdentity`` and returns ``None`` when no
-    usable ID is known. No database ID is globally mandatory.
+    ``source_key`` is the stable key used inside :class:`AnimeIdentity` (for
+    example ``mal`` or ``anilist``). Direct-ID search uses this capability rather
+    than hard-coding individual databases in Telegram handlers.
     """
 
     name: str
+    source_key: str
 
     async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
         ...
