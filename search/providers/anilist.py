@@ -7,6 +7,7 @@ import httpx
 
 from core.http_config import USER_AGENT
 from core.models import SearchCandidate, SearchPage
+from services.rate_limits import wait_for_upstream
 
 DEFAULT_ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
 ANILIST_MAX_PAGE_SIZE = 50
@@ -68,6 +69,7 @@ class AniListSearchProvider:
             },
         }
 
+        await wait_for_upstream("anilist", "search")
         async with httpx.AsyncClient(
             timeout=20.0,
             headers=headers,
