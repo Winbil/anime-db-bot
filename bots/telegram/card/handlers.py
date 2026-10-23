@@ -53,7 +53,6 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             "",
             text("start", "commands", locale=locale),
             text("start", "anime", locale=locale),
-            text("start", "search", locale=locale),
             text("start", "settings", locale=locale),
             text("start", "ping", locale=locale),
         ]
