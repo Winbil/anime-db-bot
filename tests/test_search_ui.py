@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import unittest
+from unittest.mock import patch
 
 from aiogram import Dispatcher
 
@@ -33,6 +34,16 @@ class UnifiedSearchUiTests(unittest.TestCase):
         self.assertEqual(search_ui._parse_scope("ani"), ("anilist",))
         self.assertEqual(search_ui._parse_scope("all"), search_ui.ALL_PROVIDER_KEYS)
         self.assertIsNone(search_ui._parse_scope("unknown-source"))
+
+    def test_default_fast_search_uses_every_registered_provider(self) -> None:
+        self.assertEqual(
+            search_ui.DEFAULT_SEARCH_PROVIDER_KEYS,
+            search_ui.ALL_PROVIDER_KEYS,
+        )
+        self.assertEqual(
+            search_ui.DEFAULT_SEARCH_PROVIDER_KEYS,
+            ("shikimori", "mal", "anilist"),
+        )
 
     def test_default_scope_reuses_shared_search_service(self) -> None:
         default_service = SearchService(SEARCH_PROVIDERS)
@@ -175,6 +186,57 @@ class UnifiedSearchUiTests(unittest.TestCase):
         self.assertFalse(hasattr(search_ui, "AGGREGATOR"))
         self.assertFalse(hasattr(search_ui, "build_dispatcher"))
         self.assertFalse(hasattr(search_ui, "run_bot"))
+
+
+class InitialSearchPreviewTests(unittest.IsolatedAsyncioTestCase):
+    async def test_first_preview_sends_then_upgrades_same_message_to_rich_cover(self) -> None:
+        class SentMessage:
+            def __init__(self) -> None:
+                self.edits = []
+
+            async def edit_text(self, *args, **kwargs):
+                self.edits.append((args, kwargs))
+                return True
+
+        class IncomingMessage:
+            def __init__(self) -> None:
+                self.answers = []
+                self.sent = SentMessage()
+
+            async def answer(self, *args, **kwargs):
+                self.answers.append((args, kwargs))
+                return self.sent
+
+        candidate = SearchCandidate(
+            title="Example Hero",
+            external_ids={"mal": "10"},
+            posters=["https://example.invalid/full.jpg"],
+        )
+        session = search_ui.SearchSession(
+            query="Example Hero",
+            owner_user_id=1,
+            items=[candidate],
+        )
+        message = IncomingMessage()
+
+        with patch.object(search_ui, "get_user_locale", return_value="ru"):
+            await search_ui._send_preview(
+                message,
+                "token",
+                session,
+                0,
+                edit=False,
+            )
+
+        self.assertEqual(len(message.answers), 1)
+        self.assertEqual(len(message.sent.edits), 1)
+        edit_kwargs = message.sent.edits[0][1]
+        self.assertIn("rich_message", edit_kwargs)
+        rich = edit_kwargs["rich_message"]
+        self.assertEqual(
+            (rich.media or [])[0].media.media,
+            "https://example.invalid/full.jpg",
+        )
 
 
 if __name__ == "__main__":
