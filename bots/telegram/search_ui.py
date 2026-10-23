@@ -32,6 +32,15 @@ MAX_SEARCH_SESSIONS = 200
 MAX_SCOPE_SESSIONS = 200
 MAX_PENDING_INPUTS = 500
 
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
 PROVIDERS = get_search_provider_map()
 ALL_PROVIDER_KEYS = tuple(PROVIDERS)
 
@@ -70,7 +79,6 @@ _UI = {
         "ids": "ID источников:",
         "no_ids": "ID источников не найдены.",
         "unavailable": "Недоступны: {sources}",
-        "unknown_direct_source": "Источник ID «{source}» не поддерживается.",
         "scope_mismatch": "Этот пошаговый поиск ограничен источником {scope}.",
         "failed": "Не удалось выполнить поиск. Причина записана в лог.",
     },
@@ -88,7 +96,6 @@ _UI = {
         "ids": "Source IDs:",
         "no_ids": "No source IDs found.",
         "unavailable": "Unavailable: {sources}",
-        "unknown_direct_source": "ID source “{source}” is not supported.",
         "scope_mismatch": "This step-by-step search is restricted to {scope}.",
         "failed": "Search failed. The reason was written to the log.",
     },
@@ -119,16 +126,17 @@ class PendingAnimeInput:
     scope_label: str
 
 
+_input_ttl = max(60, _env_int("ANIME_INPUT_TTL_SECONDS", 300))
 SESSIONS: ExpiringSessionStore[SearchSession] = ExpiringSessionStore(
     max_entries=MAX_SEARCH_SESSIONS,
 )
 SCOPE_SESSIONS: ExpiringSessionStore[ScopeSelectionSession] = ExpiringSessionStore(
     max_entries=MAX_SCOPE_SESSIONS,
-    ttl_seconds=max(60, _env_int("ANIME_INPUT_TTL_SECONDS", 300)),
+    ttl_seconds=_input_ttl,
 )
 PENDING_INPUTS: ExpiringSessionStore[PendingAnimeInput] = ExpiringSessionStore(
     max_entries=MAX_PENDING_INPUTS,
-    ttl_seconds=max(60, _env_int("ANIME_INPUT_TTL_SECONDS", 300)),
+    ttl_seconds=_input_ttl,
 )
 SERVICES: dict[tuple[str, ...], SearchService] = {}
 
@@ -504,8 +512,6 @@ def register_search_handlers(
                 query,
                 user_id,
                 provider_keys=DEFAULT_SEARCH_PROVIDER_KEYS,
-                # Fast numeric /anime IDs are intentionally checked against all
-                # metadata sources, not just the default text-search providers.
                 direct_source_keys=None,
                 default_service=default_service,
                 direct_lookup=direct_lookup,
@@ -601,8 +607,6 @@ def register_search_handlers(
         if pending is None or pending.chat_id != message.chat.id:
             return
 
-        # Consume before doing network work: duplicate Telegram deliveries or a
-        # second user message cannot accidentally launch the same pending flow.
         _clear_pending(user_id)
         query = (message.text or "").strip()
         if not query:
@@ -674,11 +678,3 @@ def register_search_handlers(
         candidate = session.items[index]
         await callback.answer()
         await aggregate_callback(callback.message, candidate, session.owner_user_id)
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.getenv(name, str(default)).strip()
-    try:
-        return int(raw)
-    except ValueError:
-        return default
