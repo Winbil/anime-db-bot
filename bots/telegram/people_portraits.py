@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+import os
+from dataclasses import dataclass, field
 from typing import Any
 
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputRichMessage, Message
@@ -14,13 +16,38 @@ from bots.telegram.card.service import AGGREGATOR, SOURCES
 from bots.telegram.card.state import ANIME_SESSIONS
 from core.canonicalization import display_person_name, localize_role_token
 from core.models import AggregatedAnime, PersonCredit
+from core.people_loading import PeopleBatch
 from localization import text
 from services.user_settings import get_user_locale
 
 PEOPLE_SECTIONS = {"staff", "voices"}
 
-_LAZY_PEOPLE_DONE: ExpiringSessionStore[bool] = ExpiringSessionStore(max_entries=400)
-_LAZY_PEOPLE_TASKS: dict[str, asyncio.Task[bool]] = {}
+
+@dataclass(slots=True)
+class _SourceLoadProgress:
+    source: Any
+    cursor: str | None = None
+    complete: bool = False
+    total_count: int | None = None
+    task: asyncio.Task[bool] | None = None
+
+
+@dataclass(slots=True)
+class _PeopleLoadProgress:
+    sources: dict[str, _SourceLoadProgress] = field(default_factory=dict)
+
+
+_PEOPLE_LOADS: ExpiringSessionStore[_PeopleLoadProgress] = ExpiringSessionStore(
+    max_entries=400
+)
+
+
+def _portrait_batch_size() -> int:
+    raw = os.getenv("PEOPLE_PORTRAIT_BATCH_SIZE", "50").strip()
+    try:
+        return max(1, min(int(raw), 200))
+    except ValueError:
+        return 50
 
 
 def _dedupe(values: list[str]) -> list[str]:
@@ -148,9 +175,11 @@ def _page_text(
     page: int,
     *,
     locale: str,
+    total_hint: int | None = None,
 ) -> tuple[str, list[str], int, int, int]:
     without, with_portraits = _people_state(anime, section, source)
-    total = len(without) + len(with_portraits)
+    actual_total = len(without) + len(with_portraits)
+    total = max(actual_total, int(total_hint or 0))
     max_page = len(with_portraits)
     page = max(0, min(page, max_page))
 
@@ -226,6 +255,85 @@ def _page_callback(
     return f"as:{token}:{section}:{source_index}:{page}"
 
 
+def _progress_key(token: str, section: str) -> str:
+    return f"{token}:{section}"
+
+
+def _build_progress(anime: AggregatedAnime, section: str) -> _PeopleLoadProgress:
+    identity = anime.identity
+    mapping = _section_mapping(anime, section)
+    progress = _PeopleLoadProgress()
+
+    for source in SOURCES:
+        source_key = str(getattr(source, "source_key", "") or "").strip().casefold()
+        if source_key and not identity.has(source_key):
+            continue
+
+        batch_loader = getattr(source, f"load_{section}_batch", None)
+        full_loader = getattr(source, f"load_{section}", None)
+        if not callable(batch_loader) and not callable(full_loader):
+            continue
+
+        already_loaded = source.name in mapping
+        progress.sources[source.name] = _SourceLoadProgress(
+            source=source,
+            complete=already_loaded,
+            total_count=len(mapping.get(source.name, [])) if already_loaded else None,
+        )
+    return progress
+
+
+def _source_names(
+    anime: AggregatedAnime,
+    section: str,
+    progress: _PeopleLoadProgress | None,
+) -> list[str]:
+    if progress is not None and progress.sources:
+        return list(progress.sources)
+    return _sources_with_portraits(anime, section)
+
+
+def _scope_progresses(
+    progress: _PeopleLoadProgress,
+    source: str | None,
+) -> list[_SourceLoadProgress]:
+    if source is None:
+        return list(progress.sources.values())
+    item = progress.sources.get(source)
+    return [item] if item is not None else []
+
+
+def _scope_has_more(
+    progress: _PeopleLoadProgress,
+    source: str | None,
+) -> bool:
+    return any(
+        not item.complete or item.task is not None
+        for item in _scope_progresses(progress, source)
+    )
+
+
+def _scope_total_hint(
+    anime: AggregatedAnime,
+    section: str,
+    progress: _PeopleLoadProgress,
+    source: str | None,
+) -> int | None:
+    actual = len(_people_for_scope(anime, section, source))
+    if source is not None:
+        item = progress.sources.get(source)
+        if item is None or item.total_count is None:
+            return actual or None
+        return max(actual, item.total_count)
+
+    hints = [
+        item.total_count
+        for item in progress.sources.values()
+        if item.total_count is not None
+    ]
+    return max([actual, *hints]) if actual or hints else None
+
+
 def _source_rows(
     token: str,
     anime: AggregatedAnime,
@@ -233,8 +341,9 @@ def _source_rows(
     selected_source_index: int | None,
     *,
     locale: str,
+    source_names: list[str] | None = None,
 ) -> list[list[InlineKeyboardButton]]:
-    sources = _sources_with_portraits(anime, section)
+    sources = list(source_names or _sources_with_portraits(anime, section))
     if not sources:
         return []
 
@@ -268,6 +377,8 @@ def _keyboard(
     max_page: int,
     *,
     locale: str,
+    source_names: list[str] | None = None,
+    has_more: bool = False,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
 
@@ -285,7 +396,7 @@ def _keyboard(
             callback_data="noop",
         )
     )
-    if page < max_page:
+    if page < max_page or has_more:
         nav.append(
             InlineKeyboardButton(
                 text="▶️",
@@ -301,6 +412,7 @@ def _keyboard(
             section,
             selected_source_index=source_index,
             locale=locale,
+            source_names=source_names,
         )
     )
 
@@ -313,6 +425,135 @@ def _keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _merge_people_batch(
+    anime: AggregatedAnime,
+    section: str,
+    source_name: str,
+    batch: PeopleBatch,
+) -> None:
+    mapping = _section_mapping(anime, section)
+    existing = list(mapping.get(source_name, []))
+    AGGREGATOR.merge_people_source(
+        anime,
+        source_name=source_name,
+        people=[*existing, *batch.people],
+        section=section,
+    )
+
+
+async def _run_source_batch(
+    anime: AggregatedAnime,
+    section: str,
+    item: _SourceLoadProgress,
+) -> bool:
+    source = item.source
+    try:
+        identity = anime.identity
+        batch_loader = getattr(source, f"load_{section}_batch", None)
+        if callable(batch_loader):
+            batch = await batch_loader(
+                identity.copy(),
+                cursor=item.cursor,
+                portrait_limit=_portrait_batch_size(),
+            )
+        else:
+            full_loader = getattr(source, f"load_{section}", None)
+            if not callable(full_loader):
+                item.complete = True
+                return False
+            people = await full_loader(identity.copy())
+            batch = PeopleBatch(
+                people=people,
+                complete=True,
+                total_count=len(people),
+            )
+
+        _merge_people_batch(anime, section, source.name, batch)
+        if batch.total_count is not None:
+            item.total_count = max(item.total_count or 0, int(batch.total_count))
+        item.cursor = batch.next_cursor
+        item.complete = bool(batch.complete or batch.next_cursor is None)
+
+        source_people = _section_mapping(anime, section).get(source.name, [])
+        source_portraits = sum(
+            1
+            for person in source_people
+            if _portrait_urls(person, source=source.name)
+        )
+        logging.info(
+            "Progressive %s loaded from %s: batch_people=%d, total_people=%d, "
+            "portraits=%d, complete=%s, cursor=%s",
+            section,
+            source.name,
+            len(batch.people),
+            len(source_people),
+            source_portraits,
+            item.complete,
+            item.cursor,
+        )
+        return bool(batch.people)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        item.complete = True
+        logging.exception("Progressive %s load failed for %s", section, source.name)
+        return False
+    finally:
+        item.task = None
+
+
+def _start_source_batch(
+    anime: AggregatedAnime,
+    section: str,
+    item: _SourceLoadProgress,
+) -> asyncio.Task[bool] | None:
+    if item.complete or item.task is not None:
+        return item.task
+    task = asyncio.create_task(_run_source_batch(anime, section, item))
+    item.task = task
+    return task
+
+
+def _start_scope_batches(
+    anime: AggregatedAnime,
+    section: str,
+    progress: _PeopleLoadProgress,
+    source: str | None,
+) -> list[asyncio.Task[bool]]:
+    tasks: list[asyncio.Task[bool]] = []
+    for item in _scope_progresses(progress, source):
+        task = _start_source_batch(anime, section, item)
+        if task is not None:
+            tasks.append(task)
+    return tasks
+
+
+async def _await_one_scope_batch(
+    anime: AggregatedAnime,
+    section: str,
+    progress: _PeopleLoadProgress,
+    source: str | None,
+) -> None:
+    tasks = [
+        item.task
+        for item in _scope_progresses(progress, source)
+        if item.task is not None
+    ]
+    if not tasks:
+        tasks = _start_scope_batches(anime, section, progress, source)
+    if not tasks:
+        return
+
+    done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    for task in done:
+        try:
+            await task
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception("Unexpected progressive people task failure")
+
+
 async def _ensure_lazy_people(
     token: str,
     anime: AggregatedAnime,
@@ -320,32 +561,28 @@ async def _ensure_lazy_people(
     section: str,
     *,
     locale: str,
-) -> None:
-    """Load expensive person lists only when their UI section is opened."""
-    key = f"{token}:{section}"
-    if _LAZY_PEOPLE_DONE.get(key):
-        return
+    source: str | None = None,
+    requested_page: int = 0,
+) -> _PeopleLoadProgress:
+    """Ensure enough people data exists for the requested portrait page.
 
-    running = _LAZY_PEOPLE_TASKS.get(key)
-    if running is not None:
-        if await running:
-            _LAZY_PEOPLE_DONE[key] = True
-        return
+    The first visit starts one batch for every capable source concurrently but
+    returns as soon as any source provides usable data. Slower sources continue
+    their first bounded batch in the background. Further batches are started only
+    when pagination reaches the currently loaded portrait boundary.
+    """
+    key = _progress_key(token, section)
+    progress = _PEOPLE_LOADS.get(key)
+    created = progress is None
+    if progress is None:
+        progress = _build_progress(anime, section)
+        _PEOPLE_LOADS[key] = progress
 
-    method_name = "load_staff" if section == "staff" else "load_voices"
-    mapping = _section_mapping(anime, section)
-    loaders: list[tuple[Any, Any]] = []
-    for source in SOURCES:
-        loader = getattr(source, method_name, None)
-        if callable(loader) and source.name not in mapping:
-            loaders.append((source, loader))
+    if not progress.sources:
+        return progress
 
-    if not loaders:
-        _LAZY_PEOPLE_DONE[key] = True
-        return
-
-    async def load() -> bool:
-        try:
+    if created:
+        if not _all_people(anime, section):
             loading_key = "loading_staff" if section == "staff" else "loading_voices"
             try:
                 await message.edit_text(
@@ -354,61 +591,30 @@ async def _ensure_lazy_people(
                 )
             except Exception:
                 logging.debug(
-                    "Could not show lazy people loading state",
+                    "Could not show progressive people loading state",
                     exc_info=True,
                 )
+        _start_scope_batches(anime, section, progress, None)
 
-            identity = anime.identity
-            if identity.is_empty():
-                return True
+    def current_people() -> list[PersonCredit]:
+        return _people_for_scope(anime, section, source)
 
-            async def load_source(source: Any, loader: Any):
-                people = await loader(identity.copy())
-                return source, people
+    def current_portraits() -> int:
+        return len(_people_state(anime, section, source)[1])
 
-            results = await asyncio.gather(
-                *(load_source(source, loader) for source, loader in loaders),
-                return_exceptions=True,
-            )
+    # Do not block the first render on every source. One successful source is
+    # enough to establish the people list/total while slower sources keep loading.
+    while not current_people() and _scope_has_more(progress, source):
+        await _await_one_scope_batch(anime, section, progress, source)
 
-            success = True
-            for result in results:
-                if isinstance(result, Exception):
-                    success = False
-                    logging.error(
-                        "Lazy %s source load failed: %s",
-                        section,
-                        result,
-                        exc_info=(type(result), result, result.__traceback__),
-                    )
-                    continue
+    requested_page = max(0, int(requested_page))
+    while (
+        requested_page > current_portraits()
+        and _scope_has_more(progress, source)
+    ):
+        await _await_one_scope_batch(anime, section, progress, source)
 
-                source, people = result
-                AGGREGATOR.merge_people_source(
-                    anime,
-                    source_name=source.name,
-                    people=people,
-                    section=section,
-                )
-                logging.info(
-                    "Lazy %s loaded from %s for %s: %d people",
-                    section,
-                    source.name,
-                    identity.describe(),
-                    len(people),
-                )
-            return success
-        except Exception:
-            logging.exception("Lazy %s loading failed", section)
-            return False
-
-    task = asyncio.create_task(load())
-    _LAZY_PEOPLE_TASKS[key] = task
-    try:
-        if await task:
-            _LAZY_PEOPLE_DONE[key] = True
-    finally:
-        _LAZY_PEOPLE_TASKS.pop(key, None)
+    return progress
 
 
 async def _edit_people_view(
@@ -421,10 +627,27 @@ async def _edit_people_view(
     *,
     locale: str,
 ) -> None:
-    await _ensure_lazy_people(token, anime, message, section, locale=locale)
+    key = _progress_key(token, section)
+    existing_progress = _PEOPLE_LOADS.get(key)
+    existing_sources = _source_names(anime, section, existing_progress)
 
-    sources = _sources_with_portraits(anime, section)
     source: str | None = None
+    if source_index is not None:
+        if source_index < 0 or source_index >= len(existing_sources):
+            raise ValueError("Portrait source index is out of range")
+        source = existing_sources[source_index]
+
+    progress = await _ensure_lazy_people(
+        token,
+        anime,
+        message,
+        section,
+        locale=locale,
+        source=source,
+        requested_page=int(page),
+    )
+
+    sources = _source_names(anime, section, progress)
     if source_index is not None:
         if source_index < 0 or source_index >= len(sources):
             raise ValueError("Portrait source index is out of range")
@@ -433,12 +656,14 @@ async def _edit_people_view(
     without, with_portraits = _people_state(anime, section, source)
     max_page = len(with_portraits)
     page = max(0, min(int(page), max_page))
+    total_hint = _scope_total_hint(anime, section, progress, source)
     text_value, urls, shown, total, page = _page_text(
         anime,
         section,
         source,
         page,
         locale=locale,
+        total_hint=total_hint,
     )
     keyboard = _keyboard(
         token,
@@ -450,6 +675,8 @@ async def _edit_people_view(
         total,
         max_page,
         locale=locale,
+        source_names=sources,
+        has_more=_scope_has_more(progress, source),
     )
 
     try:
