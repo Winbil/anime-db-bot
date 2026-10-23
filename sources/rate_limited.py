@@ -45,7 +45,7 @@ class PeopleRateLimitedSourceProxy(RateLimitedSourceProxy):
         identity: AnimeIdentity,
         *,
         cursor: str | None = None,
-        portrait_budget: int = 50,
+        portrait_limit: int = 50,
     ) -> Any:
         loader = getattr(self._source, "load_staff_batch", None)
         if not callable(loader):
@@ -54,7 +54,7 @@ class PeopleRateLimitedSourceProxy(RateLimitedSourceProxy):
         return await loader(
             identity,
             cursor=cursor,
-            portrait_budget=portrait_budget,
+            portrait_limit=portrait_limit,
         )
 
     async def load_voices_batch(
@@ -62,7 +62,7 @@ class PeopleRateLimitedSourceProxy(RateLimitedSourceProxy):
         identity: AnimeIdentity,
         *,
         cursor: str | None = None,
-        portrait_budget: int = 50,
+        portrait_limit: int = 50,
     ) -> Any:
         loader = getattr(self._source, "load_voices_batch", None)
         if not callable(loader):
@@ -71,7 +71,7 @@ class PeopleRateLimitedSourceProxy(RateLimitedSourceProxy):
         return await loader(
             identity,
             cursor=cursor,
-            portrait_budget=portrait_budget,
+            portrait_limit=portrait_limit,
         )
 
 
