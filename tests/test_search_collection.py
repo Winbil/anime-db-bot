@@ -176,6 +176,18 @@ class SearchCollectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(_relevance_score("Naruto", related), 90)
         self.assertLess(_relevance_score("Naruto", unrelated), 55)
 
+    def test_relevance_policy_preserves_native_script_aliases(self) -> None:
+        candidate = item(
+            "That Time I Got Reincarnated as a Slime",
+            {"anilist": "101280"},
+            aliases=["転生したらスライムだった件"],
+        )
+
+        self.assertEqual(
+            _relevance_score("転生したらスライムだった件", candidate),
+            100,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
