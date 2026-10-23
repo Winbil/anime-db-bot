@@ -27,6 +27,7 @@ from localization import text
 from search.registry import DEFAULT_SEARCH_PROVIDER_KEYS, get_search_provider_map
 from services.direct_lookup import DirectIdLookupService
 from services.search import SearchService
+from services.search_expansion import expand_text_search
 from services.user_settings import get_user_locale
 
 MAX_SEARCH_SESSIONS = 200
@@ -358,12 +359,12 @@ def _remember_preview_file_id(
     session: SearchSession,
     candidate: SearchCandidate,
     result: Message | bool | None,
-) -> None:
+) -> bool:
     if not isinstance(result, Message):
-        return
+        return False
     poster_url = _preview_poster_url(candidate)
     if not poster_url:
-        return
+        return False
 
     rich_message = getattr(result, "rich_message", None)
     blocks = getattr(rich_message, "blocks", None) or []
@@ -381,7 +382,8 @@ def _remember_preview_file_id(
         file_id = str(getattr(best, "file_id", "") or "").strip()
         if file_id:
             session.poster_file_ids[poster_url] = file_id
-            return
+            return True
+    return False
 
 
 def _remember_results(
@@ -469,26 +471,46 @@ async def _send_preview(
         locale=locale,
     )
     poster_url = _preview_poster_url(candidate)
-    cached_file_id = session.poster_file_ids.get(poster_url) if poster_url else None
 
-    async def send_rich(media_value: str | None) -> Message | bool:
-        rich_message = _preview_rich(
-            text_value,
-            candidate,
-            media_value=media_value,
-        )
-        if edit:
-            return await message.edit_text(
-                rich_message=rich_message,
+    # Telegram occasionally accepts a newly sent rich message but renders its
+    # remote image as text-only. The edit path is reliable in the same clients,
+    # so page 1 is bootstrapped as a normal message and immediately upgraded in
+    # place. Pagination itself remains a single edit per click.
+    if not edit:
+        sent_message = await message.answer(text_value, reply_markup=keyboard)
+        if not poster_url:
+            return
+        try:
+            result = await sent_message.edit_text(
+                rich_message=_preview_rich(
+                    text_value,
+                    candidate,
+                    media_value=poster_url,
+                ),
                 reply_markup=keyboard,
             )
-        return await message.answer(
-            rich_message=rich_message,
+            _remember_preview_file_id(session, candidate, result)
+        except Exception:
+            logging.debug(
+                "Initial rich search preview upgrade failed; keeping plain text",
+                exc_info=True,
+            )
+        return
+
+    cached_file_id = session.poster_file_ids.get(poster_url) if poster_url else None
+
+    async def edit_rich(media_value: str | None) -> Message | bool:
+        return await message.edit_text(
+            rich_message=_preview_rich(
+                text_value,
+                candidate,
+                media_value=media_value,
+            ),
             reply_markup=keyboard,
         )
 
     try:
-        result = await send_rich(cached_file_id)
+        result = await edit_rich(cached_file_id)
         _remember_preview_file_id(session, candidate, result)
         return
     except Exception:
@@ -499,7 +521,7 @@ async def _send_preview(
                 exc_info=True,
             )
             try:
-                result = await send_rich(poster_url)
+                result = await edit_rich(poster_url)
                 _remember_preview_file_id(session, candidate, result)
                 return
             except Exception:
@@ -510,10 +532,7 @@ async def _send_preview(
         else:
             logging.debug("Rich search preview failed; using plain text", exc_info=True)
 
-    if edit:
-        await message.edit_text(text_value, reply_markup=keyboard)
-    else:
-        await message.answer(text_value, reply_markup=keyboard)
+    await message.edit_text(text_value, reply_markup=keyboard)
 
 
 async def _execute_query(
@@ -552,6 +571,13 @@ async def _execute_query(
         else:
             service = _service_for(provider_keys, default_service)
             result_set = await service.collect(query)
+            if len(provider_keys) > 1:
+                result_set = await expand_text_search(
+                    service=service,
+                    direct_lookup=direct_lookup,
+                    query=query,
+                    initial=result_set,
+                )
     except Exception as exc:
         logging.error(
             "Anime search failed for %r: %s: %s",
