@@ -30,12 +30,7 @@ query SearchAnime($search: String!, $page: Int!, $perPage: Int!) {
 
 
 class AniListSearchProvider:
-    """Explicit AniList search provider.
-
-    This provider is intentionally not part of the default /anime search so the
-    AniList rate limit is only spent when the user explicitly selects AniList
-    (or selects every provider through the interactive /anime flow).
-    """
+    """AniList text-search provider used by the unified /anime flow."""
 
     name = "AniList"
 
@@ -136,9 +131,9 @@ class AniListSearchProvider:
 
             cover = raw.get("coverImage") or {}
             poster_url = _clean(
-                cover.get("large")
+                cover.get("extraLarge")
+                or cover.get("large")
                 or cover.get("medium")
-                or cover.get("extraLarge")
             )
 
             items.append(
