@@ -9,6 +9,7 @@ import httpx
 
 from core.identity import AnimeIdentity
 from core.models import AnimeRecord, PersonCredit
+from core.people_loading import PeopleBatch
 
 T = TypeVar("T")
 
@@ -113,6 +114,48 @@ class PeopleRetryingSourceProxy(RetryingSourceProxy):
             self.name,
             "voices",
             lambda: loader(identity),
+        )
+
+    async def load_staff_batch(
+        self,
+        identity: AnimeIdentity,
+        *,
+        cursor: str | None = None,
+        portrait_limit: int = 50,
+    ) -> PeopleBatch:
+        loader = getattr(self._source, "load_staff_batch", None)
+        if not callable(loader):
+            people = await self.load_staff(identity)
+            return PeopleBatch(people=people, complete=True, total_count=len(people))
+        return await _retry_call(
+            self.name,
+            "staff batch",
+            lambda: loader(
+                identity,
+                cursor=cursor,
+                portrait_limit=portrait_limit,
+            ),
+        )
+
+    async def load_voices_batch(
+        self,
+        identity: AnimeIdentity,
+        *,
+        cursor: str | None = None,
+        portrait_limit: int = 50,
+    ) -> PeopleBatch:
+        loader = getattr(self._source, "load_voices_batch", None)
+        if not callable(loader):
+            people = await self.load_voices(identity)
+            return PeopleBatch(people=people, complete=True, total_count=len(people))
+        return await _retry_call(
+            self.name,
+            "voices batch",
+            lambda: loader(
+                identity,
+                cursor=cursor,
+                portrait_limit=portrait_limit,
+            ),
         )
 
 
