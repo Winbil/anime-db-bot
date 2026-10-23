@@ -4,6 +4,7 @@ import asyncio
 import os
 import re
 import time
+import unicodedata
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
@@ -518,11 +519,31 @@ def _candidate_texts(candidate: SearchCandidate) -> list[str]:
     ])
 
 
+def _unicode_search_key(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value or "").casefold()
+    characters: list[str] = []
+    for character in normalized:
+        category = unicodedata.category(character)
+        if character.isalnum() or category.startswith("L") or category.startswith("N"):
+            characters.append(character)
+        else:
+            characters.append(" ")
+    return " ".join("".join(characters).split())
+
+
 def _normalized_variants(value: str) -> set[str]:
     variants: set[str] = set()
     normalized = normalize_key(value)
     if normalized:
         variants.add(normalized)
+
+    # normalize_key intentionally targets Latin/Cyrillic canonical values. The
+    # search relevance layer must additionally preserve native scripts (Japanese,
+    # Korean, Chinese, etc.) so exact/native-title queries are not filtered out.
+    unicode_key = _unicode_search_key(value)
+    if unicode_key:
+        variants.add(unicode_key)
+
     if contains_cyrillic(value):
         transliterated = normalize_key(transliterate_ru(value))
         if transliterated:
