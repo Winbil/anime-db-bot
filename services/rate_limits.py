@@ -88,53 +88,71 @@ def _env_token(value: str) -> str:
     return _ENV_TOKEN_RE.sub("_", (value or "").strip().upper()).strip("_")
 
 
-def _upstream_limit(source: str, operation: str) -> int:
+def _configured_positive_int(name: str) -> int | None:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return None
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return None
+
+
+def _source_limit(source: str) -> int:
     source_token = _env_token(source)
-    operation_token = _env_token(operation)
-    names = [
-        f"UPSTREAM_RATE_LIMIT_{source_token}_{operation_token}_PER_MINUTE",
-        f"UPSTREAM_RATE_LIMIT_{source_token}_PER_MINUTE",
-        "UPSTREAM_RATE_LIMIT_DEFAULT_PER_MINUTE",
-    ]
+    configured = _configured_positive_int(
+        f"UPSTREAM_RATE_LIMIT_{source_token}_PER_MINUTE"
+    )
+    if configured is not None:
+        return configured
+
+    default_configured = _configured_positive_int(
+        "UPSTREAM_RATE_LIMIT_DEFAULT_PER_MINUTE"
+    )
+    if default_configured is not None:
+        return default_configured
+
     defaults = {
         "ANILIST": 80,
         "SHIKIMORI": 240,
         "MAL": 120,
         "MYANIMELIST": 120,
     }
-    fallback = defaults.get(source_token, 120)
-    for name in names:
-        raw = os.getenv(name, "").strip()
-        if not raw:
-            continue
-        try:
-            return max(1, int(raw))
-        except ValueError:
-            continue
-    return fallback
+    return defaults.get(source_token, 120)
+
+
+def _operation_limit(source: str, operation: str) -> int | None:
+    source_token = _env_token(source)
+    operation_token = _env_token(operation)
+    configured = _configured_positive_int(
+        f"UPSTREAM_RATE_LIMIT_{source_token}_{operation_token}_PER_MINUTE"
+    )
+    if configured is not None:
+        return configured
+
+    # Multi-request logical operations are intentionally more conservative.
+    defaults = {
+        ("ANILIST", "PEOPLE"): 20,
+        ("SHIKIMORI", "PEOPLE"): 60,
+    }
+    return defaults.get((source_token, operation_token))
 
 
 class UpstreamRateLimiter:
-    """Async sliding-window safety limiter for outbound source requests.
+    """Async source-global + optional endpoint sliding-window safety limiter.
 
-    Unlike the personal limiter, this limiter waits instead of rejecting the user.
-    Buckets are source/operation scoped and can be configured independently.
+    Unlike the personal limiter, this layer waits instead of blaming/rejecting a
+    user. Every operation first consumes the source-global bucket, so endpoint
+    buckets can only make a path stricter and can never exceed the source quota.
     """
 
     def __init__(self) -> None:
         self._lock = threading.RLock()
-        self._events: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+        self._events: dict[tuple[str, ...], deque[float]] = defaultdict(deque)
 
-    async def acquire(self, source: str, operation: str = "default") -> None:
-        source_key = (source or "unknown").strip().casefold()
-        operation_key = (operation or "default").strip().casefold()
-        key = (source_key, operation_key)
-
+    async def _acquire_bucket(self, key: tuple[str, ...], limit: int) -> None:
         while True:
             now = time.monotonic()
-            limit = _upstream_limit(source_key, operation_key)
-            wait_for = 0.0
-
             with self._lock:
                 events = self._events[key]
                 floor = now - 60.0
@@ -148,6 +166,22 @@ class UpstreamRateLimiter:
                 wait_for = max(0.01, events[0] + 60.0 - now)
 
             await asyncio.sleep(wait_for)
+
+    async def acquire(self, source: str, operation: str = "default") -> None:
+        source_key = (source or "unknown").strip().casefold()
+        operation_key = (operation or "default").strip().casefold()
+
+        await self._acquire_bucket(
+            ("source", source_key),
+            _source_limit(source_key),
+        )
+
+        operation_limit = _operation_limit(source_key, operation_key)
+        if operation_limit is not None:
+            await self._acquire_bucket(
+                ("operation", source_key, operation_key),
+                operation_limit,
+            )
 
     def reset(self) -> None:
         with self._lock:
