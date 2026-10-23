@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
 from aiogram import Dispatcher, F
-from aiogram.filters import Command
+from aiogram.filters import BaseFilter, Command
 from aiogram.filters.command import CommandObject
 from aiogram.types import (
     CallbackQuery,
@@ -375,6 +375,16 @@ def _pending_key(user_id: int) -> str:
     return str(int(user_id))
 
 
+class PendingAnimeInputFilter(BaseFilter):
+    """Match only the next text from the owner/chat of a live /anime flow."""
+
+    async def __call__(self, message: Message) -> bool:
+        if message.from_user is None or not message.text or message.text.startswith("/"):
+            return False
+        pending = PENDING_INPUTS.get(_pending_key(message.from_user.id))
+        return pending is not None and pending.chat_id == message.chat.id
+
+
 def _clear_pending(user_id: int) -> bool:
     key = _pending_key(user_id)
     if PENDING_INPUTS.get(key) is None:
@@ -600,7 +610,7 @@ def register_search_handlers(
         if callback.message is not None:
             await callback.message.edit_text(_ui(locale, "cancelled"), reply_markup=None)
 
-    @dp.message(F.text & ~F.text.startswith("/"))
+    @dp.message(PendingAnimeInputFilter())
     async def pending_anime_input_handler(message: Message) -> None:
         user_id = message.from_user.id if message.from_user else 0
         pending = PENDING_INPUTS.get(_pending_key(user_id))
