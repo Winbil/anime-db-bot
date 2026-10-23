@@ -9,6 +9,7 @@ from core.http_config import USER_AGENT
 from core.identity import AnimeIdentity
 from core.models import AnimeRecord, BroadcastSlot
 from localization import source_value_key
+from services.rate_limits import wait_for_upstream
 
 DEFAULT_MAL_API_URL = "https://api.myanimelist.net/v2"
 
@@ -130,6 +131,7 @@ async def _get_raw(mal_id: str) -> dict[str, Any] | None:
         "X-MAL-CLIENT-ID": client_id(),
     }
 
+    await wait_for_upstream("mal", "metadata")
     async with httpx.AsyncClient(
         timeout=20.0,
         headers=headers,
