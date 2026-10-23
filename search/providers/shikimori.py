@@ -7,6 +7,7 @@ import httpx
 
 from core.http_config import USER_AGENT
 from core.models import SearchCandidate, SearchPage
+from services.rate_limits import wait_for_upstream
 
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
 SHIKIMORI_MAX_PAGE_SIZE = 50
@@ -59,6 +60,7 @@ class ShikimoriSearchProvider:
             "variables": {"search": query},
         }
 
+        await wait_for_upstream("shikimori", "search")
         async with httpx.AsyncClient(
             timeout=20.0,
             headers=headers,
