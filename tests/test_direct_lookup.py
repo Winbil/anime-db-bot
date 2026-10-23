@@ -26,36 +26,62 @@ def record(
     title: str,
     external_ids: dict[str, str],
     poster: str | None = None,
+    titles: dict[str, str] | None = None,
 ) -> AnimeRecord:
     return AnimeRecord(
         source=source,
         source_id=source_id,
-        titles={"romaji": title},
+        titles=titles or {"romaji": title},
         external_ids=external_ids,
         posters=[poster] if poster else [],
     )
 
 
 class DirectIdLookupTests(unittest.IsolatedAsyncioTestCase):
-    async def test_selected_source_only_queries_that_source(self) -> None:
+    async def test_selected_source_confirms_id_then_expands_confirmed_cross_ids(self) -> None:
         mal = FakeSource(
             "mal",
             "MyAnimeList",
-            {"10": record("MyAnimeList", "10", title="One", external_ids={"mal": "10"})},
+            {
+                "10": record(
+                    "MyAnimeList",
+                    "10",
+                    title="Example Hero",
+                    external_ids={"mal": "10", "anilist": "30"},
+                )
+            },
         )
         anilist = FakeSource(
             "anilist",
             "AniList",
-            {"10": record("AniList", "10", title="Other", external_ids={"anilist": "10"})},
+            {
+                "30": record(
+                    "AniList",
+                    "30",
+                    title="Example Hero",
+                    external_ids={"anilist": "30", "mal": "10"},
+                    titles={
+                        "english": "Example Hero",
+                        "romaji": "Example Hero no Monogatari",
+                    },
+                )
+            },
         )
         service = DirectIdLookupService((mal, anilist))
 
         result = await service.lookup("10", source_keys=("mal",))
 
         self.assertEqual(len(result.items), 1)
-        self.assertEqual(result.items[0].external_ids, {"mal": "10"})
-        self.assertEqual(mal.calls, ["10"])
-        self.assertEqual(anilist.calls, [])
+        self.assertEqual(
+            result.items[0].external_ids,
+            {"mal": "10", "anilist": "30"},
+        )
+        self.assertIn("Example Hero no Monogatari", result.items[0].aliases)
+        # The source selected by the user validates mal:10 first. AniList is
+        # contacted only later with the confirmed AniList ID 30, never with 10.
+        self.assertGreaterEqual(mal.calls.count("10"), 1)
+        self.assertEqual(anilist.calls, ["30"])
+        self.assertNotIn("10", anilist.calls)
 
     async def test_confirmed_cross_ids_merge_direct_hits(self) -> None:
         mal = FakeSource(
@@ -127,6 +153,9 @@ class DirectIdLookupTests(unittest.IsolatedAsyncioTestCase):
             {frozenset(item.external_ids) for item in result.items},
             {frozenset({"mal"}), frozenset({"anilist"})},
         )
+        # Cross-source enrichment must not reinterpret mal:42 as anilist:42 or
+        # vice versa merely because the source-local numbers and titles match.
+        self.assertNotIn("42", [value for value in anilist.calls[1:] if value])
 
 
 if __name__ == "__main__":
