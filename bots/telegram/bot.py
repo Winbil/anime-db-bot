@@ -21,6 +21,7 @@ from bots.telegram.transports.official import TRANSPORT as OFFICIAL_TRANSPORT
 from bots.telegram.transports.tgapi import TRANSPORT as TGAPI_TRANSPORT
 from core.models import SearchCandidate
 from localization import text
+from mappings.runtime import periodic_mapping_updates
 from services.access_control import telegram_admin_ids
 from services.direct_lookup import DirectIdLookupService
 from services.rate_limits import PERSONAL_RATE_LIMITER
@@ -111,6 +112,7 @@ async def run_bot(transport: TelegramTransport | None = None) -> None:
     logging.info("Interactive /anime provider selection and direct-ID lookup are enabled")
 
     bot = transport.create_bot()
+    mapping_task = asyncio.create_task(periodic_mapping_updates())
     try:
         health = await transport.check_health(bot)
         if health.healthy:
@@ -138,6 +140,8 @@ async def run_bot(transport: TelegramTransport | None = None) -> None:
 
         await dp.start_polling(bot)
     finally:
+        mapping_task.cancel()
+        await asyncio.gather(mapping_task, return_exceptions=True)
         await transport.close(bot)
 
 
