@@ -112,33 +112,33 @@ fi
 
 ensure_jikan_container() {
     if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
-        info "Docker Compose is unavailable: MAL/Jikan episode details will be unavailable."
+        info "Docker Compose is unavailable: MAL/Jikan supplements will be unavailable."
         return 0
     fi
 
     local state
     state="$(docker inspect --format '{{.State.Status}}' anime-db-bot-Jikan 2>/dev/null || true)"
     if [[ "$state" != "running" ]]; then
-        info "Starting local MAL/Jikan episode parser container..."
+        info "Starting local MAL/Jikan supplement container..."
         if ! docker compose up -d --build jikan; then
-            info "Could not start anime-db-bot-Jikan; the bot will continue without Jikan episodes."
+            info "Could not start anime-db-bot-Jikan; the bot will continue with official MAL data only."
             return 0
         fi
         state="$(docker inspect --format '{{.State.Status}}' anime-db-bot-Jikan 2>/dev/null || true)"
     fi
 
-    info "MAL/Jikan episode parser: anime-db-bot-Jikan ($state)."
+    info "MAL/Jikan supplement: anime-db-bot-Jikan ($state)."
 }
 
 ensure_jikan_container
 
 info "Telegram runtime: $BOT_MODULE"
 info "Telegram transport is selected from TELEGRAM_BOT_API_URL."
-info "Default /anime search: Shikimori + MyAnimeList + AniList."
+info "Default /anime search: Shikimori + MAL (MyAnimeList) / Jikan + AniList."
 info "Multi-source search can expand through confirmed cross-source titles/IDs."
-info "Interactive /anime sources: All / MAL / Shikimori / AniList."
+info "Interactive /anime sources: All / MAL (MyAnimeList) / Jikan / Shikimori / AniList."
 info "Direct external-ID lookup is source-independent."
-info "Metadata sources: Shikimori + AniList + MyAnimeList."
+info "Metadata sources: Shikimori + AniList + MAL (MyAnimeList) / Jikan."
 info "Staff/seiyuu data is loaded lazily when those sections are opened."
 
 mkdir -p "$LOG_DIR"
