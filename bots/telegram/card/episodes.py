@@ -6,14 +6,14 @@ import logging
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputRichMessage, Message
 
 from bots.telegram.card.renderer import plain_text_to_rich_html, split_text
+from bots.telegram.card.service import EPISODE_SERVICE
 from bots.telegram.card.state import AnimeCardSession
 from core.models import EpisodeRecord
 from localization import text
-from sources.jikan import JIKAN_DISPLAY_NAME, JikanSource
 
 EPISODES_PER_VIEW = 10
 JIKAN_PAGE_SIZE = 100
-JIKAN_SOURCE = JikanSource()
+JIKAN_DISPLAY_NAME = EPISODE_SERVICE.display_name("jikan")
 
 
 def _view_slice(view_page: int) -> tuple[int, int]:
@@ -158,9 +158,10 @@ async def edit_episodes_view(
     page = session.episode_pages.get(upstream_page)
     if page is None:
         try:
-            page = await JIKAN_SOURCE.load_episode_page(
+            page = await EPISODE_SERVICE.load_page(
                 session.anime.identity,
                 page=upstream_page,
+                backend="jikan",
             )
             session.episode_pages[upstream_page] = page
         except Exception:
@@ -267,7 +268,11 @@ async def edit_episode_detail(
     episode = session.episode_details.get(episode_number)
     if episode is None:
         try:
-            episode = await JIKAN_SOURCE.load_episode(session.anime.identity, episode_number)
+            episode = await EPISODE_SERVICE.load_episode(
+                session.anime.identity,
+                episode_number,
+                backend="jikan",
+            )
         except Exception:
             logging.exception("Could not load Jikan/MAL episode detail")
             episode = None

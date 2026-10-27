@@ -9,15 +9,18 @@ from bots.telegram.card.state import remember_anime
 from core.models import SearchCandidate
 from localization import text
 from search.registry import get_search_providers
+from services.episodes import EpisodeService
 from services.identity_aggregator import AnimeAggregator
 from services.search import SearchService
 from services.user_settings import get_user_locale
+from sources.episode_registry import get_episode_sources
 from sources.registry import get_sources
 
 SEARCH_PROVIDERS = get_search_providers()
 SOURCES = get_sources()
 SEARCH_SERVICE = SearchService(SEARCH_PROVIDERS)
 AGGREGATOR = AnimeAggregator(SOURCES)
+EPISODE_SERVICE = EpisodeService(get_episode_sources())
 
 
 async def aggregate_and_send(

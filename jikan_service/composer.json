@@ -3,7 +3,7 @@
   "description": "Minimal on-demand MyAnimeList parser service for anime-db-bot",
   "private": true,
   "require": {
-    "jikan-me/jikan": "^5.0"
+    "jikan-me/jikan": "*"
   },
   "config": {
     "sort-packages": true,
