@@ -20,6 +20,13 @@ class EpisodeService:
         source = self._by_backend.get(backend)
         return source.display_name if source is not None else backend
 
+    def available_backends(self, identity: AnimeIdentity) -> list[str]:
+        return [
+            source.backend_key
+            for source in self._sources
+            if source.source_key and identity.has(source.source_key)
+        ]
+
     async def load_page(
         self,
         identity: AnimeIdentity,
@@ -30,6 +37,8 @@ class EpisodeService:
         source = self._by_backend.get(backend)
         if source is None:
             raise ValueError(f"Unknown episode backend: {backend}")
+        if not identity.has(source.source_key):
+            return EpisodePage(items=[], page=max(1, int(page)), has_next=False)
         return await source.load_episode_page(identity, page=page)
 
     async def load_episode(
@@ -42,4 +51,6 @@ class EpisodeService:
         source = self._by_backend.get(backend)
         if source is None:
             raise ValueError(f"Unknown episode backend: {backend}")
+        if not identity.has(source.source_key):
+            return None
         return await source.load_episode(identity, episode_number)
