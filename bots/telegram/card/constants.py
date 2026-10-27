@@ -8,12 +8,13 @@ SECTION_LABELS = {
     "main": "section_main",
     "titles": "section_titles",
     "description": "section_description",
+    "popularity": "section_popularity",
     "links": "section_links",
     "staff": "section_staff",
     "voices": "section_voices",
 }
 
-SOURCE_SELECTABLE_SECTIONS = {"titles", "staff", "voices"}
+SOURCE_SELECTABLE_SECTIONS = {"titles", "staff", "voices", "popularity"}
 
 ALL_SOURCE_LABELS = {
     "titles": "all_titles",

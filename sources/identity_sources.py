@@ -34,6 +34,13 @@ query AnimeDetailsById($id: Int!) {
     episodes
     duration
     averageScore
+    popularity
+    favourites
+    rankings { rank type year season allTime }
+    stats {
+      statusDistribution { status amount }
+      scoreDistribution { score amount }
+    }
     genres
     isAdult
     coverImage { extraLarge large medium }

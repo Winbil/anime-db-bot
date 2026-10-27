@@ -32,6 +32,8 @@ DETAIL_FIELDS = """
     licenseNameRu
     kind
     score
+    statusesStats { status count }
+    scoresStats { score count }
     status
     rating
     season
@@ -216,6 +218,42 @@ def _format_datetime(value: str | None) -> str | None:
         return value
 
 
+def _int(value: Any) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _status_distribution(value: list[dict[str, Any]] | None) -> dict[str, int]:
+    aliases = {
+        "watching": "watching",
+        "completed": "completed",
+        "on_hold": "on_hold",
+        "dropped": "dropped",
+        "planned": "planned",
+        "rewatching": "rewatching",
+    }
+    result: dict[str, int] = {}
+    for item in value or []:
+        key = aliases.get(_clean_text(item.get("status")).casefold())
+        count = _int(item.get("count"))
+        if key and count is not None and count >= 0:
+            result[key] = count
+    return result
+
+
+def _score_distribution(value: list[dict[str, Any]] | None) -> dict[int, int]:
+    result: dict[int, int] = {}
+    for item in value or []:
+        score = _int(item.get("score"))
+        count = _int(item.get("count"))
+        if score is None or count is None or count < 0 or not 1 <= score <= 10:
+            continue
+        result[score] = result.get(score, 0) + count
+    return result
+
+
 def _season(value: Any) -> tuple[str | None, int | None]:
     raw = _clean_text(value)
     if not raw:
@@ -390,6 +428,8 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
     status_raw = raw.get("status") or ""
     rating_raw = raw.get("rating") or ""
     season, season_year = _season(raw.get("season"))
+    status_distribution = _status_distribution(raw.get("statusesStats"))
+    score_distribution = _score_distribution(raw.get("scoresStats"))
 
     return AnimeRecord(
         source="Shikimori",
@@ -410,6 +450,10 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         released_on=_format_date(raw.get("releasedOn")),
         next_episode_at=_format_datetime(raw.get("nextEpisodeAt")),
         score=score,
+        list_users=sum(status_distribution.values()) if status_distribution else None,
+        scoring_users=sum(score_distribution.values()) if score_distribution else None,
+        status_distribution=status_distribution,
+        score_distribution=score_distribution,
         genres=_dedupe(
             [
                 canonical_genre_token(genre.get("name") or genre.get("russian") or "")

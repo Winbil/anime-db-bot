@@ -120,6 +120,27 @@ class AggregatorPeopleTests(unittest.TestCase):
         )
 
 
+class _PopularitySource:
+    def __init__(self, name: str, *, list_users: int, scoring_users: int) -> None:
+        self.name = name
+        self.list_users = list_users
+        self.scoring_users = scoring_users
+
+    async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
+        mal_id = str(identity.get("mal") or "")
+        if not mal_id:
+            return None
+        return AnimeRecord(
+            source=self.name,
+            source_id=mal_id,
+            titles={"english": "Popularity Test"},
+            external_ids={"mal": mal_id},
+            list_users=self.list_users,
+            scoring_users=self.scoring_users,
+            status_distribution={"completed": self.list_users},
+        )
+
+
 class AggregatorIdentityTests(unittest.IsolatedAsyncioTestCase):
     async def test_enriched_identity_reaches_sources_without_mutating_candidate(self) -> None:
         source = FakeSource()
@@ -141,6 +162,29 @@ class AggregatorIdentityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(source.identities[0].external_ids, enriched.external_ids)
         self.assertEqual(candidate.external_ids, {"mal": "123"})
         self.assertEqual(anime.external_ids["shikimori"], "456")
+
+    async def test_popularity_statistics_remain_source_scoped(self) -> None:
+        first = _PopularitySource("FirstDB", list_users=1000, scoring_users=700)
+        second = _PopularitySource("SecondDB", list_users=250, scoring_users=120)
+        aggregator = AnimeAggregator((first, second))
+        candidate = SearchCandidate(
+            title="Popularity Test",
+            external_ids={"mal": "20"},
+        )
+
+        async def no_external_enrichment(identity: AnimeIdentity, titles: list[str]) -> AnimeIdentity:
+            return identity.copy()
+
+        with patch(
+            "services.identity_aggregator.enrich_identity",
+            new=AsyncMock(side_effect=no_external_enrichment),
+        ):
+            anime = await aggregator.aggregate(candidate)
+
+        self.assertEqual(anime.popularity_by_source["FirstDB"].list_users, 1000)
+        self.assertEqual(anime.popularity_by_source["SecondDB"].list_users, 250)
+        self.assertEqual(anime.popularity_by_source["FirstDB"].scoring_users, 700)
+        self.assertEqual(anime.popularity_by_source["SecondDB"].scoring_users, 120)
 
     async def test_new_id_from_first_source_enables_second_pass_source(self) -> None:
         bridge = _AniListBridgeSource()

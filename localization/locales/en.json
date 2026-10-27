@@ -70,6 +70,7 @@
     "section_main": "Overview",
     "section_titles": "Titles",
     "section_description": "Description",
+    "section_popularity": "Popularity",
     "section_links": "Links",
     "section_staff": "Staff",
     "section_voices": "Voice cast",
@@ -78,6 +79,7 @@
     "all_voices": "All voice actors",
     "details": "Detailed information",
     "description_button": "Description",
+    "popularity_button": "Popularity",
     "titles_button": "All titles",
     "staff_button": "Staff and creators",
     "voices_button": "Voice cast",
@@ -98,7 +100,6 @@
     "block_release": "Release",
     "block_production": "Production",
     "block_score": "Score",
-    "block_popularity": "Popularity",
     "block_sources": "Sources",
     "type": "Type: {value}",
     "status": "Status: {value}",
@@ -116,7 +117,7 @@
     "franchise": "Franchise: {value}",
     "average_score": "Average score: {score} (sources: {count})",
     "rank": "Ranking position: #{value}",
-    "popularity": "Popularity: #{value}",
+    "popularity": "Popularity rank: #{value}",
     "list_users": "In user lists: {value}",
     "scoring_users": "Scored by: {value}",
     "favorites": "Favorites: {value}",
@@ -136,7 +137,16 @@
     "invalid_source": "Invalid source.",
     "source_unavailable": "This source is no longer available.",
     "invalid_command": "Invalid command.",
-    "invalid_section": "Invalid section."
+    "invalid_section": "Invalid section.",
+    "popularity_choose": "Popularity:\nChoose a source below.",
+    "popularity_empty": "Popularity:\nNo audience statistics are available.",
+    "popularity_title": "Popularity — {source}",
+    "popularity_metrics": "Summary",
+    "popularity_statuses": "User list statuses",
+    "popularity_scores": "Score distribution",
+    "popularity_rankings": "Rankings",
+    "all_time": "all time",
+    "other_period": "other period"
   },
   "people": {
     "staff": "Staff and creators",
@@ -305,5 +315,17 @@
     "saturday": "Saturday",
     "sunday": "Sunday",
     "other": "Other"
+  },
+  "user_list_status": {
+    "watching": "Watching",
+    "completed": "Completed",
+    "planned": "Planning",
+    "on_hold": "On hold",
+    "dropped": "Dropped",
+    "rewatching": "Rewatching"
+  },
+  "ranking_kind": {
+    "rated": "By score",
+    "popular": "By popularity"
   }
 }

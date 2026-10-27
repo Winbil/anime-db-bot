@@ -18,7 +18,7 @@ from bots.telegram.card.selectors import (
     source_section_sources,
 )
 from core.canonicalization import display_person_name, localize_role_token
-from core.models import AggregatedAnime, BroadcastSlot
+from core.models import AggregatedAnime, BroadcastSlot, PopularityStats
 from localization import text
 
 
@@ -145,6 +145,7 @@ def _quick_actions_html(token: str, *, locale: str) -> str:
         f'<h3>{html.escape(text("card", "details", locale=locale))}</h3>'
         '<tg-button-row align="left">'
         + button("description_button", "description")
+        + button("popularity_button", "popularity")
         + button("staff_button", "staff")
         + "</tg-button-row>"
         '<tg-button-row align="left">'
@@ -232,18 +233,6 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
     for source, score in ordered_mapping_items(anime.scores, anime.sources):
         score_lines.append(f"{source}: {float(score):g}")
 
-    popularity: list[str] = []
-    if anime.rank:
-        popularity.append(text("card", "rank", locale=locale, value=anime.rank))
-    if anime.popularity_rank:
-        popularity.append(text("card", "popularity", locale=locale, value=anime.popularity_rank))
-    if anime.list_users is not None:
-        popularity.append(text("card", "list_users", locale=locale, value=format_number(anime.list_users)))
-    if anime.scoring_users is not None:
-        popularity.append(text("card", "scoring_users", locale=locale, value=format_number(anime.scoring_users)))
-    if anime.favorites is not None:
-        popularity.append(text("card", "favorites", locale=locale, value=format_number(anime.favorites)))
-
     source_lines: list[str] = []
     if anime.sources:
         source_lines.append(text("card", "databases", locale=locale, value=", ".join(anime.sources)))
@@ -260,7 +249,6 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
         (text("card", "block_release", locale=locale), release),
         (text("card", "block_production", locale=locale), production),
         (text("card", "block_score", locale=locale), score_lines),
-        (text("card", "block_popularity", locale=locale), popularity),
         (text("card", "block_sources", locale=locale), source_lines),
     ]
 
@@ -332,6 +320,157 @@ def format_number(value: int | None) -> str | None:
     if value is None:
         return None
     return f"{value:,}".replace(",", " ")
+
+
+_POPULARITY_STATUS_ORDER = (
+    "watching",
+    "completed",
+    "planned",
+    "on_hold",
+    "dropped",
+    "rewatching",
+)
+
+
+def _popularity_metric_lines(stats: PopularityStats, *, locale: str) -> list[str]:
+    lines: list[str] = []
+    if stats.rank is not None:
+        lines.append(text("card", "rank", locale=locale, value=stats.rank))
+    if stats.popularity_rank is not None:
+        lines.append(
+            text("card", "popularity", locale=locale, value=stats.popularity_rank)
+        )
+    if stats.list_users is not None:
+        lines.append(
+            text(
+                "card",
+                "list_users",
+                locale=locale,
+                value=format_number(stats.list_users),
+            )
+        )
+    if stats.scoring_users is not None:
+        lines.append(
+            text(
+                "card",
+                "scoring_users",
+                locale=locale,
+                value=format_number(stats.scoring_users),
+            )
+        )
+    if stats.favorites is not None:
+        lines.append(
+            text(
+                "card",
+                "favorites",
+                locale=locale,
+                value=format_number(stats.favorites),
+            )
+        )
+    return lines
+
+
+def _popularity_status_lines(stats: PopularityStats, *, locale: str) -> list[str]:
+    lines: list[str] = []
+    seen: set[str] = set()
+    for key in _POPULARITY_STATUS_ORDER:
+        if key not in stats.status_distribution:
+            continue
+        seen.add(key)
+        label = text("user_list_status", key, locale=locale, default=key)
+        lines.append(f"{label}: {format_number(stats.status_distribution[key])}")
+    for key in sorted(set(stats.status_distribution) - seen):
+        label = text("user_list_status", key, locale=locale, default=key)
+        lines.append(f"{label}: {format_number(stats.status_distribution[key])}")
+    return lines
+
+
+def _popularity_score_lines(stats: PopularityStats) -> list[str]:
+    return [
+        f"{score}/10: {format_number(count)}"
+        for score, count in sorted(stats.score_distribution.items(), reverse=True)
+    ]
+
+
+def _popularity_ranking_lines(stats: PopularityStats, *, locale: str) -> list[str]:
+    lines: list[str] = []
+    for item in stats.rankings:
+        # All-time rated/popular positions are already shown in the summary rows.
+        if item.all_time and item.kind in {"rated", "popular"}:
+            continue
+        kind = text("ranking_kind", item.kind, locale=locale, default=item.kind)
+        if item.season and item.year:
+            season = text("season", item.season, locale=locale, default=item.season)
+            period = f"{season} {item.year}"
+        elif item.year:
+            period = str(item.year)
+        elif item.all_time:
+            period = text("card", "all_time", locale=locale)
+        else:
+            period = text("card", "other_period", locale=locale)
+        lines.append(f"{kind} — {period}: #{item.rank}")
+    return lines
+
+
+def format_popularity(source: str, stats: PopularityStats, *, locale: str) -> str:
+    lines = [text("card", "popularity_title", locale=locale, source=source)]
+    append_block(
+        lines,
+        text("card", "popularity_metrics", locale=locale),
+        _popularity_metric_lines(stats, locale=locale),
+    )
+    append_block(
+        lines,
+        text("card", "popularity_statuses", locale=locale),
+        _popularity_status_lines(stats, locale=locale),
+    )
+    append_block(
+        lines,
+        text("card", "popularity_scores", locale=locale),
+        _popularity_score_lines(stats),
+    )
+    append_block(
+        lines,
+        text("card", "popularity_rankings", locale=locale),
+        _popularity_ranking_lines(stats, locale=locale),
+    )
+    return "\n".join(lines)
+
+
+def _popularity_tables_html(
+    source: str,
+    stats: PopularityStats,
+    *,
+    locale: str,
+) -> str:
+    title_html = (
+        f"<h2>{html.escape(text('card', 'popularity_title', locale=locale, source=source))}</h2>"
+    )
+    tables = "".join(
+        _table_html(caption, rows)
+        for caption, rows in (
+            (
+                text("card", "popularity_metrics", locale=locale),
+                _popularity_metric_lines(stats, locale=locale),
+            ),
+            (
+                text("card", "popularity_statuses", locale=locale),
+                _popularity_status_lines(stats, locale=locale),
+            ),
+            (
+                text("card", "popularity_scores", locale=locale),
+                _popularity_score_lines(stats),
+            ),
+            (
+                text("card", "popularity_rankings", locale=locale),
+                _popularity_ranking_lines(stats, locale=locale),
+            ),
+        )
+        if rows
+    )
+    if not tables:
+        return title_html + f"<p>{html.escape(text('common', 'no_data', locale=locale))}</p>"
+    return title_html + tables
 
 
 def format_people(title: str, people, *, locale: str) -> str:
@@ -463,6 +602,10 @@ def source_section_text(
             anime.voices_by_source.get(source, []),
             locale=locale,
         )
+    if section == "popularity":
+        stats = anime.popularity_by_source.get(source)
+        if stats is not None and stats.has_data():
+            return format_popularity(source, stats, locale=locale)
     return text("common", "no_data", locale=locale)
 
 
@@ -477,11 +620,17 @@ def anime_sections(anime: AggregatedAnime, *, locale: str = "ru") -> dict[str, s
         "links_choose" if anime.urls else "links_empty",
         locale=locale,
     )
+    popularity_text = text(
+        "card",
+        "popularity_choose" if anime.popularity_by_source else "popularity_empty",
+        locale=locale,
+    )
 
     return {
         "main": _main_text(anime, locale=locale),
         "titles": format_titles(anime.titles, anime.synonyms, locale=locale),
         "description": description_text,
+        "popularity": popularity_text,
         "links": links_text,
         "staff": format_people(text("card", "staff", locale=locale), anime.staff, locale=locale),
         "voices": format_people(text("card", "voices", locale=locale), anime.voices, locale=locale),
@@ -655,6 +804,15 @@ async def edit_source_section_view(
                 anime.synonyms_by_source.get(source, []),
                 source=source,
                 locale=locale,
+            )
+        )
+    elif section == "popularity" and len(pages) == 1:
+        stats = anime.popularity_by_source.get(source)
+        rich_message = InputRichMessage(
+            html=(
+                _popularity_tables_html(source, stats, locale=locale)
+                if stats is not None
+                else plain_text_to_rich_html(pages[page])
             )
         )
     else:

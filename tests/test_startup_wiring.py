@@ -28,7 +28,7 @@ from core.canonicalization import (
 )
 from core.contracts import AnimeSearchProvider, AnimeSource
 from core.http_config import USER_AGENT
-from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate, SearchPage
+from core.models import AggregatedAnime, AnimeRecord, PersonCredit, PopularityStats, SearchCandidate, SearchPage
 from search.providers.anilist import AniListSearchProvider
 from search.providers.mal import MALSearchProvider
 from search.providers.shikimori import ShikimoriSearchProvider
@@ -104,13 +104,16 @@ class StartupWiringTests(unittest.TestCase):
     def test_source_selectable_sections_and_portraits(self) -> None:
         self.assertEqual(
             SOURCE_SELECTABLE_SECTIONS,
-            {"titles", "staff", "voices"},
+            {"titles", "staff", "voices", "popularity"},
         )
 
         sample = AggregatedAnime(
             title="Smoke test",
             sources=["AniList"],
             titles_by_source={"AniList": {"english": "Smoke test"}},
+            popularity_by_source={
+                "AniList": PopularityStats(list_users=100, scoring_users=80)
+            },
             staff=[PersonCredit(
                 name="Test Person",
                 portraits={"AniList": ["https://example.invalid/staff.jpg"]},
@@ -130,6 +133,7 @@ class StartupWiringTests(unittest.TestCase):
         )
 
         self.assertEqual(source_section_sources(sample, "titles"), ["AniList"])
+        self.assertEqual(source_section_sources(sample, "popularity"), ["AniList"])
         self.assertEqual(_sources_with_portraits(sample, "staff"), ["AniList"])
         self.assertEqual(_sources_with_portraits(sample, "voices"), ["AniList"])
 

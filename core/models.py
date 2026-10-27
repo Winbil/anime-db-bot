@@ -60,6 +60,49 @@ class BroadcastSlot:
     time: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class PopularityRanking:
+    """One source-local leaderboard position.
+
+    ``kind`` is a locale-neutral key such as ``rated`` or ``popular``.
+    ``season`` uses the same canonical season keys as the anime model.
+    """
+
+    rank: int
+    kind: str
+    year: int | None = None
+    season: str | None = None
+    all_time: bool = False
+
+
+@dataclass(slots=True)
+class PopularityStats:
+    """Audience/popularity statistics belonging to exactly one source."""
+
+    rank: int | None = None
+    popularity_rank: int | None = None
+    list_users: int | None = None
+    scoring_users: int | None = None
+    favorites: int | None = None
+    status_distribution: dict[str, int] = field(default_factory=dict)
+    score_distribution: dict[int, int] = field(default_factory=dict)
+    rankings: list[PopularityRanking] = field(default_factory=list)
+
+    def has_data(self) -> bool:
+        return any(
+            (
+                self.rank is not None,
+                self.popularity_rank is not None,
+                self.list_users is not None,
+                self.scoring_users is not None,
+                self.favorites is not None,
+                bool(self.status_distribution),
+                bool(self.score_distribution),
+                bool(self.rankings),
+            )
+        )
+
+
 @dataclass(slots=True)
 class PersonCredit:
     """One person participating in an anime.
@@ -115,6 +158,9 @@ class AnimeRecord:
     list_users: int | None = None
     scoring_users: int | None = None
     favorites: int | None = None
+    status_distribution: dict[str, int] = field(default_factory=dict)
+    score_distribution: dict[int, int] = field(default_factory=dict)
+    rankings: list[PopularityRanking] = field(default_factory=list)
 
     genres: list[str] = field(default_factory=list)
     studios: list[str] = field(default_factory=list)
@@ -175,6 +221,7 @@ class AggregatedAnime:
     list_users: int | None = None
     scoring_users: int | None = None
     favorites: int | None = None
+    popularity_by_source: dict[str, PopularityStats] = field(default_factory=dict)
 
     genres: list[str] = field(default_factory=list)
     studios: list[str] = field(default_factory=list)
