@@ -8,7 +8,10 @@ COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 
 WORKDIR /app
 COPY jikan_service/composer.json /app/composer.json
-RUN composer install --no-dev --prefer-dist --no-interaction --no-progress --classmap-authoritative
+ARG JIKAN_VERSION="*"
+RUN composer require --no-update "jikan-me/jikan:${JIKAN_VERSION}" \
+    && composer update --with-all-dependencies --no-dev --prefer-dist --no-interaction --no-progress \
+    && composer dump-autoload --no-dev --classmap-authoritative --no-interaction
 
 COPY jikan_service/public /app/public
 

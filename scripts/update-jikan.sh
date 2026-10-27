@@ -80,7 +80,10 @@ for attempt in $(seq 1 "$MAX_SWITCH_ATTEMPTS"); do
   docker compose rm -f "$SERVICE_NAME" >/dev/null 2>&1 || true
   docker image rm -f "$CANDIDATE_IMAGE" >/dev/null 2>&1 || true
 
-  if docker build --pull --no-cache -f jikan_service/Dockerfile -t "$CANDIDATE_IMAGE" .; then
+  if docker build --pull --no-cache \
+    --build-arg "JIKAN_VERSION=$latest_version" \
+    -f jikan_service/Dockerfile \
+    -t "$CANDIDATE_IMAGE" .; then
     docker tag "$CANDIDATE_IMAGE" "$CURRENT_IMAGE"
     if docker compose up -d --no-build "$SERVICE_NAME"; then
       healthy=0

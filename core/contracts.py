@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from core.identity import AnimeIdentity
-from core.models import AnimeRecord, SearchPage
+from core.models import AnimeRecord, EpisodePage, EpisodeRecord, SearchPage
 
 
 class AnimeSearchProvider(Protocol):
@@ -33,4 +33,33 @@ class AnimeSource(Protocol):
     source_key: str
 
     async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
+        ...
+
+
+class AnimeEpisodeSource(Protocol):
+    """Lazy episode capability supplied by one backend.
+
+    A backend may reuse another database identity edge. Jikan, for example,
+    advertises ``source_key='mal'`` and ``backend_key='jikan'`` instead of
+    introducing a synthetic Jikan identity.
+    """
+
+    name: str
+    display_name: str
+    source_key: str
+    backend_key: str
+
+    async def load_episode_page(
+        self,
+        identity: AnimeIdentity,
+        *,
+        page: int = 1,
+    ) -> EpisodePage:
+        ...
+
+    async def load_episode(
+        self,
+        identity: AnimeIdentity,
+        episode_number: int,
+    ) -> EpisodeRecord | None:
         ...
