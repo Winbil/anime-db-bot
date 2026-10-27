@@ -155,6 +155,15 @@ def _people_state(
     return without, with_portraits
 
 
+def _first_people_page(
+    without: list[PersonCredit],
+    with_portraits: list[PersonCredit],
+) -> int:
+    if without or not with_portraits:
+        return 0
+    return 1
+
+
 def _localized_roles(person: PersonCredit, locale: str) -> str:
     return ", ".join(
         localize_role_token(role, locale=locale)
@@ -181,7 +190,8 @@ def _page_text(
     actual_total = len(without) + len(with_portraits)
     total = max(actual_total, int(total_hint or 0))
     max_page = len(with_portraits)
-    page = max(0, min(page, max_page))
+    first_page = _first_people_page(without, with_portraits)
+    page = max(first_page, min(int(page), max_page))
 
     title_value = text("people", section, locale=locale)
     if source:
@@ -379,11 +389,12 @@ def _keyboard(
     locale: str,
     source_names: list[str] | None = None,
     has_more: bool = False,
+    first_page: int = 0,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
 
     nav: list[InlineKeyboardButton] = []
-    if page > 0:
+    if page > first_page:
         nav.append(
             InlineKeyboardButton(
                 text="◀️",
@@ -655,7 +666,8 @@ async def _edit_people_view(
 
     without, with_portraits = _people_state(anime, section, source)
     max_page = len(with_portraits)
-    page = max(0, min(int(page), max_page))
+    first_page = _first_people_page(without, with_portraits)
+    page = max(first_page, min(int(page), max_page))
     total_hint = _scope_total_hint(anime, section, progress, source)
     text_value, urls, shown, total, page = _page_text(
         anime,
@@ -677,6 +689,7 @@ async def _edit_people_view(
         locale=locale,
         source_names=sources,
         has_more=_scope_has_more(progress, source),
+        first_page=first_page,
     )
 
     try:

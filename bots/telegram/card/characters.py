@@ -106,13 +106,10 @@ def _character_line(character: CharacterRecord, locale: str) -> str:
     return f"• {name} — {_role_label(character.role, locale)}"
 
 
-def _page_text(
+def _character_state(
     session: AnimeCardSession,
     source: str | None,
-    page: int,
-    *,
-    locale: str,
-) -> tuple[str, list[str], int, int, int]:
+) -> tuple[list[CharacterRecord], list[CharacterRecord], list[CharacterRecord]]:
     source_order = _source_names(session)
     values = _characters(session, source)
     without: list[CharacterRecord] = []
@@ -122,10 +119,32 @@ def _page_text(
             with_portraits.append(character)
         else:
             without.append(character)
+    return values, without, with_portraits
+
+
+def _first_character_page(
+    without: list[CharacterRecord],
+    with_portraits: list[CharacterRecord],
+) -> int:
+    if without or not with_portraits:
+        return 0
+    return 1
+
+
+def _page_text(
+    session: AnimeCardSession,
+    source: str | None,
+    page: int,
+    *,
+    locale: str,
+) -> tuple[str, list[str], int, int, int]:
+    source_order = _source_names(session)
+    values, without, with_portraits = _character_state(session, source)
 
     total = len(values)
     max_page = len(with_portraits)
-    page = max(0, min(int(page), max_page))
+    first_page = _first_character_page(without, with_portraits)
+    page = max(first_page, min(int(page), max_page))
     title = text("characters", "title", locale=locale)
     if source:
         title += f" — {source}"
@@ -175,10 +194,11 @@ def _keyboard(
     max_page: int,
     *,
     locale: str,
+    first_page: int = 0,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     nav: list[InlineKeyboardButton] = []
-    if page > 0:
+    if page > first_page:
         nav.append(InlineKeyboardButton(text="◀️", callback_data=_callback(token, source_index, page - 1)))
     nav.append(InlineKeyboardButton(
         text=text("characters", "shown", locale=locale, shown=shown, total=total),
@@ -258,11 +278,21 @@ async def edit_characters_view(
             InlineKeyboardButton(text=text("common", "back", locale=locale), callback_data=f"av:{token}:main:0")
         ]])
     else:
+        _, without, with_portraits = _character_state(session, source)
+        max_page = len(with_portraits)
+        first_page = _first_character_page(without, with_portraits)
         content, urls, shown, total, page = _page_text(session, source, page, locale=locale)
-        max_page = sum(
-            1 for character in values if _portrait_urls(character, source, sources)
+        keyboard = _keyboard(
+            token,
+            sources,
+            source_index,
+            page,
+            shown,
+            total,
+            max_page,
+            locale=locale,
+            first_page=first_page,
         )
-        keyboard = _keyboard(token, sources, source_index, page, shown, total, max_page, locale=locale)
         try:
             await message.edit_text(rich_message=_rich(content, urls), reply_markup=keyboard)
             return
