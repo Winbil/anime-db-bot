@@ -10,7 +10,7 @@ from core.identity import AnimeIdentity
 from sources.anidb import AniDBSource
 
 
-ANIDB_XML = b'''<?xml version="1.0" encoding="UTF-8"?>
+ANIDB_XML = '''<?xml version="1.0" encoding="UTF-8"?>
 <anime id="10" restricted="false">
   <type>TV Series</type>
   <episodecount>2</episodecount>
@@ -68,7 +68,7 @@ ANIDB_XML = b'''<?xml version="1.0" encoding="UTF-8"?>
     </episode>
   </episodes>
 </anime>
-'''
+'''.encode("utf-8")
 
 
 class AniDBSourceTests(unittest.IsolatedAsyncioTestCase):
