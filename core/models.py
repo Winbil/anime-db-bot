@@ -60,6 +60,26 @@ class BroadcastSlot:
     time: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class TrailerRecord:
+    """One source-scoped promotional trailer.
+
+    ``source`` is the logical database identity key (``mal``, ``anilist`` or
+    ``shikimori``) while ``backend`` records the concrete backend used to fetch
+    the trailer. This keeps MAL/Jikan provenance explicit without inventing a
+    Jikan identity key.
+    """
+
+    source: str
+    backend: str
+    url: str
+    title: str | None = None
+    kind: str = "trailer"
+    hosting: str | None = None
+    embed_url: str | None = None
+    thumbnail: str | None = None
+
+
 @dataclass(slots=True)
 class EpisodeRecord:
     """One source-scoped anime episode record.

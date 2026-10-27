@@ -8,7 +8,7 @@ import httpx
 
 from core.canonicalization import canonical_role_token, voice_role_token
 from core.identity import AnimeIdentity
-from core.models import EpisodePage, EpisodeRecord, PersonCredit
+from core.models import EpisodePage, EpisodeRecord, PersonCredit, TrailerRecord
 from core.people_loading import PeopleBatch
 from core.source_names import MAL_SOURCE_NAME
 from services.rate_limits import wait_for_upstream
@@ -291,6 +291,34 @@ class JikanSource:
             return PeopleBatch(complete=True)
         people = await self.load_voices(identity)
         return PeopleBatch(people=people, complete=True, total_count=len(people))
+
+    async def load_trailers(self, identity: AnimeIdentity) -> list[TrailerRecord]:
+        mal_id = self._mal_id(identity)
+        if not mal_id:
+            return []
+
+        body = await _get(f"/anime/{mal_id}/trailers", operation="trailers")
+        result: list[TrailerRecord] = []
+        seen: set[str] = set()
+        for raw in body.get("data") or []:
+            if not isinstance(raw, dict):
+                continue
+            url = _clean(raw.get("url"))
+            key = url.casefold()
+            if not url or key in seen:
+                continue
+            seen.add(key)
+            result.append(TrailerRecord(
+                source="mal",
+                backend="jikan",
+                title=_clean(raw.get("title")) or None,
+                kind="trailer",
+                hosting="YouTube" if _clean(raw.get("youtube_id")) else None,
+                url=url,
+                embed_url=_clean(raw.get("embed_url")) or None,
+                thumbnail=_clean(raw.get("thumbnail")) or None,
+            ))
+        return result
 
     async def load_episode_page(
         self,

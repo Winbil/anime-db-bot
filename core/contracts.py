@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from core.identity import AnimeIdentity
-from core.models import AnimeRecord, EpisodePage, EpisodeRecord, SearchPage
+from core.models import AnimeRecord, EpisodePage, EpisodeRecord, SearchPage, TrailerRecord
 
 
 class AnimeSearchProvider(Protocol):
@@ -62,4 +62,16 @@ class AnimeEpisodeSource(Protocol):
         identity: AnimeIdentity,
         episode_number: int,
     ) -> EpisodeRecord | None:
+        ...
+
+
+class AnimeTrailerSource(Protocol):
+    """Lazy promotional-video capability supplied by one backend."""
+
+    name: str
+    display_name: str
+    source_key: str
+    backend_key: str
+
+    async def load_trailers(self, identity: AnimeIdentity) -> list[TrailerRecord]:
         ...

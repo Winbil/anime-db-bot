@@ -58,7 +58,7 @@ Best-effort resolver также может добавлять новые свя�
 
 В MAL-source **Jikan используется как MAL web-supplement**, а не как отдельная identity-база. Он живёт в отдельном локальном контейнере `anime-db-bot-Jikan`, получает уже подтверждённый `mal` ID и по запросу парсит публичные страницы MyAnimeList. В `AnimeIdentity` нового `jikan` ID нет; provenance хранится как `source=mal`, `backend=jikan`, а в UI этот слой называется `MAL (MyAnimeList) / Jikan`.
 
-Через Jikan реализованы только те MAL-web capabilities, которых не хватает уже существующей модели MAL API v2: **лицензиаты**, **распределение оценок 1–10**, lazy **staff**, lazy **оригинальные Japanese voice actors**, а также lazy-раздел **«Серии»**. Лицензиаты и histogram дополняют обычную MAL metadata-карточку best-effort; отказ Jikan не ломает официальный MAL record. Staff/сэйю грузятся только при открытии соответствующего раздела, список эпизодов — при открытии «Серии», detail эпизода — только при выборе серии. Никакой локальной индексации каталога MAL, MongoDB, Redis или Typesense для этого не используется.
+Через Jikan реализованы только те MAL-web capabilities, которых не хватает уже существующей модели MAL API v2: **лицензиаты**, **распределение оценок 1–10**, lazy **staff**, lazy **оригинальные Japanese voice actors**, lazy **трейлеры/promos** и lazy-раздел **«Серии»**. Лицензиаты и histogram дополняют обычную MAL metadata-карточку best-effort; отказ Jikan не ломает официальный MAL record. Staff/сэйю, трейлеры и список эпизодов грузятся только при открытии соответствующего раздела, detail эпизода — только при выборе серии. Никакой локальной индексации каталога MAL, MongoDB, Redis или Typesense для этого не используется.
 
 `AnimeAggregator` объединяет названия, жанры, студии, даты, статусы, оценки, персонал и другие поля. Provenance сохраняется там, где он действительно нужен: внешние ID/URL, описания, source-specific варианты названий, staff/voices и портреты.
 
@@ -196,6 +196,16 @@ Lazy people loaders получают `AnimeIdentity`: AniList/Shikimori испо
 
 Для Shikimori REST действует общий process-wide rate limiter и retry после HTTP 429 с `Retry-After`.
 
+## Ленивая загрузка трейлеров
+
+Раздел **«Трейлеры»** не участвует в сборке основной карточки. При первом открытии `TrailerService` параллельно запрашивает только источники, для которых уже есть подтверждённый `AnimeIdentity` edge, и кеширует результат в card-session.
+
+- AniList — `Media.trailer` (YouTube/Dailymotion);
+- Shikimori — `/api/animes/:id/videos`, только promotional kinds `pv`, `character_trailer`, `cm`; OP/ED, clips и episode previews не смешиваются с трейлерами;
+- MAL (MyAnimeList) / Jikan — MAL videos/promos page через локальный Jikan parser, с provenance `source=mal`, `backend=jikan`.
+
+В UI сначала выбирается источник. Внутри источника ролики показываются по 5 на страницу с названием, типом, площадкой и отдельной URL-кнопкой. Ошибка одного trailer-backend не скрывает данные остальных источников.
+
 ## Jikan container и обновления
 
 Минимальный parser-service находится **в этом же репозитории**:
@@ -219,7 +229,7 @@ docker compose up -d --no-build jikan
 
 Контейнер называется `anime-db-bot-Jikan`, работает через host network из-за ограничений Docker subnet pool на текущем сервере, но PHP слушает только `127.0.0.1:${JIKAN_PORT:-8091}`. Наружу parser-service не публикуется.
 
-`start.sh` проверяет контейнер и поднимает его при необходимости, но отказ Jikan не останавливает основной бот: официальный MAL metadata/search продолжает работать, а временно пропадают только Jikan-дополнения — лицензиаты, histogram оценок, MAL staff/сэйю и раздел серий.
+`start.sh` проверяет контейнер и поднимает его при необходимости, но отказ Jikan не останавливает основной бот: официальный MAL metadata/search продолжает работать, а временно пропадают только Jikan-дополнения — лицензиаты, histogram оценок, MAL staff/сэйю, MAL/Jikan трейлеры и раздел серий.
 
 `update-jikan.sh` раз в сутки сравнивает установленную версию с последним стабильным GitHub release Jikan. Перед переключением он ждёт отсутствия активного Jikan-request lock, сохраняет старый image для rollback, собирает новый image, запускает и проверяет health/version. При ошибке цепочка повторяется ещё два раза; после трёх неудач возвращается старый image и новая попытка откладывается до следующей ежедневной проверки. После успешного запуска старый image удаляется.
 
