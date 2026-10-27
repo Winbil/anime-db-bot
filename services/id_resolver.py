@@ -4,6 +4,7 @@ import logging
 import time
 
 from core.identity import AnimeIdentity
+from mappings.database import MAPPING_DATABASE
 from search.providers.shikimori import ShikimoriSearchProvider
 
 
@@ -70,12 +71,25 @@ async def enrich_identity(
 ) -> AnimeIdentity:
     """Best-effort cross-database identity enrichment.
 
-    Resolvers add optional edges to the identity graph; none of them is a global
-    primary-key rule. The first resolver is MAL -> Shikimori only because
-    Shikimori search currently exposes both IDs. Future resolvers can add other
-    directions without changing source contracts.
+    The first layer is the local disk-backed mapping graph. It can add only
+    unambiguous accepted edges from ``mappings.db`` and never overwrites an ID
+    already confirmed by a source. Shikimori remains a live fallback because the
+    external mapping datasets do not provide a useful Shikimori cross-ID graph.
     """
     enriched = identity.copy()
+
+    mapped = MAPPING_DATABASE.resolve(enriched)
+    if mapped:
+        conflicts = enriched.merge_missing(mapped)
+        if conflicts:
+            logging.warning("Ignoring conflicting mappings.db edges: %s", conflicts)
+        additions = {
+            provider: external_id
+            for provider, external_id in mapped.items()
+            if provider not in identity.external_ids
+        }
+        if additions:
+            logging.info("Identity enriched from mappings.db: %s", additions)
 
     if not enriched.has("shikimori"):
         mal_id = enriched.get("mal")
