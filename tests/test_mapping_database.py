@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
 from core.identity import AnimeIdentity
 from mappings.config import MappingSourceSpec
-from mappings.database import MappingDatabase, MappingDatabaseBuilder, MappingRecord
+from mappings.database import MappingDatabaseBuilder, MappingRecord
 from mappings.importers import (
     import_anibridge,
     import_anime_lists,
@@ -16,6 +17,7 @@ from mappings.importers import (
     import_kometa,
     import_manami,
 )
+from mappings.resolver import MappingResolver
 
 
 class MappingDatabaseTests(unittest.TestCase):
@@ -37,7 +39,7 @@ class MappingDatabaseTests(unittest.TestCase):
             license_note="test",
         )
 
-    def _build(self, datasets: list[tuple[str, list[MappingRecord]]]) -> MappingDatabase:
+    def _build(self, datasets: list[tuple[str, list[MappingRecord]]]) -> MappingResolver:
         with MappingDatabaseBuilder(self.path) as builder:
             for index, (name, records) in enumerate(datasets):
                 builder.ingest_dataset(
@@ -47,16 +49,19 @@ class MappingDatabaseTests(unittest.TestCase):
                     downloaded_at="2026-10-27T00:00:00+00:00",
                 )
             builder.finalize(built_at="2026-10-27T00:00:00+00:00")
-        return MappingDatabase(self.path)
+        return MappingResolver(self.path)
 
     def test_direct_high_trust_mapping_is_resolved_from_sqlite(self) -> None:
-        db = self._build([("manami", [MappingRecord(
+        resolver = self._build([("manami", [MappingRecord(
             record_key="1",
             ids={"mal": ("100",), "anidb": ("200",)},
             evidence_group="manami",
             weight=82,
         )])])
-        self.assertEqual(db.resolve(AnimeIdentity({"mal": "100"})), {"anidb": "200"})
+        self.assertEqual(
+            resolver.resolve(AnimeIdentity({"mal": "100"})),
+            {"anidb": "200"},
+        )
 
     def test_correlated_derived_datasets_do_not_double_vote(self) -> None:
         edge = lambda key: MappingRecord(
@@ -65,45 +70,65 @@ class MappingDatabaseTests(unittest.TestCase):
             evidence_group="manami",
             weight=60,
         )
-        db = self._build([("fribb", [edge("a")]), ("kometa", [edge("b")])])
-        self.assertEqual(db.resolve(AnimeIdentity({"mal": "100"})), {})
-        with db._connect() as conn:
+        resolver = self._build([("fribb", [edge("a")]), ("kometa", [edge("b")])])
+        self.assertEqual(resolver.resolve(AnimeIdentity({"mal": "100"})), {})
+        with sqlite3.connect(self.path) as conn:
             row = conn.execute(
                 "SELECT status, evidence_count, evidence_group_count FROM edges"
             ).fetchone()
         self.assertEqual(row, ("candidate", 2, 1))
 
     def test_independent_groups_can_corroborate_lower_weight_edge(self) -> None:
-        db = self._build([
+        resolver = self._build([
             ("a", [MappingRecord("1", {"mal": ("100",), "anidb": ("200",)}, "g1", 60)]),
             ("b", [MappingRecord("2", {"mal": ("100",), "anidb": ("200",)}, "g2", 60)]),
         ])
-        self.assertEqual(db.resolve(AnimeIdentity({"mal": "100"})), {"anidb": "200"})
+        self.assertEqual(
+            resolver.resolve(AnimeIdentity({"mal": "100"})),
+            {"anidb": "200"},
+        )
 
     def test_one_to_many_conflict_is_directional(self) -> None:
-        db = self._build([("animap", [
+        resolver = self._build([("animap", [
             MappingRecord("1", {"anidb": ("200",), "mal": ("100",)}, "animap", 95),
             MappingRecord("2", {"anidb": ("200",), "mal": ("101",)}, "animap", 95),
         ])])
-        self.assertEqual(db.resolve(AnimeIdentity({"anidb": "200"})), {})
-        self.assertEqual(db.resolve(AnimeIdentity({"mal": "100"})), {"anidb": "200"})
+        self.assertEqual(resolver.resolve(AnimeIdentity({"anidb": "200"})), {})
+        self.assertEqual(
+            resolver.resolve(AnimeIdentity({"mal": "100"})),
+            {"anidb": "200"},
+        )
 
-    def test_recursive_graph_expands_multiple_safe_ids(self) -> None:
-        db = self._build([("direct", [
+    def test_mapping_enrichment_never_follows_arbitrary_transitive_chain(self) -> None:
+        resolver = self._build([("direct", [
             MappingRecord("1", {"mal": ("100",), "anidb": ("200",)}, "direct", 90),
             MappingRecord("2", {"anidb": ("200",), "kitsu": ("300",)}, "direct", 90),
         ])])
-        resolved = db.resolve(AnimeIdentity({"mal": "100"}))
-        self.assertEqual(resolved["anidb"], "200")
-        self.assertEqual(resolved["kitsu"], "300")
+        self.assertEqual(
+            resolver.resolve(AnimeIdentity({"mal": "100"})),
+            {"anidb": "200"},
+        )
+        self.assertEqual(
+            resolver.resolve(AnimeIdentity({"anidb": "200"})),
+            {"mal": "100", "kitsu": "300"},
+        )
 
-    def test_confirmed_source_id_is_never_overwritten(self) -> None:
-        db = self._build([("direct", [
+    def test_multiple_confirmed_seeds_must_agree_on_new_provider(self) -> None:
+        resolver = self._build([("direct", [
             MappingRecord("1", {"mal": ("100",), "anidb": ("200",)}, "direct", 90),
-            MappingRecord("2", {"anidb": ("200",), "anilist": ("300",)}, "direct", 90),
+            MappingRecord("2", {"anilist": ("150",), "anidb": ("200",)}, "direct", 90),
         ])])
         self.assertEqual(
-            db.resolve(AnimeIdentity({"mal": "100", "anilist": "999"})),
+            resolver.resolve(AnimeIdentity({"mal": "100", "anilist": "150"})),
+            {"anidb": "200"},
+        )
+
+    def test_confirmed_source_id_is_never_overwritten(self) -> None:
+        resolver = self._build([("direct", [
+            MappingRecord("1", {"mal": ("100",), "anilist": ("300",)}, "direct", 90),
+        ])])
+        self.assertEqual(
+            resolver.resolve(AnimeIdentity({"mal": "100", "anilist": "999"})),
             {},
         )
 
