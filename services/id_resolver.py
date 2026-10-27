@@ -4,7 +4,7 @@ import logging
 import time
 
 from core.identity import AnimeIdentity
-from mappings.database import MAPPING_DATABASE
+from mappings.resolver import MAPPING_RESOLVER
 from search.providers.shikimori import ShikimoriSearchProvider
 
 
@@ -71,14 +71,15 @@ async def enrich_identity(
 ) -> AnimeIdentity:
     """Best-effort cross-database identity enrichment.
 
-    The first layer is the local disk-backed mapping graph. It can add only
-    unambiguous accepted edges from ``mappings.db`` and never overwrites an ID
-    already confirmed by a source. Shikimori remains a live fallback because the
-    external mapping datasets do not provide a useful Shikimori cross-ID graph.
+    The first layer uses only direct, accepted mappings from source-confirmed IDs
+    in the disk-backed ``mappings.db``. Arbitrary transitive chains are deliberately
+    forbidden because TVDB/TMDB/AniDB/MAL can split seasons and specials differently.
+    Shikimori remains a live fallback because the external mapping datasets do not
+    provide a useful Shikimori cross-ID graph.
     """
     enriched = identity.copy()
 
-    mapped = MAPPING_DATABASE.resolve(enriched)
+    mapped = MAPPING_RESOLVER.resolve(enriched)
     if mapped:
         conflicts = enriched.merge_missing(mapped)
         if conflicts:
