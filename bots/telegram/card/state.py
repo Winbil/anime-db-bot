@@ -17,6 +17,8 @@ class AnimeCardSession:
     trailers_loaded: bool = False
     trailers_by_source: dict[str, list[TrailerRecord]] = field(default_factory=dict)
     trailer_errors: dict[str, str] = field(default_factory=dict)
+    characters_loaded: bool = False
+    character_errors: dict[str, str] = field(default_factory=dict)
 
 
 ANIME_SESSIONS: ExpiringSessionStore[AnimeCardSession] = ExpiringSessionStore(

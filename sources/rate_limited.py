@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.identity import AnimeIdentity
-from core.models import AnimeRecord, PersonCredit
+from core.models import AnimeRecord, CharacterRecord, PersonCredit
 from services.rate_limits import wait_for_upstream
 
 
@@ -25,6 +25,13 @@ class RateLimitedSourceProxy:
 
 class PeopleRateLimitedSourceProxy(RateLimitedSourceProxy):
     """Rate-limit expensive lazy people operations independently."""
+
+    async def load_characters(self, identity: AnimeIdentity) -> list[CharacterRecord]:
+        loader = getattr(self._source, "load_characters", None)
+        if not callable(loader):
+            return []
+        await wait_for_upstream(self.source_key, "people")
+        return await loader(identity)
 
     async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
         loader = getattr(self._source, "load_staff", None)
@@ -79,6 +86,7 @@ def rate_limited_source(source: Any, source_key: str) -> RateLimitedSourceProxy:
     has_people = any(
         callable(getattr(source, name, None))
         for name in (
+            "load_characters",
             "load_staff",
             "load_voices",
             "load_staff_batch",

@@ -58,7 +58,7 @@ Best-effort resolver также может добавлять новые свя�
 
 В MAL-source **Jikan используется как MAL web-supplement**, а не как отдельная identity-база. Он живёт в отдельном локальном контейнере `anime-db-bot-Jikan`, получает уже подтверждённый `mal` ID и по запросу парсит публичные страницы MyAnimeList. В `AnimeIdentity` нового `jikan` ID нет; provenance хранится как `source=mal`, `backend=jikan`, а в UI этот слой называется `MAL (MyAnimeList) / Jikan`.
 
-Через Jikan реализованы только те MAL-web capabilities, которых не хватает уже существующей модели MAL API v2: **лицензиаты**, **распределение оценок 1–10**, lazy **staff**, lazy **оригинальные Japanese voice actors**, lazy **трейлеры/promos** и lazy-раздел **«Серии»**. Лицензиаты и histogram дополняют обычную MAL metadata-карточку best-effort; отказ Jikan не ломает официальный MAL record. Staff/сэйю, трейлеры и список эпизодов грузятся только при открытии соответствующего раздела, detail эпизода — только при выборе серии. Никакой локальной индексации каталога MAL, MongoDB, Redis или Typesense для этого не используется.
+Через Jikan реализованы только те MAL-web capabilities, которых не хватает уже существующей модели MAL API v2: **лицензиаты**, **распределение оценок 1–10**, lazy **staff**, lazy **оригинальные Japanese voice actors**, lazy **персонажи**, lazy **трейлеры/promos** и lazy-раздел **«Серии»**. Лицензиаты и histogram дополняют обычную MAL metadata-карточку best-effort; отказ Jikan не ломает официальный MAL record. Staff/сэйю, трейлеры и список эпизодов грузятся только при открытии соответствующего раздела, detail эпизода — только при выборе серии. Никакой локальной индексации каталога MAL, MongoDB, Redis или Typesense для этого не используется.
 
 `AnimeAggregator` объединяет названия, жанры, студии, даты, статусы, оценки, персонал и другие поля. Provenance сохраняется там, где он действительно нужен: внешние ID/URL, описания, source-specific варианты названий, staff/voices и портреты.
 
@@ -195,6 +195,16 @@ Lazy people loaders получают `AnimeIdentity`: AniList/Shikimori испо
 Данные вливаются в уже существующую `AggregatedAnime`, поэтому основная metadata карточки повторно не запрашивается.
 
 Для Shikimori REST действует общий process-wide rate limiter и retry после HTTP 429 с `Retry-After`.
+
+## Ленивая загрузка персонажей
+
+Раздел **«Персонажи»** не участвует в основной metadata-агрегации и загружается только при первом открытии. UI повторяет модель раздела сэйю: есть общий режим **«Все персонажи»**, переключение Shikimori / AniList / MAL (MyAnimeList) / Jikan, отдельная страница для записей без портрета и последовательный просмотр персонажей с портретом, ролью и счётчиком.
+
+- AniList — `Media.characters`, role + names + portrait;
+- Shikimori — `/api/animes/:id/roles`, без дополнительных character-detail запросов для списка;
+- MAL (MyAnimeList) / Jikan — тот же lazy `characters & staff` payload, который уже используется для staff/сэйю, поэтому отдельный MAL scrape не требуется.
+
+`CharacterRecord` хранится отдельно от `PersonCredit`: у персонажа собственные source-scoped IDs, aliases, canonical role и portrait provenance. В общем режиме имена нормализуются через те же identity-keys, что и имена людей, поэтому `Kagenou, Cid` и `Cid Kagenou` не дублируются.
 
 ## Ленивая загрузка трейлеров
 

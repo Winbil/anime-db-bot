@@ -173,6 +173,21 @@ class PersonCredit:
 
 
 @dataclass(slots=True)
+class CharacterRecord:
+    """One source-scoped anime character used by lazy character views.
+
+    Names stay locale-neutral/raw, ``role`` is a canonical key when known,
+    external IDs remain source-scoped, and portraits keep their provenance.
+    """
+
+    name: str
+    role: str | None = None
+    aliases: list[str] = field(default_factory=list)
+    external_ids: dict[str, str] = field(default_factory=dict)
+    portraits: dict[str, list[str]] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class AnimeRecord:
     """Normalized locale-neutral metadata returned by one source.
 
@@ -284,6 +299,7 @@ class AggregatedAnime:
     synonyms_by_source: dict[str, list[str]] = field(default_factory=dict)
     staff_by_source: dict[str, list[PersonCredit]] = field(default_factory=dict)
     voices_by_source: dict[str, list[PersonCredit]] = field(default_factory=dict)
+    characters_by_source: dict[str, list[CharacterRecord]] = field(default_factory=dict)
 
     descriptions: dict[str, str] = field(default_factory=dict)
     background: str | None = None
@@ -291,6 +307,7 @@ class AggregatedAnime:
     urls: dict[str, str] = field(default_factory=dict)
     staff: list[PersonCredit] = field(default_factory=list)
     voices: list[PersonCredit] = field(default_factory=list)
+    characters: list[CharacterRecord] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
 
     @property

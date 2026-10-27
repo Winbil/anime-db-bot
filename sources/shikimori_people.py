@@ -11,7 +11,7 @@ import httpx
 
 from core.canonicalization import voice_role_token
 from core.http_config import USER_AGENT
-from core.models import AnimeRecord, PersonCredit
+from core.models import AnimeRecord, CharacterRecord, PersonCredit
 from sources.shikimori import (
     ShikimoriSource as BaseShikimoriSource,
     _best_poster_url,
@@ -177,6 +177,44 @@ async def _rest_anime_roles(anime_id: str) -> list[dict[str, Any]]:
     if not isinstance(body, list):
         raise RuntimeError("Shikimori anime roles returned non-list JSON")
     return [item for item in body if isinstance(item, dict)]
+
+
+def _characters_from_roles(entries: list[dict[str, Any]]) -> list[CharacterRecord]:
+    result: list[CharacterRecord] = []
+    seen: set[str] = set()
+    role_map = {"main": "main", "supporting": "supporting", "background": "background"}
+    for entry in entries:
+        character = entry.get("character")
+        if not isinstance(character, dict) or not character:
+            continue
+        character_id = _clean_text(character.get("id"))
+        name = _clean_text(character.get("name"))
+        russian = _clean_text(character.get("russian"))
+        preferred = name or russian
+        if not preferred:
+            continue
+        key = character_id or preferred.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        raw_roles = entry.get("roles") or []
+        raw_role = _clean_text(raw_roles[0] if isinstance(raw_roles, list) and raw_roles else "")
+        role = role_map.get(raw_role.casefold(), raw_role.casefold() or None)
+        image = character.get("image") or {}
+        portrait = _best_rest_image_url(image) if isinstance(image, dict) else None
+        aliases = _dedupe([name, russian])
+        result.append(CharacterRecord(
+            name=preferred,
+            role=role,
+            aliases=[value for value in aliases if value.casefold() != preferred.casefold()],
+            external_ids={"shikimori": character_id} if character_id else {},
+            portraits={"Shikimori": [portrait]} if portrait else {},
+        ))
+    return result
+
+
+async def _load_shikimori_characters(anime_id: str) -> list[CharacterRecord]:
+    return _characters_from_roles(await _rest_anime_roles(anime_id))
 
 
 def _character_ids_from_roles(entries: list[dict[str, Any]]) -> list[str]:

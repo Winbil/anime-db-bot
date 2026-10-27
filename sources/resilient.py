@@ -8,7 +8,7 @@ from typing import Any, Awaitable, Callable, TypeVar
 import httpx
 
 from core.identity import AnimeIdentity
-from core.models import AnimeRecord, PersonCredit
+from core.models import AnimeRecord, CharacterRecord, PersonCredit
 from core.people_loading import PeopleBatch
 
 T = TypeVar("T")
@@ -96,6 +96,16 @@ class RetryingSourceProxy:
 class PeopleRetryingSourceProxy(RetryingSourceProxy):
     """Retry optional lazy people operations exposed by the wrapped source."""
 
+    async def load_characters(self, identity: AnimeIdentity) -> list[CharacterRecord]:
+        loader = getattr(self._source, "load_characters", None)
+        if not callable(loader):
+            return []
+        return await _retry_call(
+            self.name,
+            "characters",
+            lambda: loader(identity),
+        )
+
     async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
         loader = getattr(self._source, "load_staff", None)
         if not callable(loader):
@@ -160,8 +170,10 @@ class PeopleRetryingSourceProxy(RetryingSourceProxy):
 
 
 def resilient_source(source: Any) -> RetryingSourceProxy:
-    if callable(getattr(source, "load_staff", None)) or callable(
-        getattr(source, "load_voices", None)
+    if (
+        callable(getattr(source, "load_characters", None))
+        or callable(getattr(source, "load_staff", None))
+        or callable(getattr(source, "load_voices", None))
     ):
         return PeopleRetryingSourceProxy(source)
     return RetryingSourceProxy(source)

@@ -57,6 +57,7 @@ class _PeopleSource:
     name = "Shikimori"
 
     def __init__(self) -> None:
+        self.load_characters = AsyncMock(return_value=[])
         self.load_staff = AsyncMock(return_value=[])
         self.load_voices = AsyncMock(return_value=[])
         self.load_staff_batch = AsyncMock(return_value=PeopleBatch(complete=True))
@@ -74,6 +75,17 @@ class RateLimitedSourceProxyTests(unittest.IsolatedAsyncioTestCase):
 
         wait.assert_awaited_once_with("anilist", "metadata")
         source.get_details.assert_awaited_once_with(identity)
+
+    async def test_character_loader_uses_people_bucket(self) -> None:
+        source = _PeopleSource()
+        proxy = PeopleRateLimitedSourceProxy(source, "shikimori")
+        identity = AnimeIdentity.from_mapping({"shikimori": "1"})
+
+        with patch("sources.rate_limited.wait_for_upstream", new=AsyncMock()) as wait:
+            await proxy.load_characters(identity)
+
+        wait.assert_awaited_once_with("shikimori", "people")
+        source.load_characters.assert_awaited_once_with(identity)
 
     async def test_people_batch_proxy_preserves_portrait_limit(self) -> None:
         source = _PeopleSource()

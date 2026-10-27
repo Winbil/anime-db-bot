@@ -175,7 +175,9 @@
     "trailers_title": "Trailers — {source}",
     "trailer_default": "Trailer {number}",
     "trailer_kind": "Type: {value}",
-    "trailer_hosting": "Platform: {value}"
+    "trailer_hosting": "Platform: {value}",
+    "section_characters": "Characters",
+    "characters_button": "Characters"
   },
   "people": {
     "staff": "Staff and creators",
@@ -361,5 +363,23 @@
     "trailer": "Trailer / PV",
     "character_trailer": "Character trailer",
     "commercial": "Commercial"
+  },
+  "characters": {
+    "title": "Characters",
+    "all": "All characters",
+    "without_portrait": "Without a portrait:",
+    "none": "None.",
+    "role": "Role: {role}",
+    "portraits": "Portraits: {sources}",
+    "shown": "Shown {shown}/{total}",
+    "loading": "Loading characters and portraits…",
+    "empty": "No characters are available.",
+    "load_failed": "Could not load characters."
+  },
+  "character_role": {
+    "main": "Main",
+    "supporting": "Supporting",
+    "background": "Background",
+    "other": "Other"
   }
 }

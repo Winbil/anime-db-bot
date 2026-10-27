@@ -3,8 +3,9 @@ from __future__ import annotations
 import logging
 
 from core.identity import AnimeIdentity
-from core.models import AnimeRecord, PersonCredit
+from core.models import AnimeRecord, CharacterRecord, PersonCredit
 from core.people_loading import PeopleBatch
+from sources.anilist import _all_characters as _anilist_all_characters
 from sources.anilist import _cached_people as _anilist_cached_people
 from sources.anilist import _graphql as _anilist_graphql
 from sources.anilist import _record as _anilist_record
@@ -13,7 +14,7 @@ from sources.shikimori import _credits as _shikimori_credits
 from sources.shikimori import _get_raw as _shikimori_get_raw
 from sources.shikimori import _get_staff_raw as _shikimori_get_staff_raw
 from sources.shikimori import _record as _shikimori_record
-from sources.shikimori_people import _load_shikimori_voices
+from sources.shikimori_people import _load_shikimori_characters, _load_shikimori_voices
 from sources.shikimori_people_batches import load_shikimori_voices_batch
 
 
@@ -73,6 +74,12 @@ class AniListIdentitySource:
         if not mal_id.isdigit():
             return None
         return await self._legacy.get_details(mal_id, identity.external_ids)
+
+    async def load_characters(self, identity: AnimeIdentity) -> list[CharacterRecord]:
+        media_id = str(identity.get("anilist") or "").strip()
+        if not media_id.isdigit():
+            return []
+        return await _anilist_all_characters(int(media_id))
 
     async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
         media_id = str(identity.get("anilist") or "").strip()
@@ -138,6 +145,12 @@ class ShikimoriIdentitySource:
             anime_id,
         )
         return record
+
+    async def load_characters(self, identity: AnimeIdentity) -> list[CharacterRecord]:
+        anime_id = str(identity.get("shikimori") or "").strip()
+        if not anime_id.isdigit():
+            return []
+        return await _load_shikimori_characters(anime_id)
 
     async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
         anime_id = str(identity.get("shikimori") or "").strip()
