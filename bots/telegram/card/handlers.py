@@ -157,17 +157,64 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             locale=locale,
         )
 
+    @dp.callback_query(F.data.startswith("ap:"))
+    async def episode_source_callback_handler(callback: CallbackQuery) -> None:
+        locale = get_user_locale(callback.from_user.id)
+        data = (callback.data or "").split(":")
+        if len(data) != 4 or not data[2].isdigit() or not data[3].isdigit():
+            await callback.answer(text("card", "invalid_source", locale=locale), show_alert=True)
+            return
+        _, token, backend_index_text, page_text = data
+        session = _session_for_callback(callback, token)
+        if session is None:
+            raw_session = ANIME_SESSIONS.get(token)
+            key = "not_owner" if raw_session is not None else "expired"
+            await callback.answer(text("card", key, locale=locale), show_alert=True)
+            return
+        if callback.message is None:
+            await callback.answer()
+            return
+        await callback.answer()
+        try:
+            await edit_episodes_view(
+                callback.message,
+                token,
+                session,
+                view_page=int(page_text),
+                backend_index=int(backend_index_text),
+                locale=locale,
+            )
+        except ValueError:
+            await edit_episodes_view(
+                callback.message,
+                token,
+                session,
+                view_page=0,
+                backend_index=None,
+                locale=locale,
+            )
+
     @dp.callback_query(F.data.startswith("ae:"))
     async def episode_detail_callback_handler(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
         data = (callback.data or "").split(":")
-        if len(data) != 4 or not data[2].isdigit() or not data[3].isdigit():
+        if len(data) == 4 and data[2].isdigit() and data[3].isdigit():
+            _, token, episode_text, return_page_text = data
+            backend_index = 0
+        elif (
+            len(data) == 5
+            and data[2].isdigit()
+            and data[3].isdigit()
+            and data[4].isdigit()
+        ):
+            _, token, backend_index_text, episode_text, return_page_text = data
+            backend_index = int(backend_index_text)
+        else:
             await callback.answer(
                 text("card", "invalid_command", locale=locale), show_alert=True
             )
             return
 
-        _, token, episode_text, return_page_text = data
         session = _session_for_callback(callback, token)
         if session is None:
             raw_session = ANIME_SESSIONS.get(token)
@@ -185,6 +232,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             session,
             episode_number=int(episode_text),
             return_page=int(return_page_text),
+            backend_index=backend_index,
             locale=locale,
         )
 
@@ -303,6 +351,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 token,
                 raw_session,
                 view_page=int(page_text),
+                backend_index=None,
                 locale=locale,
             )
             return
