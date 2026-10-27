@@ -1,5 +1,5 @@
 from __future__ import annotations
 
-from mappings.database import MappingDatabase
+from mappings.resolver import MappingResolver
 
-__all__ = ["MappingDatabase"]
+__all__ = ["MappingResolver"]
