@@ -12,8 +12,8 @@ from core.models import AggregatedAnime, EpisodePage, EpisodeRecord, TrailerReco
 class AnimeCardSession:
     anime: AggregatedAnime
     owner_user_id: int
-    episode_pages: dict[int, EpisodePage] = field(default_factory=dict)
-    episode_details: dict[int, EpisodeRecord] = field(default_factory=dict)
+    episode_pages: dict[tuple[str, int], EpisodePage] = field(default_factory=dict)
+    episode_details: dict[tuple[str, int], EpisodeRecord] = field(default_factory=dict)
     trailers_loaded: bool = False
     trailers_by_source: dict[str, list[TrailerRecord]] = field(default_factory=dict)
     trailer_errors: dict[str, str] = field(default_factory=dict)
