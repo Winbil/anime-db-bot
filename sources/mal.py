@@ -323,6 +323,9 @@ class MALSource:
             record.score_distribution = dict(supplement["score_distribution"])
         return record
 
+    async def load_characters(self, identity: AnimeIdentity) -> list[CharacterRecord]:
+        return await self._jikan.load_characters(identity)
+
     async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
         return await self._jikan.load_staff(identity)
 

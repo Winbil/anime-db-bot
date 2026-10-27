@@ -12,7 +12,7 @@ import httpx
 
 from core.canonicalization import canonical_genre_token, canonical_role_token, voice_role_token
 from core.http_config import USER_AGENT
-from core.models import AnimeRecord, PersonCredit, PopularityRanking
+from core.models import AnimeRecord, CharacterRecord, PersonCredit, PopularityRanking
 from localization import source_value_key
 
 DEFAULT_ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
@@ -77,7 +77,12 @@ query AnimeCharacters($id: Int!, $page: Int!) {
     characters(page: $page, perPage: 25) {
       pageInfo { hasNextPage }
       edges {
-        node { id name { full native } }
+        role
+        node {
+          id
+          name { full native alternative }
+          image { large medium }
+        }
         voiceActors(language: JAPANESE) {
           id
           name { full native alternative }
@@ -332,6 +337,58 @@ def _staff_from_connection(connection: dict[str, Any] | None) -> list[PersonCred
         if credit is not None:
             result.append(credit)
     return result
+
+
+def _characters_from_connection(connection: dict[str, Any] | None) -> list[CharacterRecord]:
+    result: list[CharacterRecord] = []
+    role_map = {
+        "MAIN": "main",
+        "SUPPORTING": "supporting",
+        "BACKGROUND": "background",
+    }
+    for edge in (connection or {}).get("edges") or []:
+        node = edge.get("node") or {}
+        names = _name_parts(node)
+        if not names:
+            continue
+        preferred = names[0]
+        character_id = _clean_text(node.get("id"))
+        image = node.get("image") or {}
+        portraits = _dedupe([_clean_text(image.get("large")), _clean_text(image.get("medium"))])
+        raw_role = _clean_text(edge.get("role")).upper()
+        result.append(CharacterRecord(
+            name=preferred,
+            role=role_map.get(raw_role, raw_role.casefold() or None),
+            aliases=[name for name in names[1:] if name.casefold() != preferred.casefold()],
+            external_ids={"anilist": character_id} if character_id else {},
+            portraits={"AniList": portraits} if portraits else {},
+        ))
+    return result
+
+
+def _dedupe_characters(values: list[CharacterRecord]) -> list[CharacterRecord]:
+    result: list[CharacterRecord] = []
+    seen: set[str] = set()
+    for character in values:
+        key = character.external_ids.get("anilist") or character.name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(character)
+    return result
+
+
+async def _all_characters(media_id: int) -> list[CharacterRecord]:
+    result: list[CharacterRecord] = []
+    page = 1
+    has_next = True
+    while has_next and page <= _people_max_pages():
+        data = await _graphql(CHARACTERS_PAGE_QUERY, {"id": media_id, "page": page})
+        connection = ((data.get("Media") or {}).get("characters") or {})
+        result.extend(_characters_from_connection(connection))
+        has_next = bool((connection.get("pageInfo") or {}).get("hasNextPage"))
+        page += 1
+    return _dedupe_characters(result)
 
 
 def _voices_from_connection(connection: dict[str, Any] | None) -> list[PersonCredit]:

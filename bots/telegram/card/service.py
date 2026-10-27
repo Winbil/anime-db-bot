@@ -9,6 +9,7 @@ from bots.telegram.card.state import remember_anime
 from core.models import SearchCandidate
 from localization import text
 from search.registry import get_search_providers
+from services.characters import CharacterService
 from services.episodes import EpisodeService
 from services.identity_aggregator import AnimeAggregator
 from services.search import SearchService
@@ -22,6 +23,7 @@ SEARCH_PROVIDERS = get_search_providers()
 SOURCES = get_sources()
 SEARCH_SERVICE = SearchService(SEARCH_PROVIDERS)
 AGGREGATOR = AnimeAggregator(SOURCES)
+CHARACTER_SERVICE = CharacterService(SOURCES)
 EPISODE_SERVICE = EpisodeService(get_episode_sources())
 TRAILER_SERVICE = TrailerService(get_trailer_sources())
 

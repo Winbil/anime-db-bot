@@ -175,7 +175,9 @@
     "trailers_title": "Трейлеры — {source}",
     "trailer_default": "Трейлер {number}",
     "trailer_kind": "Тип: {value}",
-    "trailer_hosting": "Площадка: {value}"
+    "trailer_hosting": "Площадка: {value}",
+    "section_characters": "Персонажи",
+    "characters_button": "Персонажи"
   },
   "people": {
     "staff": "Авторы и команда",
@@ -361,5 +363,23 @@
     "trailer": "Трейлер / PV",
     "character_trailer": "Трейлер персонажа",
     "commercial": "Рекламный ролик"
+  },
+  "characters": {
+    "title": "Персонажи",
+    "all": "Все персонажи",
+    "without_portrait": "Без портрета:",
+    "none": "Нет.",
+    "role": "Роль: {role}",
+    "portraits": "Портреты: {sources}",
+    "shown": "Показано {shown}/{total}",
+    "loading": "Загружаю персонажей и портреты…",
+    "empty": "Нет доступных персонажей.",
+    "load_failed": "Не удалось загрузить персонажей."
+  },
+  "character_role": {
+    "main": "Главный",
+    "supporting": "Второстепенный",
+    "background": "Фоновый",
+    "other": "Другая"
   }
 }

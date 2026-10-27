@@ -96,9 +96,20 @@ function peopleToArray(object $result): array
         ];
     }
 
+    $characters = [];
     $voices = [];
     foreach ($result->getCharacters() as $characterItem) {
         $character = $characterItem->getCharacter();
+        $characters[] = [
+            'character' => [
+                'mal_id' => $character->getMalId(),
+                'name' => $character->getName(),
+                'url' => $character->getUrl(),
+                'image_url' => $character->getImages()->getJpg()->getImageUrl(),
+            ],
+            'role' => $characterItem->getRole(),
+            'favorites' => $characterItem->getFavorites(),
+        ];
         foreach ($characterItem->getVoiceActors() as $voiceActor) {
             if (strcasecmp($voiceActor->getLanguage(), 'Japanese') !== 0) {
                 continue;
@@ -110,7 +121,7 @@ function peopleToArray(object $result): array
         }
     }
 
-    return ['staff' => $staff, 'voices' => $voices];
+    return ['staff' => $staff, 'voices' => $voices, 'characters' => $characters];
 }
 
 function promoToArray(object $item): array

@@ -8,7 +8,7 @@ import httpx
 
 from core.canonicalization import canonical_role_token, voice_role_token
 from core.identity import AnimeIdentity
-from core.models import EpisodePage, EpisodeRecord, PersonCredit, TrailerRecord
+from core.models import CharacterRecord, EpisodePage, EpisodeRecord, PersonCredit, TrailerRecord
 from core.people_loading import PeopleBatch
 from core.source_names import MAL_SOURCE_NAME
 from services.rate_limits import wait_for_upstream
@@ -243,6 +243,33 @@ class JikanSource:
             operation="people",
             ttl_env="JIKAN_PEOPLE_CACHE_TTL_SECONDS",
         )
+
+    async def load_characters(self, identity: AnimeIdentity) -> list[CharacterRecord]:
+        raw = await self._load_people_payload(identity)
+        result: list[CharacterRecord] = []
+        seen: set[str] = set()
+        role_map = {"main": "main", "supporting": "supporting", "background": "background"}
+        for item in raw.get("characters") or []:
+            if not isinstance(item, dict) or not isinstance(item.get("character"), dict):
+                continue
+            raw_character = item["character"]
+            name = _clean(raw_character.get("name"))
+            character_id = _clean(raw_character.get("mal_id"))
+            if not name:
+                continue
+            key = character_id or name.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            raw_role = _clean(item.get("role"))
+            portrait = _clean(raw_character.get("image_url"))
+            result.append(CharacterRecord(
+                name=name,
+                role=role_map.get(raw_role.casefold(), raw_role.casefold() or None),
+                external_ids={"mal": character_id} if character_id else {},
+                portraits={JIKAN_DISPLAY_NAME: [portrait]} if portrait else {},
+            ))
+        return result
 
     async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
         raw = await self._load_people_payload(identity)

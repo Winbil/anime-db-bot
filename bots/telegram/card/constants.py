@@ -14,6 +14,7 @@ SECTION_LABELS = {
     "links": "section_links",
     "staff": "section_staff",
     "voices": "section_voices",
+    "characters": "section_characters",
 }
 
 SOURCE_SELECTABLE_SECTIONS = {"titles", "staff", "voices", "popularity"}
