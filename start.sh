@@ -89,7 +89,7 @@ info "Checking dependency consistency..."
 "$PYTHON" -m pip check
 
 info "Compiling Python sources..."
-"$PYTHON" -m compileall -q bots core localization search services sources tests
+"$PYTHON" -m compileall -q bots core localization mappings search services sources tests
 
 info "Running regression and wiring tests..."
 "$PYTHON" -m unittest discover -s tests -v
@@ -107,7 +107,18 @@ MAL_CLIENT_ID_VALUE="$(sed -n 's/^[[:space:]]*MAL_CLIENT_ID[[:space:]]*=[[:space
 if [[ -z "$MAL_CLIENT_ID_VALUE" ]]; then
     info "MAL_CLIENT_ID is empty: MyAnimeList search and metadata will be unavailable."
     info "Available non-MAL sources can still provide partial search and metadata results."
-    info "Optional MAL setup: https://myanimelist.net/apiconfig"
+fi
+
+ANIDB_CLIENT_VALUE="$(sed -n 's/^[[:space:]]*ANIDB_CLIENT[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
+if [[ -z "$ANIDB_CLIENT_VALUE" ]]; then
+    info "ANIDB_CLIENT is empty: AniDB HTTP metadata is disabled; mappings.db can still resolve AniDB IDs."
+else
+    info "AniDB HTTP metadata source is configured."
+fi
+
+info "Checking external cross-ID mapping database..."
+if ! "$PYTHON" -m mappings; then
+    info "Mapping update failed; the bot will use the last valid mappings.db if one exists."
 fi
 
 ensure_jikan_container() {
@@ -135,11 +146,11 @@ ensure_jikan_container
 info "Telegram runtime: $BOT_MODULE"
 info "Telegram transport is selected from TELEGRAM_BOT_API_URL."
 info "Default /anime search: Shikimori + MAL (MyAnimeList) / Jikan + AniList."
-info "Multi-source search can expand through confirmed cross-source titles/IDs."
+info "External IDs are enriched locally from disk-backed mappings.db."
 info "Interactive /anime sources: All / MAL (MyAnimeList) / Jikan / Shikimori / AniList."
 info "Direct external-ID lookup is source-independent."
-info "Metadata sources: Shikimori + AniList + MAL (MyAnimeList) / Jikan."
-info "Staff/seiyuu data is loaded lazily when those sections are opened."
+info "Metadata sources: Shikimori + AniList + MAL (MyAnimeList) / Jikan + optional AniDB."
+info "Staff/seiyuu/characters and episode backends are loaded lazily."
 
 mkdir -p "$LOG_DIR"
 
