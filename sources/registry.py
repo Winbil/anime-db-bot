@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from core.contracts import AnimeSource
+from sources.anidb import AniDBSource
 from sources.identity_sources import AniListIdentitySource, ShikimoriIdentitySource
 from sources.mal import MALSource
 from sources.rate_limited import rate_limited_source
@@ -18,8 +19,12 @@ _SOURCE_FACTORIES: tuple[tuple[str, Callable[[], AnimeSource]], ...] = (
 
 def get_source_map() -> dict[str, AnimeSource]:
     """Return enabled metadata sources keyed by their AnimeIdentity key."""
+    factories: list[tuple[str, Callable[[], AnimeSource]]] = list(_SOURCE_FACTORIES)
+    if AniDBSource.is_enabled():
+        factories.append(("anidb", AniDBSource))
+
     result: dict[str, AnimeSource] = {}
-    for source_key, factory in _SOURCE_FACTORIES:
+    for source_key, factory in factories:
         # Rate limiting wraps the raw source, then resilience wraps that proxy.
         # This makes every retry attempt consume quota again instead of bypassing
         # the outbound safety limiter.
