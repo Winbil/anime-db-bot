@@ -165,7 +165,17 @@
     "episode_synopsis": "Synopsis:",
     "episode_detail_failed": "Could not load episode details.",
     "open_mal": "Open on MyAnimeList",
-    "back_to_episodes": "Back to episodes"
+    "back_to_episodes": "Back to episodes",
+    "section_trailers": "Trailers",
+    "trailers_button": "Trailers",
+    "trailers_loading": "Loading trailers…",
+    "trailers_choose": "Trailers:\nChoose a source below.",
+    "trailers_empty": "Trailers:\nNo trailers are available.",
+    "trailers_load_failed": "Could not load trailers from the available sources.",
+    "trailers_title": "Trailers — {source}",
+    "trailer_default": "Trailer {number}",
+    "trailer_kind": "Type: {value}",
+    "trailer_hosting": "Platform: {value}"
   },
   "people": {
     "staff": "Staff and creators",
@@ -346,5 +356,10 @@
   "ranking_kind": {
     "rated": "By score",
     "popular": "By popularity"
+  },
+  "trailer_kind": {
+    "trailer": "Trailer / PV",
+    "character_trailer": "Character trailer",
+    "commercial": "Commercial"
   }
 }

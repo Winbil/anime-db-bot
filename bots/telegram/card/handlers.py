@@ -6,6 +6,7 @@ from aiogram.types import CallbackQuery, Message
 
 from bots.telegram.card.constants import SECTION_LABELS, SOURCE_SELECTABLE_SECTIONS
 from bots.telegram.card.episodes import edit_episode_detail, edit_episodes_view
+from bots.telegram.card.trailers import edit_trailers_view
 from bots.telegram.card.renderer import (
     edit_anime_view,
     edit_description_view,
@@ -186,6 +187,47 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             locale=locale,
         )
 
+    @dp.callback_query(F.data.startswith("at:"))
+    async def trailer_source_callback_handler(callback: CallbackQuery) -> None:
+        locale = get_user_locale(callback.from_user.id)
+        data = (callback.data or "").split(":")
+        if len(data) != 4 or not data[2].isdigit() or not data[3].isdigit():
+            await callback.answer(
+                text("card", "invalid_source", locale=locale), show_alert=True
+            )
+            return
+
+        _, token, source_index_text, page_text = data
+        session = _session_for_callback(callback, token)
+        if session is None:
+            raw_session = ANIME_SESSIONS.get(token)
+            key = "not_owner" if raw_session is not None else "expired"
+            await callback.answer(text("card", key, locale=locale), show_alert=True)
+            return
+        if callback.message is None:
+            await callback.answer()
+            return
+
+        await callback.answer()
+        try:
+            await edit_trailers_view(
+                callback.message,
+                token,
+                session,
+                source_index=int(source_index_text),
+                page=int(page_text),
+                locale=locale,
+            )
+        except ValueError:
+            await edit_trailers_view(
+                callback.message,
+                token,
+                session,
+                source_index=None,
+                page=0,
+                locale=locale,
+            )
+
     @dp.callback_query(F.data.startswith("av:"))
     async def anime_view_callback_handler(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
@@ -221,6 +263,16 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 token,
                 raw_session,
                 view_page=int(page_text),
+                locale=locale,
+            )
+            return
+        if section == "trailers":
+            await edit_trailers_view(
+                callback.message,
+                token,
+                raw_session,
+                source_index=None,
+                page=0,
                 locale=locale,
             )
             return

@@ -11,6 +11,7 @@ use Jikan\Request\Anime\AnimeEpisodeRequest;
 use Jikan\Request\Anime\AnimeEpisodesRequest;
 use Jikan\Request\Anime\AnimeRequest;
 use Jikan\Request\Anime\AnimeStatsRequest;
+use Jikan\Request\Anime\AnimeVideosRequest;
 
 const ACTIVE_LOCK = '/tmp/anime-db-bot-jikan-active.lock';
 
@@ -112,6 +113,22 @@ function peopleToArray(object $result): array
     return ['staff' => $staff, 'voices' => $voices];
 }
 
+function promoToArray(object $item): array
+{
+    $trailer = $item->getTrailer();
+    $images = $trailer->getImages();
+    return [
+        'title' => $item->getTitle(),
+        'youtube_id' => $trailer->getYoutubeId(),
+        'url' => $trailer->getUrl(),
+        'embed_url' => $trailer->getEmbedUrl(),
+        'thumbnail' => $images->getMaximumImageUrl()
+            ?? $images->getLargeImageUrl()
+            ?? $images->getMediumImageUrl()
+            ?? $images->getImageUrl(),
+    ];
+}
+
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 
@@ -187,6 +204,27 @@ if (preg_match('#^/anime/(\d+)/people$#', $path, $match)) {
             'source' => 'mal',
             'backend' => 'jikan',
             'data' => peopleToArray($result),
+        ]);
+    } catch (Throwable $error) {
+        respond([
+            'error' => 'jikan_request_failed',
+            'type' => $error::class,
+            'message' => $error->getMessage(),
+        ], 502);
+    }
+}
+
+if (preg_match('#^/anime/(\d+)/trailers$#', $path, $match)) {
+    $malId = (int) $match[1];
+    try {
+        $result = withActivity(function () use ($malId) {
+            $client = new MalClient();
+            return $client->getAnimeVideos(new AnimeVideosRequest($malId));
+        });
+        respond([
+            'source' => 'mal',
+            'backend' => 'jikan',
+            'data' => array_map('promoToArray', $result->getPromos()),
         ]);
     } catch (Throwable $error) {
         respond([

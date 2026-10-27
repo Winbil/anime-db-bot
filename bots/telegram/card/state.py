@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 from bots.session_store import ExpiringSessionStore
 from bots.telegram.card.constants import MAX_ANIME_SESSIONS
-from core.models import AggregatedAnime, EpisodePage, EpisodeRecord
+from core.models import AggregatedAnime, EpisodePage, EpisodeRecord, TrailerRecord
 
 
 @dataclass(slots=True)
@@ -14,6 +14,9 @@ class AnimeCardSession:
     owner_user_id: int
     episode_pages: dict[int, EpisodePage] = field(default_factory=dict)
     episode_details: dict[int, EpisodeRecord] = field(default_factory=dict)
+    trailers_loaded: bool = False
+    trailers_by_source: dict[str, list[TrailerRecord]] = field(default_factory=dict)
+    trailer_errors: dict[str, str] = field(default_factory=dict)
 
 
 ANIME_SESSIONS: ExpiringSessionStore[AnimeCardSession] = ExpiringSessionStore(

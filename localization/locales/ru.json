@@ -165,7 +165,17 @@
     "episode_synopsis": "Описание:",
     "episode_detail_failed": "Не удалось загрузить подробности серии.",
     "open_mal": "Открыть на MyAnimeList",
-    "back_to_episodes": "К сериям"
+    "back_to_episodes": "К сериям",
+    "section_trailers": "Трейлеры",
+    "trailers_button": "Трейлеры",
+    "trailers_loading": "Загружаю трейлеры…",
+    "trailers_choose": "Трейлеры:\nВыбери источник кнопкой ниже.",
+    "trailers_empty": "Трейлеры:\nНет доступных трейлеров.",
+    "trailers_load_failed": "Не удалось загрузить трейлеры из доступных источников.",
+    "trailers_title": "Трейлеры — {source}",
+    "trailer_default": "Трейлер {number}",
+    "trailer_kind": "Тип: {value}",
+    "trailer_hosting": "Площадка: {value}"
   },
   "people": {
     "staff": "Авторы и команда",
@@ -346,5 +356,10 @@
   "ranking_kind": {
     "rated": "По оценке",
     "popular": "По популярности"
+  },
+  "trailer_kind": {
+    "trailer": "Трейлер / PV",
+    "character_trailer": "Трейлер персонажа",
+    "commercial": "Рекламный ролик"
   }
 }

@@ -71,6 +71,29 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
         getter.assert_not_awaited()
         self.assertEqual(page.items, [])
 
+    async def test_trailers_keep_mal_jikan_provenance(self) -> None:
+        source = JikanSource()
+        payload = {
+            "data": [
+                {
+                    "title": "PV 1",
+                    "youtube_id": "abc123",
+                    "url": "https://www.youtube.com/watch?v=abc123",
+                    "embed_url": "https://www.youtube.com/embed/abc123",
+                    "thumbnail": "https://img.youtube.com/vi/abc123/maxresdefault.jpg",
+                }
+            ]
+        }
+        with patch("sources.jikan._get", new=AsyncMock(return_value=payload)) as getter:
+            trailers = await source.load_trailers(AnimeIdentity({"mal": "123"}))
+
+        getter.assert_awaited_once_with("/anime/123/trailers", operation="trailers")
+        self.assertEqual(len(trailers), 1)
+        self.assertEqual(trailers[0].source, "mal")
+        self.assertEqual(trailers[0].backend, "jikan")
+        self.assertEqual(trailers[0].title, "PV 1")
+        self.assertEqual(trailers[0].hosting, "YouTube")
+
     async def test_metadata_supplement_maps_existing_mal_fields(self) -> None:
         source = JikanSource()
         payload = {

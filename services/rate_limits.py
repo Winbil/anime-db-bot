@@ -137,6 +137,7 @@ def _operation_limit(source: str, operation: str) -> int | None:
         ("SHIKIMORI", "PEOPLE"): 60,
         ("JIKAN", "METADATA"): 20,
         ("JIKAN", "PEOPLE"): 15,
+        ("JIKAN", "TRAILERS"): 15,
         ("JIKAN", "EPISODES"): 20,
     }
     return defaults.get((source_token, operation_token))
