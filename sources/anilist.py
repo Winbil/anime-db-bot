@@ -12,7 +12,7 @@ import httpx
 
 from core.canonicalization import canonical_genre_token, canonical_role_token, voice_role_token
 from core.http_config import USER_AGENT
-from core.models import AnimeRecord, PersonCredit
+from core.models import AnimeRecord, PersonCredit, PopularityRanking
 from localization import source_value_key
 
 DEFAULT_ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
@@ -36,6 +36,13 @@ query AnimeDetails($idMal: Int!) {
     episodes
     duration
     averageScore
+    popularity
+    favourites
+    rankings { rank type year season allTime }
+    stats {
+      statusDistribution { status amount }
+      scoreDistribution { score amount }
+    }
     genres
     isAdult
     coverImage { extraLarge large medium }
@@ -212,6 +219,69 @@ def _score(value: Any) -> float | None:
         return None
 
 
+def _int(value: Any) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _status_distribution(value: dict[str, Any] | None) -> dict[str, int]:
+    aliases = {
+        "CURRENT": "watching",
+        "COMPLETED": "completed",
+        "PAUSED": "on_hold",
+        "DROPPED": "dropped",
+        "PLANNING": "planned",
+        "REPEATING": "rewatching",
+    }
+    result: dict[str, int] = {}
+    for item in (value or {}).get("statusDistribution") or []:
+        key = aliases.get(str(item.get("status") or "").upper())
+        amount = _int(item.get("amount"))
+        if key and amount is not None and amount >= 0:
+            result[key] = amount
+    return result
+
+
+def _score_distribution(value: dict[str, Any] | None) -> dict[int, int]:
+    result: dict[int, int] = {}
+    for item in (value or {}).get("scoreDistribution") or []:
+        raw_score = _int(item.get("score"))
+        amount = _int(item.get("amount"))
+        if raw_score is None or amount is None or amount < 0:
+            continue
+        # AniList exposes the histogram on a 10..100 scale. The bot renders
+        # every source on the familiar 1..10 scale without changing counts.
+        score = max(1, min(10, round(raw_score / 10)))
+        result[score] = result.get(score, 0) + amount
+    return result
+
+
+def _rankings(value: list[dict[str, Any]] | None) -> list[PopularityRanking]:
+    result: list[PopularityRanking] = []
+    for item in value or []:
+        rank = _int(item.get("rank"))
+        raw_kind = str(item.get("type") or "").upper()
+        kind = {"RATED": "rated", "POPULAR": "popular"}.get(raw_kind)
+        if rank is None or rank <= 0 or not kind:
+            continue
+        raw_season = str(item.get("season") or "")
+        season = source_value_key(
+            "anilist", "season", raw_season, default=raw_season.casefold() or None
+        )
+        result.append(
+            PopularityRanking(
+                rank=rank,
+                kind=kind,
+                year=_int(item.get("year")),
+                season=season,
+                all_time=bool(item.get("allTime")),
+            )
+        )
+    return result
+
+
 def _headers() -> dict[str, str]:
     headers = {
         "Accept": "application/json",
@@ -375,6 +445,21 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
     format_raw = raw.get("format") or ""
     status_raw = raw.get("status") or ""
     season, season_year = _season(raw.get("season"), raw.get("seasonYear"))
+    status_distribution = _status_distribution(raw.get("stats"))
+    score_distribution = _score_distribution(raw.get("stats"))
+    rankings = _rankings(raw.get("rankings"))
+    all_time_rank = next(
+        (item.rank for item in rankings if item.kind == "rated" and item.all_time),
+        None,
+    )
+    all_time_popularity = next(
+        (item.rank for item in rankings if item.kind == "popular" and item.all_time),
+        None,
+    )
+    list_users = _int(raw.get("popularity"))
+    if list_users is None and status_distribution:
+        list_users = sum(status_distribution.values())
+    scoring_users = sum(score_distribution.values()) if score_distribution else None
 
     return AnimeRecord(
         source="AniList",
@@ -394,6 +479,14 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         released_on=_format_date(raw.get("endDate")),
         next_episode_at=_format_timestamp(next_airing.get("airingAt")),
         score=_score(raw.get("averageScore")),
+        rank=all_time_rank,
+        popularity_rank=all_time_popularity,
+        list_users=list_users,
+        scoring_users=scoring_users,
+        favorites=_int(raw.get("favourites")),
+        status_distribution=status_distribution,
+        score_distribution=score_distribution,
+        rankings=rankings,
         genres=_dedupe([canonical_genre_token(value) for value in raw.get("genres") or []]),
         studios=_dedupe(
             [node.get("name", "") for node in ((raw.get("studios") or {}).get("nodes") or [])]

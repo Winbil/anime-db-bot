@@ -70,6 +70,7 @@
     "section_main": "Основное",
     "section_titles": "Названия",
     "section_description": "Описание",
+    "section_popularity": "Популярность",
     "section_links": "Ссылки",
     "section_staff": "Команда",
     "section_voices": "Сэйю",
@@ -78,6 +79,7 @@
     "all_voices": "Все сэйю",
     "details": "Подробная информация",
     "description_button": "Описание",
+    "popularity_button": "Популярность",
     "titles_button": "Все названия",
     "staff_button": "Авторы и команда",
     "voices_button": "Сэйю",
@@ -98,7 +100,6 @@
     "block_release": "Выход",
     "block_production": "Производство",
     "block_score": "Оценка",
-    "block_popularity": "Популярность",
     "block_sources": "Источники",
     "type": "Тип: {value}",
     "status": "Статус: {value}",
@@ -116,7 +117,7 @@
     "franchise": "Франшиза: {value}",
     "average_score": "Средняя оценка: {score} (источников: {count})",
     "rank": "Место в рейтинге: #{value}",
-    "popularity": "Популярность: #{value}",
+    "popularity": "Место по популярности: #{value}",
     "list_users": "В списках пользователей: {value}",
     "scoring_users": "Поставили оценку: {value}",
     "favorites": "В избранном: {value}",
@@ -136,7 +137,16 @@
     "invalid_source": "Некорректный источник.",
     "source_unavailable": "Источник больше недоступен.",
     "invalid_command": "Некорректная команда.",
-    "invalid_section": "Некорректный раздел."
+    "invalid_section": "Некорректный раздел.",
+    "popularity_choose": "Популярность:\nВыбери источник кнопкой ниже.",
+    "popularity_empty": "Популярность:\nНет доступной статистики.",
+    "popularity_title": "Популярность — {source}",
+    "popularity_metrics": "Общая статистика",
+    "popularity_statuses": "Статусы пользователей",
+    "popularity_scores": "Распределение оценок",
+    "popularity_rankings": "Рейтинги",
+    "all_time": "за всё время",
+    "other_period": "другой период"
   },
   "people": {
     "staff": "Авторы и команда",
@@ -305,5 +315,17 @@
     "saturday": "Суббота",
     "sunday": "Воскресенье",
     "other": "Другое"
+  },
+  "user_list_status": {
+    "watching": "Смотрят",
+    "completed": "Просмотрено",
+    "planned": "Запланировано",
+    "on_hold": "Отложено",
+    "dropped": "Брошено",
+    "rewatching": "Пересматривают"
+  },
+  "ranking_kind": {
+    "rated": "По оценке",
+    "popular": "По популярности"
   }
 }

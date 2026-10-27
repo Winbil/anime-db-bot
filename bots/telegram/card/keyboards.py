@@ -38,13 +38,16 @@ def source_section_selection_rows(
     if not sources:
         return []
 
-    all_label = text("card", ALL_SOURCE_LABELS[section], locale=locale)
-    rows: list[list[InlineKeyboardButton]] = [[
-        InlineKeyboardButton(
-            text=("✓ " + all_label) if selected_source_index is None else all_label,
-            callback_data=f"av:{token}:{section}:0",
-        )
-    ]]
+    rows: list[list[InlineKeyboardButton]] = []
+    all_label_key = ALL_SOURCE_LABELS.get(section)
+    if all_label_key is not None:
+        all_label = text("card", all_label_key, locale=locale)
+        rows.append([
+            InlineKeyboardButton(
+                text=("✓ " + all_label) if selected_source_index is None else all_label,
+                callback_data=f"av:{token}:{section}:0",
+            )
+        ])
 
     source_buttons = [
         InlineKeyboardButton(
@@ -234,8 +237,12 @@ def fallback_main_keyboard(token: str, *, locale: str) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
+                text=text("card", "popularity_button", locale=locale),
+                callback_data=f"av:{token}:popularity:0",
+            ),
+            InlineKeyboardButton(
                 text=text("card", "links_button", locale=locale),
                 callback_data=f"av:{token}:links:0",
-            )
+            ),
         ],
     ])

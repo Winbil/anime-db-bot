@@ -27,6 +27,7 @@ DETAIL_FIELDS = ",".join(
         "num_list_users",
         "num_scoring_users",
         "num_favorites",
+        "statistics",
         "media_type",
         "status",
         "genres",
@@ -105,6 +106,24 @@ def _broadcast(value: dict[str, Any] | None) -> list[BroadcastSlot]:
     start_time = _clean(value.get("start_time")) or None
     weekday = source_value_key("mal", "weekday", raw_day, default=raw_day or None)
     return [BroadcastSlot(weekday=weekday, time=start_time)] if weekday or start_time else []
+
+
+def _status_distribution(value: dict[str, Any] | None) -> dict[str, int]:
+    raw = (value or {}).get("status") or {}
+    aliases = {
+        "watching": "watching",
+        "completed": "completed",
+        "on_hold": "on_hold",
+        "dropped": "dropped",
+        "plan_to_watch": "planned",
+    }
+    result: dict[str, int] = {}
+    for raw_key, raw_count in raw.items():
+        key = aliases.get(_clean(raw_key).casefold())
+        count = _int(raw_count)
+        if key and count is not None and count >= 0:
+            result[key] = count
+    return result
 
 
 def _posters(raw: dict[str, Any]) -> list[str]:
@@ -252,6 +271,7 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         list_users=_int(raw.get("num_list_users")),
         scoring_users=_int(raw.get("num_scoring_users")),
         favorites=_int(raw.get("num_favorites")),
+        status_distribution=_status_distribution(raw.get("statistics")),
         genres=genres,
         studios=studios,
         source_materials=[source_material] if source_material else [],

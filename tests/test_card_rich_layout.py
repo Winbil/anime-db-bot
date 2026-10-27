@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from bots.telegram.card.renderer import anime_sections, main_rich, rich_view
-from core.models import AggregatedAnime, BroadcastSlot
+from bots.telegram.card.renderer import anime_sections, main_rich, rich_view, source_section_text
+from bots.telegram.card.selectors import source_section_sources
+from core.models import AggregatedAnime, BroadcastSlot, PopularityRanking, PopularityStats
 
 
 class CardRichLayoutTests(unittest.TestCase):
@@ -39,6 +40,40 @@ class CardRichLayoutTests(unittest.TestCase):
             list_users=123456,
             scoring_users=98765,
             favorites=4321,
+            popularity_by_source={
+                "MyAnimeList": PopularityStats(
+                    rank=120,
+                    popularity_rank=35,
+                    list_users=123456,
+                    scoring_users=98765,
+                    favorites=4321,
+                    status_distribution={
+                        "watching": 10000,
+                        "completed": 80000,
+                        "planned": 25000,
+                        "on_hold": 3456,
+                        "dropped": 1000,
+                    },
+                ),
+                "AniList": PopularityStats(
+                    rank=140,
+                    popularity_rank=40,
+                    list_users=110000,
+                    scoring_users=75000,
+                    favorites=3500,
+                    status_distribution={"watching": 12000, "completed": 70000, "planned": 28000},
+                    score_distribution={10: 15000, 9: 30000, 8: 30000},
+                    rankings=[
+                        PopularityRanking(rank=4, kind="popular", year=2026, season="spring"),
+                    ],
+                ),
+                "Shikimori": PopularityStats(
+                    list_users=95000,
+                    scoring_users=62000,
+                    status_distribution={"watching": 9000, "completed": 65000, "planned": 21000},
+                    score_distribution={10: 12000, 9: 25000, 8: 25000},
+                ),
+            },
             sources=["MyAnimeList", "AniList", "Shikimori"],
             external_ids={"mal": "37430", "anilist": "101280", "shikimori": "37430"},
             posters=["https://example.com/poster.jpg"],
@@ -55,20 +90,16 @@ class CardRichLayoutTests(unittest.TestCase):
         self.assertIn("<caption><b>Выход</b></caption>", html)
         self.assertIn("<caption><b>Производство</b></caption>", html)
         self.assertIn("<caption><b>Оценка</b></caption>", html)
-        self.assertIn("<caption><b>Популярность</b></caption>", html)
+        self.assertNotIn("<caption><b>Популярность</b></caption>", html)
         self.assertNotIn("Оценка и популярность", html)
-        self.assertLess(
-            html.index("<caption><b>Оценка</b></caption>"),
-            html.index("<caption><b>Популярность</b></caption>"),
-        )
         self.assertIn(">Средняя оценка</th>", html)
-        self.assertIn(">Место в рейтинге</th>", html)
+        self.assertNotIn(">Место в рейтинге</th>", html)
         self.assertIn("<caption><b>Источники</b></caption>", html)
         self.assertIn(">Статус</th>", html)
         self.assertIn(">выходит</td>", html)
 
         first_table = html.index("<table")
-        for section in ("description", "staff", "voices", "titles", "links"):
+        for section in ("description", "popularity", "staff", "voices", "titles", "links"):
             self.assertLess(
                 html.index(f"av:card-token:{section}:0"),
                 first_table,
@@ -78,6 +109,27 @@ class CardRichLayoutTests(unittest.TestCase):
         self.assertIn("<tg-button-row", html)
         self.assertNotIn("выбрать источник", html)
         self.assertNotIn("нажмите, чтобы открыть", html)
+
+    def test_popularity_section_is_source_scoped(self) -> None:
+        anime = self._sample()
+        self.assertEqual(
+            source_section_sources(anime, "popularity"),
+            ["MyAnimeList", "AniList", "Shikimori"],
+        )
+
+        text_value = source_section_text(
+            anime,
+            "popularity",
+            "AniList",
+            locale="ru",
+        )
+        self.assertIn("Популярность — AniList", text_value)
+        self.assertIn("В списках пользователей: 110 000", text_value)
+        self.assertIn("Поставили оценку: 75 000", text_value)
+        self.assertIn("Смотрят: 12 000", text_value)
+        self.assertIn("10/10: 15 000", text_value)
+        self.assertIn("По популярности — Весна 2026: #4", text_value)
+        self.assertNotIn("Средняя оценка", text_value)
 
     def test_titles_section_uses_table_for_structured_title_variants(self) -> None:
         anime = self._sample()

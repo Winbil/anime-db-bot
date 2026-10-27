@@ -6,7 +6,7 @@ import logging
 from core.canonicalization import canonical_genre_token
 from core.contracts import AnimeSource
 from core.identity import AnimeIdentity
-from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate
+from core.models import AggregatedAnime, AnimeRecord, PersonCredit, PopularityStats, SearchCandidate
 from localization import canonicalize_domain_value
 from services.aggregation_merge import (
     AggregationMergeSupport,
@@ -23,7 +23,6 @@ from services.aggregation_merge import (
     _merge_season,
     _merge_source_text,
     _merge_studios,
-    _min_positive_int,
 )
 from services.id_resolver import enrich_identity
 
@@ -210,6 +209,20 @@ class AnimeAggregator(AggregationMergeSupport):
                 if _clean(value)
             ]
         )
+        popularity_by_source: dict[str, PopularityStats] = {}
+        for record in records:
+            stats = PopularityStats(
+                rank=record.rank,
+                popularity_rank=record.popularity_rank,
+                list_users=record.list_users,
+                scoring_users=record.scoring_users,
+                favorites=record.favorites,
+                status_distribution=dict(record.status_distribution),
+                score_distribution=dict(record.score_distribution),
+                rankings=list(record.rankings),
+            )
+            if stats.has_data():
+                popularity_by_source[record.source] = stats
 
         return AggregatedAnime(
             title=title,
@@ -232,11 +245,7 @@ class AnimeAggregator(AggregationMergeSupport):
             scores=scores,
             score_average=_average_score(scores),
             score_sources_count=len(scores),
-            rank=_min_positive_int(records, "rank"),
-            popularity_rank=_min_positive_int(records, "popularity_rank"),
-            list_users=_max_int(records, "list_users"),
-            scoring_users=_max_int(records, "scoring_users"),
-            favorites=_max_int(records, "favorites"),
+            popularity_by_source=popularity_by_source,
             genres=canonical_genres,
             studios=_merge_studios(records),
             licensors=_dedupe_strings([value for record in records for value in record.licensors]),
