@@ -59,6 +59,24 @@ class TrailerParsingTests(unittest.TestCase):
         self.assertEqual(items[0].embed_url, "https://youtube.com/embed/pv")
         self.assertTrue(items[0].thumbnail.startswith("https://"))
 
+    def test_shikimori_repairs_duplicated_scheme_in_real_world_video_url(self) -> None:
+        items = _shikimori_trailers([{
+            "url": "https:// https://youtu.be/aJHwReyz-os",
+            "image_url": "http://img.youtube.com/vi/aJHwReyz-os/hqdefault.jpg",
+            "player_url": "http://youtube.com/embed/aJHwReyz-os",
+            "name": "Дельта, Эпсилон, Дзета, Эта",
+            "kind": "character_trailer",
+            "hosting": "youtube",
+        }])
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].url, "https://youtu.be/aJHwReyz-os")
+        self.assertEqual(items[0].embed_url, "https://youtube.com/embed/aJHwReyz-os")
+        self.assertEqual(
+            items[0].thumbnail,
+            "https://img.youtube.com/vi/aJHwReyz-os/hqdefault.jpg",
+        )
+
 
 class TrailerUiTests(unittest.TestCase):
     def test_source_view_renders_type_platform_and_open_buttons(self) -> None:
@@ -103,6 +121,34 @@ class TrailerUiTests(unittest.TestCase):
         self.assertIn("Площадка: YouTube", content)
         self.assertEqual(keyboard.inline_keyboard[0][0].url, items[0].url)
         self.assertEqual(keyboard.inline_keyboard[1][0].url, items[1].url)
+
+    def test_second_page_navigation_preserves_source_and_page(self) -> None:
+        items = [
+            TrailerRecord(
+                source="shikimori",
+                backend="shikimori",
+                title=f"PV {index}",
+                url=f"https://youtu.be/video{index}",
+            )
+            for index in range(6, 11)
+        ]
+        keyboard = _source_keyboard(
+            "token",
+            ["Shikimori", "AniList", "MAL (MyAnimeList) / Jikan"],
+            0,
+            items,
+            offset=5,
+            page=1,
+            page_count=2,
+            locale="ru",
+        )
+
+        nav = keyboard.inline_keyboard[len(items)]
+        self.assertEqual(nav[0].callback_data, "at:token:0:0")
+        self.assertEqual(nav[1].callback_data, "noop")
+        self.assertEqual(nav[1].text, "2/2")
+        for row in keyboard.inline_keyboard[:len(items)]:
+            self.assertTrue((row[0].url or "").startswith("https://"))
 
 
 class _FakeTrailerSource:

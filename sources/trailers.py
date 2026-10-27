@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -33,10 +35,24 @@ def _clean(value: Any) -> str:
 
 
 def _https(value: Any) -> str:
-    url = _clean(value)
-    if url.startswith("http://"):
-        return "https://" + url.removeprefix("http://")
-    return url
+    raw = _clean(value)
+    if not raw:
+        return ""
+
+    # Some Shikimori records contain malformed duplicated schemes such as
+    # ``https:// https://youtu.be/...``. Telegram rejects the whole inline
+    # keyboard when even one button contains such a URL, so extract the last
+    # structurally valid HTTP(S) URL instead of forwarding upstream garbage.
+    candidates = re.findall(r"https?://[^\s]+", raw, flags=re.IGNORECASE)
+    for candidate in reversed(candidates):
+        candidate = candidate.rstrip(".,;)")
+        parsed = urlsplit(candidate)
+        if parsed.scheme.casefold() not in {"http", "https"} or not parsed.netloc:
+            continue
+        if parsed.scheme.casefold() == "http":
+            candidate = "https://" + candidate.split("://", 1)[1]
+        return candidate
+    return ""
 
 
 def _dedupe(values: list[TrailerRecord]) -> list[TrailerRecord]:
