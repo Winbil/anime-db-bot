@@ -99,7 +99,7 @@ class CardRichLayoutTests(unittest.TestCase):
         self.assertIn(">выходит</td>", html)
 
         first_table = html.index("<table")
-        for section in ("description", "popularity", "staff", "voices", "titles", "links"):
+        for section in ("description", "popularity", "episodes", "staff", "voices", "titles", "links"):
             self.assertLess(
                 html.index(f"av:card-token:{section}:0"),
                 first_table,

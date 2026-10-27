@@ -56,6 +56,10 @@ Best-effort resolver также может добавлять новые свя�
 - AniList;
 - MyAnimeList.
 
+Дополнительно используется **Jikan как MAL web-supplement**, а не как отдельная identity-база. Он живёт в отдельном локальном контейнере `anime-db-bot-Jikan`, получает уже подтверждённый `mal` ID и по запросу парсит публичные страницы MyAnimeList. В `AnimeIdentity` нового `jikan` ID нет; provenance хранится как `source=mal`, `backend=jikan`, а в UI этот слой называется `MAL (MyAnimeList) / Jikan`.
+
+Сейчас через Jikan реализован только lazy-раздел **«Серии»**: список эпизодов грузится при открытии раздела, подробности отдельного эпизода — только при выборе серии. Никакой локальной индексации каталога MAL, MongoDB, Redis или Typesense для этого не используется.
+
 `AnimeAggregator` объединяет названия, жанры, студии, даты, статусы, оценки, персонал и другие поля. Provenance сохраняется там, где он действительно нужен: внешние ID/URL, описания, source-specific варианты названий, staff/voices и портреты.
 
 Чистые merge-функции вынесены в `services/aggregation_merge.py`, а identity-aware orchestration находится в `services/identity_aggregator.py`. `services/aggregator.py` оставлен только как compatibility import surface и больше не содержит MAL-primary реализации.
@@ -190,6 +194,35 @@ Lazy people loaders тоже получают `AnimeIdentity`, поэтому An
 Данные вливаются в уже существующую `AggregatedAnime`, поэтому основная metadata карточки повторно не запрашивается.
 
 Для Shikimori REST действует общий process-wide rate limiter и retry после HTTP 429 с `Retry-After`.
+
+## Jikan container и обновления
+
+Минимальный parser-service находится **в этом же репозитории**:
+
+```text
+compose.yml
+jikan_service/
+├── Dockerfile
+├── composer.json
+└── public/router.php
+scripts/update-jikan.sh
+deploy/systemd/anime-db-bot-jikan-update.{service,timer}
+```
+
+Запуск вручную:
+
+```bash
+docker compose build jikan
+docker compose up -d --no-build jikan
+```
+
+Контейнер называется `anime-db-bot-Jikan`, работает через host network из-за ограничений Docker subnet pool на текущем сервере, но PHP слушает только `127.0.0.1:${JIKAN_PORT:-8091}`. Наружу parser-service не публикуется.
+
+`start.sh` проверяет контейнер и поднимает его при необходимости, но отказ Jikan не останавливает основной бот — раздел серий просто остаётся недоступен как отдельная degraded capability.
+
+`update-jikan.sh` раз в сутки сравнивает установленную версию с последним стабильным GitHub release Jikan. Перед переключением он ждёт отсутствия активного Jikan-request lock, сохраняет старый image для rollback, собирает новый image, запускает и проверяет health/version. При ошибке цепочка повторяется ещё два раза; после трёх неудач возвращается старый image и новая попытка откладывается до следующей ежедневной проверки. После успешного запуска старый image удаляется.
+
+Systemd unit-файлы коммитятся вместе с проектом; на сервере они подключаются к systemd как launcher для project-local script.
 
 ## Архитектура
 

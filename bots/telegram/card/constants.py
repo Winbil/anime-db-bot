@@ -9,6 +9,7 @@ SECTION_LABELS = {
     "titles": "section_titles",
     "description": "section_description",
     "popularity": "section_popularity",
+    "episodes": "section_episodes",
     "links": "section_links",
     "staff": "section_staff",
     "voices": "section_voices",

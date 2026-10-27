@@ -1,0 +1,21 @@
+services:
+  jikan:
+    image: anime-db-bot-jikan:current
+    build:
+      context: .
+      dockerfile: jikan_service/Dockerfile
+    container_name: anime-db-bot-Jikan
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      JIKAN_PORT: ${JIKAN_PORT:-8091}
+    healthcheck:
+      test:
+        - CMD
+        - php
+        - -r
+        - '$$p=getenv("JIKAN_PORT") ?: "8091"; $$j=@json_decode(@file_get_contents("http://127.0.0.1:".$$p."/health"), true); exit(($$j["ok"]??false) ? 0 : 1);'
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3

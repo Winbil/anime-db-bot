@@ -117,6 +117,7 @@ def _source_limit(source: str) -> int:
         "SHIKIMORI": 240,
         "MAL": 120,
         "MYANIMELIST": 120,
+        "JIKAN": 30,
     }
     return defaults.get(source_token, 120)
 
@@ -134,6 +135,7 @@ def _operation_limit(source: str, operation: str) -> int | None:
     defaults = {
         ("ANILIST", "PEOPLE"): 20,
         ("SHIKIMORI", "PEOPLE"): 60,
+        ("JIKAN", "EPISODES"): 20,
     }
     return defaults.get((source_token, operation_token))
 

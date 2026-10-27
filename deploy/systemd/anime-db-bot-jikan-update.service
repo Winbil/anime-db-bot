@@ -1,0 +1,10 @@
+[Unit]
+Description=Check and safely update anime-db-bot Jikan parser container
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/anime-db-bot
+ExecStart=/opt/anime-db-bot/scripts/update-jikan.sh

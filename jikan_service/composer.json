@@ -1,0 +1,12 @@
+{
+  "name": "anime-db-bot/jikan-service",
+  "description": "Minimal on-demand MyAnimeList parser service for anime-db-bot",
+  "private": true,
+  "require": {
+    "jikan-me/jikan": "^5.0"
+  },
+  "config": {
+    "sort-packages": true,
+    "optimize-autoloader": true
+  }
+}
