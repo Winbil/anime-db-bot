@@ -744,7 +744,7 @@ async def edit_description_view(
         text("card", "description_title", locale=locale, source=source)
         + f"\n\n{description}"
     )
-    if source == "MyAnimeList" and anime.background:
+    if source in {"MyAnimeList", "MAL (MyAnimeList) / Jikan"} and anime.background:
         text_value += (
             f"\n\n{text('card', 'extra_info', locale=locale)}\n{anime.background}"
         )

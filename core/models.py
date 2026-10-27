@@ -212,6 +212,7 @@ class AnimeRecord:
         if source_key and self.source_id:
             aliases = {
                 "myanimelist": "mal",
+                "mal (myanimelist) / jikan": "mal",
                 "anilist": "anilist",
                 "shikimori": "shikimori",
             }

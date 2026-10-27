@@ -7,6 +7,7 @@ import httpx
 
 from core.http_config import USER_AGENT
 from core.models import SearchCandidate, SearchPage
+from core.source_names import MAL_SOURCE_NAME
 from services.rate_limits import wait_for_upstream
 
 DEFAULT_MAL_API_URL = "https://api.myanimelist.net/v2"
@@ -14,7 +15,7 @@ MAL_MAX_PAGE_SIZE = 100
 
 
 class MALSearchProvider:
-    name = "MyAnimeList"
+    name = MAL_SOURCE_NAME
 
     def api_url(self) -> str:
         return (

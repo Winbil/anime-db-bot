@@ -71,6 +71,72 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
         getter.assert_not_awaited()
         self.assertEqual(page.items, [])
 
+    async def test_metadata_supplement_maps_existing_mal_fields(self) -> None:
+        source = JikanSource()
+        payload = {
+            "data": {
+                "licensors": ["Sentai Filmworks", "Sentai Filmworks", "Muse"],
+                "score_distribution": {"10": 120, "9": 80, "0": 999},
+            }
+        }
+        with patch("sources.jikan._get", new=AsyncMock(return_value=payload)) as getter:
+            result = await source.load_metadata_supplement(AnimeIdentity({"mal": "123"}))
+
+        getter.assert_awaited_once_with(
+            "/anime/123/supplement",
+            operation="metadata",
+        )
+        self.assertEqual(result["licensors"], ["Sentai Filmworks", "Muse"])
+        self.assertEqual(result["score_distribution"], {10: 120, 9: 80})
+
+    async def test_people_payload_maps_staff_and_japanese_voice_roles(self) -> None:
+        source = JikanSource()
+        payload = {
+            "data": {
+                "staff": [
+                    {
+                        "person": {
+                            "mal_id": 1,
+                            "name": "Director Person",
+                            "image_url": "https://example.invalid/director.jpg",
+                        },
+                        "roles": ["Director"],
+                    }
+                ],
+                "voices": [
+                    {
+                        "person": {
+                            "mal_id": 2,
+                            "name": "Voice Person",
+                            "image_url": "https://example.invalid/voice.jpg",
+                        },
+                        "character": "Hero",
+                    },
+                    {
+                        "person": {
+                            "mal_id": 2,
+                            "name": "Voice Person",
+                            "image_url": "https://example.invalid/voice.jpg",
+                        },
+                        "character": "Other Hero",
+                    },
+                ],
+            }
+        }
+        with patch("sources.jikan._get", new=AsyncMock(return_value=payload)) as getter:
+            staff = await source.load_staff(AnimeIdentity({"mal": "123"}))
+            voices = await source.load_voices(AnimeIdentity({"mal": "123"}))
+
+        self.assertEqual(getter.await_count, 1, "staff/voices should share the people cache")
+        self.assertEqual(staff[0].roles, ["director"])
+        self.assertEqual(staff[0].external_ids, {"mal": "1"})
+        self.assertEqual(len(voices), 1)
+        self.assertEqual(
+            voices[0].roles,
+            ["voice_of::Hero", "voice_of::Other Hero"],
+        )
+        self.assertIn("MAL (MyAnimeList) / Jikan", voices[0].portraits)
+
 
 if __name__ == "__main__":
     unittest.main()

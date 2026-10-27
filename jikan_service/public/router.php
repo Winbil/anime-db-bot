@@ -6,8 +6,11 @@ require dirname(__DIR__) . '/vendor/autoload.php';
 
 use Composer\InstalledVersions;
 use Jikan\MyAnimeList\MalClient;
+use Jikan\Request\Anime\AnimeCharactersAndStaffRequest;
 use Jikan\Request\Anime\AnimeEpisodeRequest;
 use Jikan\Request\Anime\AnimeEpisodesRequest;
+use Jikan\Request\Anime\AnimeRequest;
+use Jikan\Request\Anime\AnimeStatsRequest;
 
 const ACTIVE_LOCK = '/tmp/anime-db-bot-jikan-active.lock';
 
@@ -72,6 +75,43 @@ function episodeDetailToArray(object $item): array
     ];
 }
 
+function personMetaToArray(object $person): array
+{
+    return [
+        'mal_id' => $person->getMalId(),
+        'name' => $person->getName(),
+        'url' => $person->getUrl(),
+        'image_url' => $person->getImages()->getJpg()->getImageUrl(),
+    ];
+}
+
+function peopleToArray(object $result): array
+{
+    $staff = [];
+    foreach ($result->getStaff() as $item) {
+        $staff[] = [
+            'person' => personMetaToArray($item->getPerson()),
+            'roles' => array_values($item->getPositions()),
+        ];
+    }
+
+    $voices = [];
+    foreach ($result->getCharacters() as $characterItem) {
+        $character = $characterItem->getCharacter();
+        foreach ($characterItem->getVoiceActors() as $voiceActor) {
+            if (strcasecmp($voiceActor->getLanguage(), 'Japanese') !== 0) {
+                continue;
+            }
+            $voices[] = [
+                'person' => personMetaToArray($voiceActor->getPerson()),
+                'character' => $character->getName(),
+            ];
+        }
+    }
+
+    return ['staff' => $staff, 'voices' => $voices];
+}
+
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 
@@ -93,6 +133,68 @@ if ($path === '/version') {
 
 if ($path === '/activity') {
     respond(['active' => file_exists(ACTIVE_LOCK)]);
+}
+
+if (preg_match('#^/anime/(\d+)/supplement$#', $path, $match)) {
+    $malId = (int) $match[1];
+    try {
+        [$anime, $stats] = withActivity(function () use ($malId) {
+            $client = new MalClient();
+            return [
+                $client->getAnime(new AnimeRequest($malId)),
+                $client->getAnimeStats(new AnimeStatsRequest($malId)),
+            ];
+        });
+
+        $licensors = [];
+        foreach ($anime->getLicensors() as $licensor) {
+            $name = trim($licensor->getName());
+            if ($name !== '') {
+                $licensors[] = $name;
+            }
+        }
+
+        $scoreDistribution = [];
+        foreach ($stats->getScores() as $score) {
+            $scoreDistribution[(string) $score->getScore()] = $score->getVotes();
+        }
+
+        respond([
+            'source' => 'mal',
+            'backend' => 'jikan',
+            'data' => [
+                'licensors' => array_values(array_unique($licensors)),
+                'score_distribution' => $scoreDistribution,
+            ],
+        ]);
+    } catch (Throwable $error) {
+        respond([
+            'error' => 'jikan_request_failed',
+            'type' => $error::class,
+            'message' => $error->getMessage(),
+        ], 502);
+    }
+}
+
+if (preg_match('#^/anime/(\d+)/people$#', $path, $match)) {
+    $malId = (int) $match[1];
+    try {
+        $result = withActivity(function () use ($malId) {
+            $client = new MalClient();
+            return $client->getAnimeCharactersAndStaff(new AnimeCharactersAndStaffRequest($malId));
+        });
+        respond([
+            'source' => 'mal',
+            'backend' => 'jikan',
+            'data' => peopleToArray($result),
+        ]);
+    } catch (Throwable $error) {
+        respond([
+            'error' => 'jikan_request_failed',
+            'type' => $error::class,
+            'message' => $error->getMessage(),
+        ], 502);
+    }
 }
 
 if (preg_match('#^/anime/(\d+)/episodes$#', $path, $match)) {
