@@ -54,7 +54,15 @@ class CardRichLayoutTests(unittest.TestCase):
         self.assertIn("<caption><b>Основное</b></caption>", html)
         self.assertIn("<caption><b>Выход</b></caption>", html)
         self.assertIn("<caption><b>Производство</b></caption>", html)
-        self.assertIn("<caption><b>Оценка и популярность</b></caption>", html)
+        self.assertIn("<caption><b>Оценка</b></caption>", html)
+        self.assertIn("<caption><b>Популярность</b></caption>", html)
+        self.assertNotIn("Оценка и популярность", html)
+        self.assertLess(
+            html.index("<caption><b>Оценка</b></caption>"),
+            html.index("<caption><b>Популярность</b></caption>"),
+        )
+        self.assertIn(">Средняя оценка</th>", html)
+        self.assertIn(">Место в рейтинге</th>", html)
         self.assertIn("<caption><b>Источники</b></caption>", html)
         self.assertIn(">Статус</th>", html)
         self.assertIn(">выходит</td>", html)

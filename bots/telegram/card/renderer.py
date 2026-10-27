@@ -218,9 +218,9 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
     if anime.franchise:
         production.append(text("card", "franchise", locale=locale, value=anime.franchise))
 
-    audience: list[str] = []
+    score_lines: list[str] = []
     if anime.score_average is not None:
-        audience.append(
+        score_lines.append(
             text(
                 "card",
                 "average_score",
@@ -230,17 +230,19 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
             )
         )
     for source, score in ordered_mapping_items(anime.scores, anime.sources):
-        audience.append(f"{source}: {float(score):g}")
+        score_lines.append(f"{source}: {float(score):g}")
+
+    popularity: list[str] = []
     if anime.rank:
-        audience.append(text("card", "rank", locale=locale, value=anime.rank))
+        popularity.append(text("card", "rank", locale=locale, value=anime.rank))
     if anime.popularity_rank:
-        audience.append(text("card", "popularity", locale=locale, value=anime.popularity_rank))
+        popularity.append(text("card", "popularity", locale=locale, value=anime.popularity_rank))
     if anime.list_users is not None:
-        audience.append(text("card", "list_users", locale=locale, value=format_number(anime.list_users)))
+        popularity.append(text("card", "list_users", locale=locale, value=format_number(anime.list_users)))
     if anime.scoring_users is not None:
-        audience.append(text("card", "scoring_users", locale=locale, value=format_number(anime.scoring_users)))
+        popularity.append(text("card", "scoring_users", locale=locale, value=format_number(anime.scoring_users)))
     if anime.favorites is not None:
-        audience.append(text("card", "favorites", locale=locale, value=format_number(anime.favorites)))
+        popularity.append(text("card", "favorites", locale=locale, value=format_number(anime.favorites)))
 
     source_lines: list[str] = []
     if anime.sources:
@@ -257,7 +259,8 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
         (text("card", "block_main", locale=locale), basic),
         (text("card", "block_release", locale=locale), release),
         (text("card", "block_production", locale=locale), production),
-        (text("card", "block_audience", locale=locale), audience),
+        (text("card", "block_score", locale=locale), score_lines),
+        (text("card", "block_popularity", locale=locale), popularity),
         (text("card", "block_sources", locale=locale), source_lines),
     ]
 
