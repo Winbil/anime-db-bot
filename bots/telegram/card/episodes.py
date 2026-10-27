@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import logging
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputRichMessage, Message
@@ -12,15 +11,14 @@ from core.models import EpisodeRecord
 from localization import text
 
 EPISODES_PER_VIEW = 10
-JIKAN_PAGE_SIZE = 100
-JIKAN_DISPLAY_NAME = EPISODE_SERVICE.display_name("jikan")
+UPSTREAM_PAGE_SIZE = 100
 
 
 def _view_slice(view_page: int) -> tuple[int, int]:
     view_page = max(0, int(view_page))
-    views_per_jikan_page = max(1, JIKAN_PAGE_SIZE // EPISODES_PER_VIEW)
-    upstream_page = view_page // views_per_jikan_page + 1
-    offset = (view_page % views_per_jikan_page) * EPISODES_PER_VIEW
+    views_per_upstream_page = max(1, UPSTREAM_PAGE_SIZE // EPISODES_PER_VIEW)
+    upstream_page = view_page // views_per_upstream_page + 1
+    offset = (view_page % views_per_upstream_page) * EPISODES_PER_VIEW
     return upstream_page, offset
 
 
@@ -68,8 +66,13 @@ def _episode_summary_lines(episode: EpisodeRecord, *, locale: str) -> list[str]:
     return lines
 
 
-def _episodes_text(items: list[EpisodeRecord], *, locale: str) -> str:
-    lines = [text("card", "episodes_title", locale=locale, source=JIKAN_DISPLAY_NAME)]
+def _episodes_text(
+    items: list[EpisodeRecord],
+    *,
+    locale: str,
+    source_name: str,
+) -> str:
+    lines = [text("card", "episodes_title", locale=locale, source=source_name)]
     if not items:
         lines.extend(["", text("card", "episodes_empty", locale=locale)])
         return "\n".join(lines)
@@ -84,6 +87,8 @@ def _episode_keyboard(
     token: str,
     items: list[EpisodeRecord],
     *,
+    backends: list[str],
+    backend_index: int,
     view_page: int,
     has_prev: bool,
     has_next: bool,
@@ -93,7 +98,7 @@ def _episode_keyboard(
     buttons = [
         InlineKeyboardButton(
             text=str(episode.number),
-            callback_data=f"ae:{token}:{episode.number}:{view_page}",
+            callback_data=f"ae:{token}:{backend_index}:{episode.number}:{view_page}",
         )
         for episode in items
     ]
@@ -104,7 +109,7 @@ def _episode_keyboard(
         nav.append(
             InlineKeyboardButton(
                 text="◀️",
-                callback_data=f"av:{token}:episodes:{view_page - 1}",
+                callback_data=f"ap:{token}:{backend_index}:{view_page - 1}",
             )
         )
     nav.append(
@@ -117,10 +122,19 @@ def _episode_keyboard(
         nav.append(
             InlineKeyboardButton(
                 text="▶️",
-                callback_data=f"av:{token}:episodes:{view_page + 1}",
+                callback_data=f"ap:{token}:{backend_index}:{view_page + 1}",
             )
         )
     rows.append(nav)
+
+    source_buttons = [
+        InlineKeyboardButton(
+            text=("✓ " if index == backend_index else "") + EPISODE_SERVICE.display_name(backend),
+            callback_data=f"ap:{token}:{index}:0",
+        )
+        for index, backend in enumerate(backends)
+    ]
+    rows.extend(source_buttons[index:index + 2] for index in range(0, len(source_buttons), 2))
     rows.append([
         InlineKeyboardButton(
             text=text("common", "back", locale=locale),
@@ -137,11 +151,12 @@ async def edit_episodes_view(
     *,
     view_page: int,
     locale: str,
+    backend_index: int | None = None,
 ) -> None:
-    mal_id = str(session.anime.external_ids.get("mal") or "").strip()
-    if not mal_id.isdigit():
+    backends = EPISODE_SERVICE.available_backends(session.anime.identity)
+    if not backends:
         await message.edit_text(
-            text=text("card", "episodes_need_mal", locale=locale),
+            text=text("card", "episodes_load_failed", locale=locale),
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[[
                     InlineKeyboardButton(
@@ -153,19 +168,26 @@ async def edit_episodes_view(
         )
         return
 
+    selected_index = 0 if backend_index is None else int(backend_index)
+    if selected_index < 0 or selected_index >= len(backends):
+        raise ValueError("Episode backend index is out of range")
+    backend = backends[selected_index]
+    source_name = EPISODE_SERVICE.display_name(backend)
+
     view_page = max(0, int(view_page))
     upstream_page, offset = _view_slice(view_page)
-    page = session.episode_pages.get(upstream_page)
+    cache_key = (backend, upstream_page)
+    page = session.episode_pages.get(cache_key)
     if page is None:
         try:
             page = await EPISODE_SERVICE.load_page(
                 session.anime.identity,
                 page=upstream_page,
-                backend="jikan",
+                backend=backend,
             )
-            session.episode_pages[upstream_page] = page
+            session.episode_pages[cache_key] = page
         except Exception:
-            logging.exception("Could not load Jikan/MAL episode list")
+            logging.exception("Could not load %s episode list", source_name)
             await message.edit_text(
                 text=text("card", "episodes_load_failed", locale=locale),
                 reply_markup=InlineKeyboardMarkup(
@@ -183,15 +205,18 @@ async def edit_episodes_view(
     if not items and view_page > 0:
         view_page -= 1
         upstream_page, offset = _view_slice(view_page)
-        page = session.episode_pages.get(upstream_page) or page
+        cache_key = (backend, upstream_page)
+        page = session.episode_pages.get(cache_key) or page
         items = page.items[offset:offset + EPISODES_PER_VIEW]
 
     has_prev = view_page > 0
     has_next = offset + EPISODES_PER_VIEW < len(page.items) or page.has_next
-    content = _episodes_text(items, locale=locale)
+    content = _episodes_text(items, locale=locale, source_name=source_name)
     keyboard = _episode_keyboard(
         token,
         items,
+        backends=backends,
+        backend_index=selected_index,
         view_page=view_page,
         has_prev=has_prev,
         has_next=has_next,
@@ -215,21 +240,23 @@ def _duration_text(seconds: int | None, locale: str) -> str | None:
     if seconds is None or seconds <= 0:
         return None
     minutes, remainder = divmod(seconds, 60)
-    if remainder:
-        value = f"{minutes}:{remainder:02d}"
-    else:
-        value = str(minutes)
+    value = f"{minutes}:{remainder:02d}" if remainder else str(minutes)
     return text("card", "episode_duration", locale=locale, value=value)
 
 
-def _episode_detail_text(episode: EpisodeRecord, *, locale: str) -> str:
+def _episode_detail_text(
+    episode: EpisodeRecord,
+    *,
+    locale: str,
+    source_name: str,
+) -> str:
     lines = [
         text(
             "card",
             "episode_detail_title",
             locale=locale,
             number=episode.number,
-            source=JIKAN_DISPLAY_NAME,
+            source=source_name,
         ),
         "",
         _episode_title(episode, locale),
@@ -247,6 +274,8 @@ def _episode_detail_text(episode: EpisodeRecord, *, locale: str) -> str:
     duration = _duration_text(episode.duration_seconds, locale)
     if duration:
         lines.append(duration)
+    if episode.score is not None:
+        lines.append(text("card", "episode_score", locale=locale, value=f"{episode.score:g}"))
     if episode.filler:
         lines.append(text("card", "episode_filler", locale=locale))
     if episode.recap:
@@ -264,26 +293,37 @@ async def edit_episode_detail(
     episode_number: int,
     return_page: int,
     locale: str,
+    backend_index: int = 0,
 ) -> None:
-    episode = session.episode_details.get(episode_number)
+    backends = EPISODE_SERVICE.available_backends(session.anime.identity)
+    if not backends:
+        backend_index = 0
+        backend = "jikan"
+    else:
+        backend_index = max(0, min(int(backend_index), len(backends) - 1))
+        backend = backends[backend_index]
+    source_name = EPISODE_SERVICE.display_name(backend)
+
+    cache_key = (backend, int(episode_number))
+    episode = session.episode_details.get(cache_key)
     if episode is None:
         try:
             episode = await EPISODE_SERVICE.load_episode(
                 session.anime.identity,
                 episode_number,
-                backend="jikan",
+                backend=backend,
             )
         except Exception:
-            logging.exception("Could not load Jikan/MAL episode detail")
+            logging.exception("Could not load %s episode detail", source_name)
             episode = None
         if episode is not None:
-            session.episode_details[episode_number] = episode
+            session.episode_details[cache_key] = episode
 
     if episode is None:
         content = text("card", "episode_detail_failed", locale=locale)
         urls: dict[str, str] = {}
     else:
-        content = _episode_detail_text(episode, locale=locale)
+        content = _episode_detail_text(episode, locale=locale, source_name=source_name)
         urls = episode.urls
 
     rows: list[list[InlineKeyboardButton]] = []
@@ -295,10 +335,13 @@ async def edit_episode_detail(
                 url=mal_url,
             )
         ])
+    anidb_url = urls.get("AniDB")
+    if anidb_url:
+        rows.append([InlineKeyboardButton(text="AniDB", url=anidb_url)])
     rows.append([
         InlineKeyboardButton(
             text=text("card", "back_to_episodes", locale=locale),
-            callback_data=f"av:{token}:episodes:{max(0, return_page)}",
+            callback_data=f"ap:{token}:{backend_index}:{max(0, return_page)}",
         ),
         InlineKeyboardButton(
             text=text("common", "back", locale=locale),
