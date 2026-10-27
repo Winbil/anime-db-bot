@@ -146,11 +146,14 @@ def _quick_actions_html(token: str, *, locale: str) -> str:
         '<tg-button-row align="left">'
         + button("description_button", "description")
         + button("popularity_button", "popularity")
-        + button("staff_button", "staff")
+        + button("episodes_button", "episodes")
         + "</tg-button-row>"
         '<tg-button-row align="left">'
+        + button("staff_button", "staff")
         + button("voices_button", "voices")
         + button("titles_button", "titles")
+        + "</tg-button-row>"
+        '<tg-button-row align="left">'
         + button("links_button", "links")
         + "</tg-button-row>"
         "<hr/>"

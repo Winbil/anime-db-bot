@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from bots.session_store import ExpiringSessionStore
 from bots.telegram.card.constants import MAX_ANIME_SESSIONS
-from core.models import AggregatedAnime
+from core.models import AggregatedAnime, EpisodePage, EpisodeRecord
 
 
 @dataclass(slots=True)
 class AnimeCardSession:
     anime: AggregatedAnime
     owner_user_id: int
+    episode_pages: dict[int, EpisodePage] = field(default_factory=dict)
+    episode_details: dict[int, EpisodeRecord] = field(default_factory=dict)
 
 
 ANIME_SESSIONS: ExpiringSessionStore[AnimeCardSession] = ExpiringSessionStore(

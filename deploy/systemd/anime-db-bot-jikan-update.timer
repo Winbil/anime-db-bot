@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily anime-db-bot Jikan update check
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1d
+Persistent=true
+RandomizedDelaySec=15min
+Unit=anime-db-bot-jikan-update.service
+
+[Install]
+WantedBy=timers.target

@@ -60,6 +60,36 @@ class BroadcastSlot:
     time: str | None = None
 
 
+@dataclass(slots=True)
+class EpisodeRecord:
+    """One source-scoped anime episode record.
+
+    ``source`` identifies the logical database (currently ``mal`` for Jikan-backed
+    data) while ``backend`` records how the value was obtained. Jikan therefore
+    supplements MAL without becoming a new AnimeIdentity key.
+    """
+
+    number: int
+    source: str
+    backend: str
+    titles: dict[str, str] = field(default_factory=dict)
+    aired_at: str | None = None
+    duration_seconds: int | None = None
+    score: float | None = None
+    filler: bool = False
+    recap: bool = False
+    synopsis: str | None = None
+    urls: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class EpisodePage:
+    items: list[EpisodeRecord]
+    page: int
+    last_visible_page: int = 1
+    has_next: bool = False
+
+
 @dataclass(frozen=True, slots=True)
 class PopularityRanking:
     """One source-local leaderboard position.

@@ -5,6 +5,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from bots.telegram.card.constants import SECTION_LABELS, SOURCE_SELECTABLE_SECTIONS
+from bots.telegram.card.episodes import edit_episode_detail, edit_episodes_view
 from bots.telegram.card.renderer import (
     edit_anime_view,
     edit_description_view,
@@ -154,6 +155,37 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             locale=locale,
         )
 
+    @dp.callback_query(F.data.startswith("ae:"))
+    async def episode_detail_callback_handler(callback: CallbackQuery) -> None:
+        locale = get_user_locale(callback.from_user.id)
+        data = (callback.data or "").split(":")
+        if len(data) != 4 or not data[2].isdigit() or not data[3].isdigit():
+            await callback.answer(
+                text("card", "invalid_command", locale=locale), show_alert=True
+            )
+            return
+
+        _, token, episode_text, return_page_text = data
+        session = _session_for_callback(callback, token)
+        if session is None:
+            raw_session = ANIME_SESSIONS.get(token)
+            key = "not_owner" if raw_session is not None else "expired"
+            await callback.answer(text("card", key, locale=locale), show_alert=True)
+            return
+        if callback.message is None:
+            await callback.answer()
+            return
+
+        await callback.answer()
+        await edit_episode_detail(
+            callback.message,
+            token,
+            session,
+            episode_number=int(episode_text),
+            return_page=int(return_page_text),
+            locale=locale,
+        )
+
     @dp.callback_query(F.data.startswith("av:"))
     async def anime_view_callback_handler(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
@@ -183,6 +215,16 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             return
 
         await callback.answer()
+        if section == "episodes":
+            await edit_episodes_view(
+                callback.message,
+                token,
+                raw_session,
+                view_page=int(page_text),
+                locale=locale,
+            )
+            return
+
         await edit_anime_view(
             callback.message,
             token,
