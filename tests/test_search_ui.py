@@ -97,7 +97,7 @@ class UnifiedSearchUiTests(unittest.TestCase):
 
         self.assertIn("Slime", value)
         self.assertIn("Год: 2018", value)
-        self.assertIn("MAL: 37430", value)
+        self.assertIn("MAL (MyAnimeList) / Jikan: 37430", value)
         self.assertIn("AniList: 101280", value)
         self.assertIn("Shikimori: 37430", value)
         self.assertIn("FUTUREDB: 77", value)

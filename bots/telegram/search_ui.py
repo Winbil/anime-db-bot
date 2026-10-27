@@ -23,6 +23,7 @@ from aiogram.types import (
 from bots.session_store import ExpiringSessionStore
 from bots.telegram.card.renderer import plain_text_to_rich_html
 from core.models import SearchCandidate, SearchResultSet
+from core.source_names import MAL_SOURCE_NAME
 from localization import text
 from search.registry import DEFAULT_SEARCH_PROVIDER_KEYS, get_search_provider_map
 from services.direct_lookup import DirectIdLookupService
@@ -58,8 +59,8 @@ PROVIDER_ALIASES = {
 }
 
 _SOURCE_LABELS = {
-    "mal": "MAL",
-    "myanimelist": "MAL",
+    "mal": MAL_SOURCE_NAME,
+    "myanimelist": MAL_SOURCE_NAME,
     "anilist": "AniList",
     "shikimori": "Shikimori",
 }
