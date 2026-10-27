@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
@@ -7,8 +8,10 @@ import httpx
 
 from core.http_config import USER_AGENT
 from core.identity import AnimeIdentity
-from core.models import AnimeRecord, BroadcastSlot
+from core.models import AnimeRecord, BroadcastSlot, PersonCredit
+from core.people_loading import PeopleBatch
 from localization import source_value_key
+from sources.jikan import JIKAN_DISPLAY_NAME, JikanSource
 
 DEFAULT_MAL_API_URL = "https://api.myanimelist.net/v2"
 
@@ -250,7 +253,7 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
     season, season_year = _season(raw.get("start_season"))
 
     return AnimeRecord(
-        source="MyAnimeList",
+        source=JIKAN_DISPLAY_NAME,
         source_id=mal_id,
         titles=titles,
         synonyms=synonyms,
@@ -276,7 +279,7 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         studios=studios,
         source_materials=[source_material] if source_material else [],
         broadcasts=_broadcast(raw.get("broadcast")),
-        descriptions={"MyAnimeList": synopsis} if synopsis else {},
+        descriptions={JIKAN_DISPLAY_NAME: synopsis} if synopsis else {},
         backgrounds=[background] if background else [],
         posters=_posters(raw),
         urls={
@@ -286,7 +289,10 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
 
 
 class MALSource:
-    name = "MyAnimeList"
+    name = JIKAN_DISPLAY_NAME
+
+    def __init__(self) -> None:
+        self._jikan = JikanSource()
 
     async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
         mal_id = str(identity.get("mal") or "").strip()
@@ -298,4 +304,53 @@ class MALSource:
             return None
         if str(raw.get("id") or "") != mal_id:
             return None
-        return _record(raw)
+
+        record = _record(raw)
+        try:
+            supplement = await self._jikan.load_metadata_supplement(identity)
+        except Exception as exc:
+            logging.warning(
+                "Jikan MAL metadata supplement unavailable for %s: %s: %s",
+                mal_id,
+                type(exc).__name__,
+                exc,
+            )
+            return record
+
+        if supplement.get("licensors"):
+            record.licensors = list(supplement["licensors"])
+        if supplement.get("score_distribution"):
+            record.score_distribution = dict(supplement["score_distribution"])
+        return record
+
+    async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
+        return await self._jikan.load_staff(identity)
+
+    async def load_voices(self, identity: AnimeIdentity) -> list[PersonCredit]:
+        return await self._jikan.load_voices(identity)
+
+    async def load_staff_batch(
+        self,
+        identity: AnimeIdentity,
+        *,
+        cursor: str | None = None,
+        portrait_limit: int = 50,
+    ) -> PeopleBatch:
+        return await self._jikan.load_staff_batch(
+            identity,
+            cursor=cursor,
+            portrait_limit=portrait_limit,
+        )
+
+    async def load_voices_batch(
+        self,
+        identity: AnimeIdentity,
+        *,
+        cursor: str | None = None,
+        portrait_limit: int = 50,
+    ) -> PeopleBatch:
+        return await self._jikan.load_voices_batch(
+            identity,
+            cursor=cursor,
+            portrait_limit=portrait_limit,
+        )
