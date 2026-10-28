@@ -2,10 +2,20 @@ from __future__ import annotations
 
 import logging
 
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
-from bots.telegram.callbacks import SectionSourceCallback, ViewCallback
+from bots.telegram.callbacks import (
+    SectionSourceCallback,
+    ViewCallback,
+    resolve_key_or_legacy_index,
+)
 from bots.telegram.card.renderer import edit_standard_text
+from bots.telegram.card.selectors import source_options
 from bots.telegram.card.state import ANIME_SESSIONS
 from bots.telegram.people_loading import (
     PEOPLE_LOADS as _PEOPLE_LOADS,
@@ -36,7 +46,7 @@ async def _edit_people_view(
     token: str,
     anime: AggregatedAnime,
     section: str,
-    source_index: int | None,
+    source_key: str | None,
     page: int,
     *,
     locale: str,
@@ -46,10 +56,13 @@ async def _edit_people_view(
     existing_sources = _source_names(anime, section, existing_progress)
 
     source: str | None = None
-    if source_index is not None:
-        if source_index < 0 or source_index >= len(existing_sources):
-            raise ValueError("Portrait source index is out of range")
-        source = existing_sources[source_index]
+    if source_key is not None:
+        existing_options = source_options(existing_sources)
+        resolved_key = resolve_key_or_legacy_index(
+            source_key, [key for key, _ in existing_options]
+        )
+        source = dict(existing_options)[resolved_key]
+        source_key = resolved_key
 
     progress = await _ensure_lazy_people(
         token,
@@ -62,10 +75,12 @@ async def _edit_people_view(
     )
 
     sources = _source_names(anime, section, progress)
-    if source_index is not None:
-        if source_index < 0 or source_index >= len(sources):
-            raise ValueError("Portrait source index is out of range")
-        source = sources[source_index]
+    if source_key is not None:
+        options = source_options(sources)
+        source_key = resolve_key_or_legacy_index(
+            source_key, [key for key, _ in options]
+        )
+        source = dict(options)[source_key]
 
     without, with_portraits = _people_state(anime, section, source)
     max_page = len(with_portraits)
@@ -84,7 +99,7 @@ async def _edit_people_view(
         token,
         anime,
         section,
-        source_index,
+        source_key,
         page,
         shown,
         total,
@@ -96,9 +111,13 @@ async def _edit_people_view(
     )
 
     try:
-        await message.edit_text(rich_message=_rich(text_value, urls), reply_markup=keyboard)
+        await message.edit_text(
+            rich_message=_rich(text_value, urls), reply_markup=keyboard
+        )
     except Exception:
-        logging.exception("Rich portrait view edit failed; falling back to standard text edit")
+        logging.exception(
+            "Rich portrait view edit failed; falling back to standard text edit"
+        )
         await edit_standard_text(
             message,
             text_value,
@@ -107,13 +126,13 @@ async def _edit_people_view(
         )
 
 
-def _parse_people_callback(raw: str) -> tuple[str, str, int | None, int] | None:
+def _parse_people_callback(raw: str) -> tuple[str, str, str | None, int] | None:
     view = ViewCallback.parse(raw)
     if view is not None and view.section in PEOPLE_SECTIONS:
         return view.token, view.section, None, view.page
     source = SectionSourceCallback.parse(raw)
     if source is not None and source.section in PEOPLE_SECTIONS:
-        return source.token, source.section, source.source_index, source.page
+        return source.token, source.section, source.source_key, source.page
     return None
 
 
@@ -122,7 +141,7 @@ async def handle_people_callback(callback: CallbackQuery) -> bool:
     parsed = _parse_people_callback(callback.data or "")
     if parsed is None:
         return False
-    token, section, source_index, page = parsed
+    token, section, source_key, page = parsed
 
     locale = get_user_locale(callback.from_user.id)
     session = ANIME_SESSIONS.get(token)
@@ -143,7 +162,7 @@ async def handle_people_callback(callback: CallbackQuery) -> bool:
             token,
             session.anime,
             section,
-            source_index=source_index,
+            source_key=source_key,
             page=page,
             locale=locale,
         )
@@ -152,12 +171,16 @@ async def handle_people_callback(callback: CallbackQuery) -> bool:
         try:
             await callback.message.edit_text(
                 text=text("people", "source_unavailable", locale=locale),
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(
-                        text=text("common", "back", locale=locale),
-                        callback_data=ViewCallback(token, "main", 0).encode(),
-                    )
-                ]]),
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text=text("common", "back", locale=locale),
+                                callback_data=ViewCallback(token, "main", 0).encode(),
+                            )
+                        ]
+                    ]
+                ),
             )
         except Exception:
             logging.exception("Could not render stale people callback fallback")

@@ -20,6 +20,21 @@ def _non_negative(value: str) -> int | None:
     return int(value)
 
 
+def resolve_key_or_legacy_index(selector: str | None, keys: list[str]) -> str:
+    """Resolve a stable callback key, accepting old numeric list indices."""
+    if not keys:
+        raise ValueError("No callback keys are available")
+    if selector is None or selector == "":
+        return keys[0]
+    if selector in keys:
+        return selector
+    if selector.isdigit():
+        index = int(selector)
+        if 0 <= index < len(keys):
+            return keys[index]
+    raise ValueError(f"Callback key is unavailable: {selector}")
+
+
 @dataclass(frozen=True, slots=True)
 class ViewCallback:
     token: str
@@ -29,7 +44,9 @@ class ViewCallback:
     prefix = "av"
 
     def encode(self) -> str:
-        return _encode([self.prefix, self.token, self.section, str(max(0, int(self.page)))])
+        return _encode(
+            [self.prefix, self.token, self.section, str(max(0, int(self.page)))]
+        )
 
     @classmethod
     def parse(cls, raw: str | None) -> "ViewCallback | None":
@@ -46,100 +63,110 @@ class ViewCallback:
 class SectionSourceCallback:
     token: str
     section: str
-    source_index: int
+    source_key: str
     page: int = 0
 
     prefix = "as"
 
     def encode(self) -> str:
-        return _encode([
-            self.prefix,
-            self.token,
-            self.section,
-            str(max(0, int(self.source_index))),
-            str(max(0, int(self.page))),
-        ])
+        if not self.source_key:
+            raise ValueError("Source key must not be empty")
+        return _encode(
+            [
+                self.prefix,
+                self.token,
+                self.section,
+                self.source_key,
+                str(max(0, int(self.page))),
+            ]
+        )
 
     @classmethod
     def parse(cls, raw: str | None) -> "SectionSourceCallback | None":
         parts = (raw or "").split(":")
         if len(parts) != 5 or parts[0] != cls.prefix:
             return None
-        source_index = _non_negative(parts[3])
         page = _non_negative(parts[4])
-        if source_index is None or page is None or not parts[1] or not parts[2]:
+        if page is None or not parts[1] or not parts[2] or not parts[3]:
             return None
-        return cls(parts[1], parts[2], source_index, page)
+        return cls(parts[1], parts[2], parts[3], page)
 
 
 @dataclass(frozen=True, slots=True)
-class IndexedCallback:
+class KeyedPageCallback:
     prefix: str
     token: str
-    index: int
+    key: str
     page: int = 0
 
     def encode(self) -> str:
-        return _encode([
-            self.prefix,
-            self.token,
-            str(max(0, int(self.index))),
-            str(max(0, int(self.page))),
-        ])
+        if not self.key:
+            raise ValueError("Callback key must not be empty")
+        return _encode(
+            [
+                self.prefix,
+                self.token,
+                self.key,
+                str(max(0, int(self.page))),
+            ]
+        )
 
     @classmethod
-    def parse(cls, raw: str | None, *, prefix: str) -> "IndexedCallback | None":
+    def parse(cls, raw: str | None, *, prefix: str) -> "KeyedPageCallback | None":
         parts = (raw or "").split(":")
         if len(parts) != 4 or parts[0] != prefix:
             return None
-        index = _non_negative(parts[2])
         page = _non_negative(parts[3])
-        if index is None or page is None or not parts[1]:
+        if page is None or not parts[1] or not parts[2]:
             return None
-        return cls(prefix, parts[1], index, page)
+        return cls(prefix, parts[1], parts[2], page)
 
 
 @dataclass(frozen=True, slots=True)
 class EpisodeDetailCallback:
     token: str
-    backend_index: int
+    backend: str
     episode_number: int
     return_page: int
 
     prefix = "ae"
 
     def encode(self) -> str:
-        return _encode([
-            self.prefix,
-            self.token,
-            str(max(0, int(self.backend_index))),
-            str(max(1, int(self.episode_number))),
-            str(max(0, int(self.return_page))),
-        ])
+        if not self.backend:
+            raise ValueError("Episode backend must not be empty")
+        return _encode(
+            [
+                self.prefix,
+                self.token,
+                self.backend,
+                str(max(1, int(self.episode_number))),
+                str(max(0, int(self.return_page))),
+            ]
+        )
 
     @classmethod
     def parse(cls, raw: str | None) -> "EpisodeDetailCallback | None":
         parts = (raw or "").split(":")
+        # Oldest payload omitted the backend and implicitly selected index 0.
         if len(parts) == 4 and parts[0] == cls.prefix:
             episode = _non_negative(parts[2])
             page = _non_negative(parts[3])
             if episode is None or episode <= 0 or page is None or not parts[1]:
                 return None
-            return cls(parts[1], 0, episode, page)
+            return cls(parts[1], "0", episode, page)
         if len(parts) != 5 or parts[0] != cls.prefix:
             return None
-        backend = _non_negative(parts[2])
         episode = _non_negative(parts[3])
         page = _non_negative(parts[4])
         if (
-            backend is None
-            or episode is None
+            episode is None
             or episode <= 0
             or page is None
             or not parts[1]
+            or not parts[2]
         ):
             return None
-        return cls(parts[1], backend, episode, page)
+        return cls(parts[1], parts[2], episode, page)
 
 
 @dataclass(frozen=True, slots=True)

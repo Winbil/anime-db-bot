@@ -11,13 +11,16 @@ from core.models import TrailerRecord
 @dataclass(slots=True)
 class TrailerLoadResult:
     by_source: dict[str, list[TrailerRecord]] = field(default_factory=dict)
+    key_by_source: dict[str, str] = field(default_factory=dict)
     errors: dict[str, str] = field(default_factory=dict)
 
 
 class TrailerService:
     """Load promotional trailers lazily from every applicable backend."""
 
-    def __init__(self, sources: tuple[AnimeTrailerSource, ...] | list[AnimeTrailerSource]) -> None:
+    def __init__(
+        self, sources: tuple[AnimeTrailerSource, ...] | list[AnimeTrailerSource]
+    ) -> None:
         self._sources = tuple(sources)
 
     @property
@@ -34,15 +37,23 @@ class TrailerService:
         async def run(source: AnimeTrailerSource):
             try:
                 items = await source.load_trailers(identity.copy())
-                return source.display_name, list(items), None
+                return source.display_name, source.backend_key, list(items), None
             except Exception as exc:
-                return source.display_name, [], f"{type(exc).__name__}: {exc}"
+                return (
+                    source.display_name,
+                    source.backend_key,
+                    [],
+                    f"{type(exc).__name__}: {exc}",
+                )
 
         if not applicable:
             return TrailerLoadResult()
 
         result = TrailerLoadResult()
-        for source_name, items, error in await asyncio.gather(*(run(source) for source in applicable)):
+        for source_name, backend_key, items, error in await asyncio.gather(
+            *(run(source) for source in applicable)
+        ):
+            result.key_by_source[source_name] = backend_key
             if error:
                 result.errors[source_name] = error
             if items:
