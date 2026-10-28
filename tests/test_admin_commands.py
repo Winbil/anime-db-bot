@@ -62,7 +62,9 @@ class AdminCommandTests(unittest.TestCase):
         self.assertIsNone(_parse_mapping_history_limit("/mapping_history 101"))
         self.assertIsNone(_parse_mapping_history_limit("/mapping_history nope"))
 
-    def test_mapping_mutation_parsers_require_reason_and_distinct_providers(self) -> None:
+    def test_mapping_mutation_parsers_require_reason_and_distinct_providers(
+        self,
+    ) -> None:
         self.assertEqual(
             _parse_mapping_set(
                 "/mapping_set accept MAL 123 AniDB 456 verified manually"
@@ -171,7 +173,9 @@ class AdminAiogramIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(len(self.session.methods), before)
         return str(getattr(self.session.methods[-1], "text", ""))
 
-    async def test_mapping_overrides_runs_through_command_filter_and_handler(self) -> None:
+    async def test_mapping_overrides_runs_through_command_filter_and_handler(
+        self,
+    ) -> None:
         override = MappingOverride(
             "mal",
             "123",
