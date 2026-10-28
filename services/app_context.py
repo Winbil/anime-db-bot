@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Iterator
 
 from core.contracts import AnimeSearchProvider, AnimeSource
+from core.http_client import HttpClientPool, activate_http_pool
 from core.settings import AppSettings, get_settings
 from search.registry import get_search_providers
 from services.characters import CharacterService
@@ -13,6 +14,7 @@ from services.direct_lookup import DirectIdLookupService
 from services.episodes import EpisodeService
 from services.identity_aggregator import AnimeAggregator
 from services.search import SearchService
+from services.source_health import SourceHealthRegistry
 from services.trailers import TrailerService
 from sources.episode_registry import get_episode_sources
 from sources.registry import get_sources
@@ -21,13 +23,11 @@ from sources.trailer_registry import get_trailer_sources
 
 @dataclass(slots=True)
 class AppContext:
-    """Application composition root shared by transport/UI adapters.
-
-    Construction happens explicitly at startup. Importing a Telegram UI module no
-    longer creates API sources, services or caches as a side effect.
-    """
+    """Application composition root shared by transport/UI adapters."""
 
     settings: AppSettings
+    http: HttpClientPool
+    source_health: SourceHealthRegistry
     search_providers: tuple[AnimeSearchProvider, ...]
     sources: tuple[AnimeSource, ...]
     search_service: SearchService
@@ -40,10 +40,14 @@ class AppContext:
     @classmethod
     def create(cls, settings: AppSettings | None = None) -> "AppContext":
         settings = settings or get_settings()
+        http = HttpClientPool()
+        source_health = SourceHealthRegistry()
         search_providers = get_search_providers()
-        sources = get_sources()
+        sources = get_sources(source_health)
         return cls(
             settings=settings,
+            http=http,
+            source_health=source_health,
             search_providers=search_providers,
             sources=sources,
             search_service=SearchService(search_providers),
@@ -55,7 +59,7 @@ class AppContext:
         )
 
     async def aclose(self) -> None:
-        """Close owned resources when implementations expose async lifecycle."""
+        """Close owned runtime resources exactly once where possible."""
         seen: set[int] = set()
         resources = [
             *self.sources,
@@ -69,6 +73,7 @@ class AppContext:
             close = getattr(resource, "aclose", None)
             if callable(close):
                 await close()
+        await self.http.aclose()
 
 
 _CURRENT_CONTEXT: ContextVar[AppContext | None] = ContextVar(
@@ -91,6 +96,7 @@ def get_app_context() -> AppContext:
 def activate_app_context(context: AppContext) -> Iterator[AppContext]:
     token: Token[AppContext | None] = _CURRENT_CONTEXT.set(context)
     try:
-        yield context
+        with activate_http_pool(context.http):
+            yield context
     finally:
         _CURRENT_CONTEXT.reset(token)
