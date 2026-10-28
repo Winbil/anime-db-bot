@@ -202,6 +202,8 @@ class MappingDatabaseBuilder:
                 downloaded_at,
             ),
         )
+        if cursor.lastrowid is None:
+            raise RuntimeError("SQLite did not return a dataset row ID")
         dataset_id = int(cursor.lastrowid)
         record_count = 0
 
@@ -333,7 +335,7 @@ class MappingDatabaseBuilder:
             ),
             conflicts=self._scalar("SELECT COUNT(*) FROM conflicts"),
         )
-        for key, value in {
+        for key, metric_value in {
             "datasets": stats.datasets,
             "records": stats.records,
             "evidence": stats.evidence,
@@ -343,7 +345,7 @@ class MappingDatabaseBuilder:
         }.items():
             self.conn.execute(
                 "INSERT OR REPLACE INTO metadata(key, value) VALUES(?, ?)",
-                (key, str(value)),
+                (key, str(metric_value)),
             )
         self.conn.commit()
         return stats
@@ -458,6 +460,3 @@ class MappingDatabase:
                     "SELECT key, value FROM metadata ORDER BY key"
                 )
             }
-
-
-MAPPING_DATABASE = MappingDatabase()

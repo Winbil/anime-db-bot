@@ -5,14 +5,16 @@ import logging
 
 from core.identity import AnimeIdentity
 from core.models import AnimeRecord, SearchCandidate, SearchResultSet
-from services.id_resolver import enrich_identity
+from services.id_resolver import IdentityResolver
 from services.search import merge_candidates
 
 
 class DirectIdLookupService:
     """Resolve IDs and enrich confirmed identities across metadata sources."""
 
-    def __init__(self, sources) -> None:
+    def __init__(
+        self, sources, identity_resolver: IdentityResolver | None = None
+    ) -> None:
         self._source_map = {
             str(source.source_key).strip().casefold(): source
             for source in sources
@@ -20,10 +22,15 @@ class DirectIdLookupService:
         }
         if not self._source_map:
             raise ValueError("DirectIdLookupService requires keyed metadata sources")
+        self._identity_resolver = identity_resolver or IdentityResolver()
 
     @property
     def source_keys(self) -> tuple[str, ...]:
         return tuple(self._source_map)
+
+    @property
+    def identity_resolver(self) -> IdentityResolver:
+        return self._identity_resolver
 
     async def _resolve_identity(
         self,
@@ -35,7 +42,7 @@ class DirectIdLookupService:
         if "shikimori" not in self._source_map:
             return identity.copy()
         try:
-            return (await enrich_identity(identity, titles)).copy()
+            return (await self._identity_resolver.enrich(identity, titles)).copy()
         except Exception:
             logging.warning(
                 "Could not enrich search identity %s",

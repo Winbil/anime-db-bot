@@ -6,7 +6,13 @@ import logging
 from core.canonicalization import canonical_genre_token
 from core.contracts import AnimeSource
 from core.identity import AnimeIdentity
-from core.models import AggregatedAnime, AnimeRecord, PersonCredit, PopularityStats, SearchCandidate
+from core.models import (
+    AggregatedAnime,
+    AnimeRecord,
+    PersonCredit,
+    PopularityStats,
+    SearchCandidate,
+)
 from core.score_summary import consensus_score, normalize_source_scores
 from localization import canonicalize_domain_value
 from services.aggregation_merge import (
@@ -26,7 +32,7 @@ from services.aggregation_merge import (
     _merge_source_text,
     _merge_studios,
 )
-from services.id_resolver import enrich_identity
+from services.id_resolver import IdentityResolver
 
 
 class AnimeAggregator(AggregationMergeSupport):
@@ -38,6 +44,18 @@ class AnimeAggregator(AggregationMergeSupport):
     Shikimori-only search result expand into other databases without choosing a
     global primary ID.
     """
+
+    def __init__(
+        self,
+        sources: tuple[AnimeSource, ...] | list[AnimeSource],
+        identity_resolver: IdentityResolver | None = None,
+    ) -> None:
+        super().__init__(sources)
+        self._identity_resolver = identity_resolver or IdentityResolver()
+
+    @property
+    def identity_resolver(self) -> IdentityResolver:
+        return self._identity_resolver
 
     @staticmethod
     def _record_conflict(
@@ -58,9 +76,15 @@ class AnimeAggregator(AggregationMergeSupport):
 
     async def aggregate(self, candidate: SearchCandidate) -> AggregatedAnime:
         titles_for_resolution = [candidate.title, *candidate.aliases]
-        identity = (await enrich_identity(candidate.identity, titles_for_resolution)).copy()
+        identity = (
+            await self._identity_resolver.enrich(
+                candidate.identity, titles_for_resolution
+            )
+        ).copy()
         if identity.is_empty():
-            raise RuntimeError("Search result does not contain any external database ID")
+            raise RuntimeError(
+                "Search result does not contain any external database ID"
+            )
 
         async def run(source: AnimeSource, current_identity: AnimeIdentity):
             try:
@@ -94,7 +118,9 @@ class AnimeAggregator(AggregationMergeSupport):
 
         identity_expanded = identity.fingerprint() != first_pass_fingerprint
         before_enrichment = identity.fingerprint()
-        identity = (await enrich_identity(identity, titles_for_resolution)).copy()
+        identity = (
+            await self._identity_resolver.enrich(identity, titles_for_resolution)
+        ).copy()
         identity_expanded = (
             identity_expanded or identity.fingerprint() != before_enrichment
         )
@@ -240,7 +266,9 @@ class AnimeAggregator(AggregationMergeSupport):
             season=season,
             season_year=season_year,
             franchise=_consensus_text(records, "franchise"),
-            episodes_total=_consensus_int(records, "episodes_total", prefer_max_on_tie=True),
+            episodes_total=_consensus_int(
+                records, "episodes_total", prefer_max_on_tie=True
+            ),
             episodes_aired=_max_int(records, "episodes_aired"),
             duration_minutes=_consensus_int(records, "duration_minutes"),
             aired_on=_consensus_partial_date(records, "aired_on"),
@@ -252,7 +280,9 @@ class AnimeAggregator(AggregationMergeSupport):
             popularity_by_source=popularity_by_source,
             genres=canonical_genres,
             studios=_merge_studios(records),
-            licensors=_dedupe_strings([value for record in records for value in record.licensors]),
+            licensors=_dedupe_strings(
+                [value for record in records for value in record.licensors]
+            ),
             source_materials=source_materials,
             broadcasts=_merge_broadcasts(records),
             titles_by_source=titles_by_source,
@@ -261,7 +291,9 @@ class AnimeAggregator(AggregationMergeSupport):
             voices_by_source=voices_by_source,
             descriptions=descriptions,
             background=_best_text(background_values),
-            posters=_dedupe_strings([value for record in records for value in record.posters]),
+            posters=_dedupe_strings(
+                [value for record in records for value in record.posters]
+            ),
             urls=urls,
             staff=_merge_people(
                 [record.staff for record in records],

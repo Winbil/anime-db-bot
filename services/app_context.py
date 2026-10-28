@@ -9,10 +9,12 @@ from core.contracts import AnimeSearchProvider, AnimeSource
 from core.http_client import HttpClientPool, activate_http_pool
 from core.settings import AppSettings, get_settings
 from core.source_keys import SourceKey
+from mappings.resolver import MappingResolver
 from services.bans import SQLiteBanStore, activate_ban_store
 from services.characters import CharacterService
 from services.direct_lookup import DirectIdLookupService
 from services.episodes import EpisodeService
+from services.id_resolver import IdentityResolver
 from services.identity_aggregator import AnimeAggregator
 from services.people_progress import PeopleProgressService
 from services.rate_limits import (
@@ -46,6 +48,7 @@ class AppContext:
     ban_store: SQLiteBanStore
     personal_rate_limiter: PersonalRateLimiter
     upstream_rate_limiter: UpstreamRateLimiter
+    identity_resolver: IdentityResolver
     search_provider_map: dict[SourceKey, AnimeSearchProvider]
     search_providers: tuple[AnimeSearchProvider, ...]
     sources: tuple[AnimeSource, ...]
@@ -74,7 +77,11 @@ class AppContext:
         search_provider_map = get_search_provider_map(settings.sources)
         search_providers = tuple(search_provider_map.values())
         sources = get_sources(source_health, settings.sources)
-        aggregator = AnimeAggregator(sources)
+        identity_resolver = IdentityResolver(
+            mapping_resolver=MappingResolver(settings.mappings.db_path),
+            shikimori_provider=search_provider_map.get(SourceKey.SHIKIMORI),
+        )
+        aggregator = AnimeAggregator(sources, identity_resolver)
         return cls(
             settings=settings,
             http=http,
@@ -83,6 +90,7 @@ class AppContext:
             ban_store=ban_store,
             personal_rate_limiter=personal_rate_limiter,
             upstream_rate_limiter=upstream_rate_limiter,
+            identity_resolver=identity_resolver,
             search_provider_map=search_provider_map,
             search_providers=search_providers,
             sources=sources,
@@ -96,7 +104,7 @@ class AppContext:
                 aggregator,
                 portrait_batch_size=settings.sources.people_portrait_batch_size,
             ),
-            direct_lookup=DirectIdLookupService(sources),
+            direct_lookup=DirectIdLookupService(sources, identity_resolver),
         )
 
     async def aclose(self) -> None:

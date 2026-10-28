@@ -566,6 +566,3 @@ class MappingResolver:
         enriched = identity.copy()
         enriched.merge_missing(self.resolve(enriched))
         return enriched
-
-
-MAPPING_RESOLVER = MappingResolver()
