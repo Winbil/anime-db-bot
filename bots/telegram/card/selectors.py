@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.capabilities import source_key_for_display_name
+from sources.catalog import source_key_for_display_name
 from core.models import AggregatedAnime
 
 

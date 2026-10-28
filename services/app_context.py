@@ -8,7 +8,6 @@ from typing import Iterator
 from core.contracts import AnimeSearchProvider, AnimeSource
 from core.http_client import HttpClientPool, activate_http_pool
 from core.settings import AppSettings, get_settings
-from search.registry import get_search_providers
 from services.characters import CharacterService
 from services.direct_lookup import DirectIdLookupService
 from services.episodes import EpisodeService
@@ -17,9 +16,12 @@ from services.people_progress import PeopleProgressService
 from services.search import SearchService
 from services.source_health import SourceHealthRegistry
 from services.trailers import TrailerService
-from sources.episode_registry import get_episode_sources
-from sources.registry import get_sources
-from sources.trailer_registry import get_trailer_sources
+from sources.catalog import (
+    get_episode_sources,
+    get_search_providers,
+    get_sources,
+    get_trailer_sources,
+)
 
 
 @dataclass(slots=True)

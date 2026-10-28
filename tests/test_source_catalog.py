@@ -2,9 +2,16 @@ from __future__ import annotations
 
 import unittest
 
-from core.capabilities import SourceCapability, descriptor_for, source_keys_with
+from core.capabilities import SourceCapability
 from core.source_keys import SourceKey, normalize_source_key
 from search.registry import DEFAULT_SEARCH_PROVIDER_KEYS
+from sources.catalog import (
+    SOURCE_CATALOG,
+    descriptor_for,
+    get_episode_sources,
+    get_trailer_sources,
+    source_keys_with,
+)
 
 
 class SourceCatalogTests(unittest.TestCase):
@@ -33,6 +40,24 @@ class SourceCatalogTests(unittest.TestCase):
         self.assertTrue(descriptor.supports(SourceCapability.METADATA))
         self.assertTrue(descriptor.supports(SourceCapability.EPISODES))
         self.assertFalse(descriptor.supports(SourceCapability.SEARCH))
+
+    def test_declared_runtime_capabilities_have_factories(self) -> None:
+        for registration in SOURCE_CATALOG:
+            with self.subTest(source=registration.key):
+                if registration.supports(SourceCapability.SEARCH):
+                    self.assertIsNotNone(registration.search_factory)
+                if registration.supports(SourceCapability.METADATA):
+                    self.assertIsNotNone(registration.metadata_factory)
+                if registration.supports(SourceCapability.TRAILERS):
+                    self.assertTrue(registration.trailer_backends)
+                if registration.supports(SourceCapability.EPISODES):
+                    self.assertTrue(registration.episode_backends)
+
+    def test_backend_order_preserves_existing_ui_contract(self) -> None:
+        trailer_keys = [source.backend_key for source in get_trailer_sources()]
+        self.assertEqual(trailer_keys, ["shikimori", "anilist", "jikan"])
+        episode_keys = [source.backend_key for source in get_episode_sources()]
+        self.assertEqual(episode_keys[0], "jikan")
 
 
 if __name__ == "__main__":
