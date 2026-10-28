@@ -217,6 +217,11 @@ class MappingDatabaseTests(unittest.TestCase):
         self.assertEqual([item.event for item in history], ["set", "delete"])
         self.assertEqual([item.author for item in history], ["tester", "tester2"])
         self.assertEqual(history[-1].reason, "superseded")
+        latest = list_mapping_override_history(
+            self.path, limit=1, newest_first=True
+        )
+        self.assertEqual([item.event for item in latest], ["delete"])
+        self.assertEqual(list_mapping_override_history(self.path, limit=0), [])
 
     def test_legacy_override_table_is_migrated_on_write(self) -> None:
         self._build([])
