@@ -6,7 +6,11 @@ from typing import Iterable, Mapping
 
 
 def normalize_source_scores(values: Mapping[str, object]) -> dict[str, float]:
-    """Keep only finite source scores on the shared 0..10 scale."""
+    """Keep only finite source scores on the shared 0..10 scale.
+
+    Invalid values are removed before both the aggregate score and source count
+    are computed, so malformed provider data cannot skew either field.
+    """
     result: dict[str, float] = {}
     for raw_source, raw_score in values.items():
         source = str(raw_source or "").strip()
