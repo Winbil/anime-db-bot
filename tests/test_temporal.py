@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 
 from bots.telegram.card.renderer import anime_sections
-from core.models import AggregatedAnime, AnimeRecord, EpisodeRecord
-from core.temporal import PartialDate, parse_datetime, parse_partial_date
+from core.models import AggregatedAnime, AnimeRecord, BroadcastSlot, EpisodeRecord
+from core.temporal import (
+    PartialDate,
+    format_time,
+    parse_datetime,
+    parse_partial_date,
+    parse_time,
+)
 from services.aggregation_merge import _consensus_datetime, _consensus_partial_date
 from services.direct_lookup import _record_year
 from sources.anilist import _format_date as anilist_date
@@ -34,6 +40,14 @@ class PartialDateTests(unittest.TestCase):
             PartialDate(2026, 2, 2),
         )
 
+    def test_clock_time_parser_preserves_precision_and_timezone(self) -> None:
+        self.assertEqual(parse_time("20:00"), time(20, 0))
+        self.assertEqual(parse_time("20:00:30"), time(20, 0, 30))
+        self.assertEqual(format_time(parse_time("20:00")), "20:00")
+        self.assertEqual(format_time(parse_time("20:00:30")), "20:00:30")
+        self.assertEqual(format_time(parse_time("20:00+03:00")), "20:00+03:00")
+        self.assertIsNone(parse_time("25:00"))
+
 
 class TypedTemporalModelTests(unittest.TestCase):
     def test_models_normalize_legacy_string_inputs(self) -> None:
@@ -50,6 +64,7 @@ class TypedTemporalModelTests(unittest.TestCase):
             backend="jikan",
             aired_at="2026-04-01T00:00:00+00:00",
         )
+        broadcast = BroadcastSlot(weekday="monday", time="20:00")  # type: ignore[arg-type]
         self.assertEqual(anime.aired_on, PartialDate(2026, 4))
         self.assertEqual(anime.released_on, PartialDate(2026, 9, 16))
         self.assertEqual(
@@ -57,6 +72,7 @@ class TypedTemporalModelTests(unittest.TestCase):
             datetime(2026, 4, 2, 12, 30, tzinfo=timezone.utc),
         )
         self.assertEqual(episode.aired_at, PartialDate(2026, 4, 1))
+        self.assertEqual(broadcast.time, time(20, 0))
 
     def test_renderer_keeps_existing_iso_visible_format(self) -> None:
         anime = AggregatedAnime(
@@ -93,7 +109,9 @@ class TemporalAggregationTests(unittest.TestCase):
                 next_episode_at="2026-04-02T13:30:00+00:00",
             ),
         ]
-        self.assertEqual(_consensus_partial_date(records, "aired_on"), PartialDate(2026, 4))
+        self.assertEqual(
+            _consensus_partial_date(records, "aired_on"), PartialDate(2026, 4)
+        )
         self.assertEqual(
             _consensus_datetime(records, "next_episode_at"),
             datetime(2026, 4, 2, 12, 30, tzinfo=timezone.utc),
@@ -116,10 +134,12 @@ class TemporalSourceAdapterTests(unittest.TestCase):
         )
 
     def test_jikan_episode_discards_time_not_date(self) -> None:
-        episode = jikan_episode({
-            "number": 1,
-            "aired_at": "2026-01-01T08:30:00+00:00",
-        })
+        episode = jikan_episode(
+            {
+                "number": 1,
+                "aired_at": "2026-01-01T08:30:00+00:00",
+            }
+        )
         self.assertEqual(episode.aired_at, PartialDate(2026, 1, 1))
 
     def test_invalid_iso_timestamp_is_none(self) -> None:

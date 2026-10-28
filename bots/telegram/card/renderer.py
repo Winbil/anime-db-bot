@@ -20,6 +20,7 @@ from bots.telegram.card.selectors import (
 )
 from core.canonicalization import display_person_name, localize_role_token
 from core.models import AggregatedAnime, BroadcastSlot, PopularityStats
+from core.temporal import format_time
 from localization import text
 
 
@@ -95,7 +96,7 @@ def _season(anime: AggregatedAnime, locale: str) -> str | None:
 
 def _broadcast(item: BroadcastSlot, locale: str) -> str:
     weekday = _domain("weekday", item.weekday, locale) if item.weekday else None
-    return " ".join(part for part in (weekday, item.time) if part)
+    return " ".join(part for part in (weekday, format_time(item.time)) if part)
 
 
 def _table_html(caption: str, lines: list[str]) -> str:

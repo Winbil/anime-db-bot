@@ -1,14 +1,19 @@
 from __future__ import annotations
 
-from sources.catalog import source_key_for_display_name
+from collections.abc import Mapping
+from typing import TypeVar
+
 from core.models import AggregatedAnime
+from sources.catalog import source_key_for_display_name
+
+T = TypeVar("T")
 
 
 def ordered_mapping_items(
-    mapping: dict[str, object],
+    mapping: Mapping[str, T],
     source_order: list[str],
-) -> list[tuple[str, object]]:
-    result: list[tuple[str, object]] = []
+) -> list[tuple[str, T]]:
+    result: list[tuple[str, T]] = []
     seen: set[str] = set()
     for source in source_order:
         if source in mapping:

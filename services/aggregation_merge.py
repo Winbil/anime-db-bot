@@ -14,7 +14,7 @@ from core.canonicalization import (
 )
 from core.contracts import AnimeSource
 from core.models import AggregatedAnime, AnimeRecord, BroadcastSlot, PersonCredit
-from core.temporal import PartialDate
+from core.temporal import PartialDate, format_time, parse_time
 from localization import canonicalize_domain_value
 
 
@@ -116,7 +116,11 @@ def _merge_people(
             names = _person_names(person)
             raw_roles = [role for role in person.roles if role]
             roles = _dedupe_strings(
-                [canonical_role_token(role) for role in raw_roles if canonical_role_token(role)]
+                [
+                    canonical_role_token(role)
+                    for role in raw_roles
+                    if canonical_role_token(role)
+                ]
             )
             keys = person_identity_keys(names)
             match_index: int | None = None
@@ -346,16 +350,20 @@ def _merge_broadcasts(records: list[AnimeRecord]) -> list[BroadcastSlot]:
     for record in records:
         for item in record.broadcasts:
             if isinstance(item, BroadcastSlot):
-                weekday = canonicalize_domain_value("weekday", item.weekday) if item.weekday else None
-                time = _clean(item.time or "") or None
+                weekday = (
+                    canonicalize_domain_value("weekday", item.weekday)
+                    if item.weekday
+                    else None
+                )
+                broadcast_time = item.time
             else:
                 weekday = None
-                time = _clean(str(item)) or None
-            key = (weekday or "", time or "")
+                broadcast_time = parse_time(item)
+            key = (weekday or "", format_time(broadcast_time) or "")
             if key == ("", "") or key in seen:
                 continue
             seen.add(key)
-            result.append(BroadcastSlot(weekday=weekday, time=time))
+            result.append(BroadcastSlot(weekday=weekday, time=broadcast_time))
     return result
 
 
@@ -409,7 +417,9 @@ class AggregationMergeSupport:
         else:
             mapping.pop(source_name, None)
 
-        ordered_groups = [mapping[source] for source in anime.sources if source in mapping]
+        ordered_groups = [
+            mapping[source] for source in anime.sources if source in mapping
+        ]
         ordered_groups.extend(
             people_group
             for source, people_group in mapping.items()
