@@ -2,17 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message
-from dotenv import load_dotenv
-
-load_dotenv()
 
 from bots.telegram.admin import TelegramModerationMiddleware, register_admin_handlers
 from bots.telegram.card.handlers import build_dispatcher
-from bots.telegram.card.service import SEARCH_SERVICE, SOURCES, aggregate_and_send
+from bots.telegram.card.service import aggregate_and_send
 from bots.telegram.people_portraits import handle_people_callback
 from bots.telegram.rate_limit import TelegramRateLimitMiddleware
 from bots.telegram.search_ui import register_search_handlers
@@ -20,19 +16,19 @@ from bots.telegram.transports import TelegramTransport
 from bots.telegram.transports.official import TRANSPORT as OFFICIAL_TRANSPORT
 from bots.telegram.transports.tgapi import TRANSPORT as TGAPI_TRANSPORT
 from core.models import SearchCandidate
+from core.settings import AppSettings, get_settings
 from localization import text
 from mappings.runtime import periodic_mapping_updates
 from services.access_control import telegram_admin_ids
-from services.direct_lookup import DirectIdLookupService
+from services.app_context import AppContext, activate_app_context
 from services.rate_limits import PERSONAL_RATE_LIMITER
 from services.user_settings import get_user_locale
 
-DIRECT_ID_LOOKUP = DirectIdLookupService(SOURCES)
 
-
-def select_transport() -> TelegramTransport:
+def select_transport(settings: AppSettings | None = None) -> TelegramTransport:
     """Select official Telegram API or local tg-bot-api from configuration."""
-    if os.getenv("TELEGRAM_BOT_API_URL", "").strip():
+    settings = settings or AppSettings.from_env()
+    if settings.telegram.bot_api_url:
         return TGAPI_TRANSPORT
     return OFFICIAL_TRANSPORT
 
@@ -91,9 +87,16 @@ class _CallbackRoutingMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 
-async def run_bot(transport: TelegramTransport | None = None) -> None:
+async def run_bot(
+    transport: TelegramTransport | None = None,
+    *,
+    context: AppContext | None = None,
+) -> None:
     """Build and run the Telegram implementation of anime-db-bot."""
-    transport = transport or select_transport()
+    context = context or AppContext.create(get_settings())
+    settings = context.settings
+    settings.require_bot_token()
+    transport = transport or select_transport(settings)
 
     logging.basicConfig(
         level=logging.INFO,
@@ -107,42 +110,44 @@ async def run_bot(transport: TelegramTransport | None = None) -> None:
         PERSONAL_RATE_LIMITER.per_minute,
         PERSONAL_RATE_LIMITER.per_hour,
     )
-    logging.info("Default search providers: %s", SEARCH_SERVICE.provider_name)
-    logging.info("Metadata sources: %s", ", ".join(source.name for source in SOURCES))
+    logging.info("Default search providers: %s", context.search_service.provider_name)
+    logging.info("Metadata sources: %s", ", ".join(source.name for source in context.sources))
     logging.info("Interactive /anime provider selection and direct-ID lookup are enabled")
 
     bot = transport.create_bot()
     mapping_task = asyncio.create_task(periodic_mapping_updates())
     try:
-        health = await transport.check_health(bot)
-        if health.healthy:
-            identity = f" @{health.bot_username}" if health.bot_username else ""
-            logging.info("Telegram transport health: healthy%s — %s", identity, health.detail)
-        else:
-            logging.warning("Telegram transport health: degraded — %s", health.detail)
+        with activate_app_context(context):
+            health = await transport.check_health(bot)
+            if health.healthy:
+                identity = f" @{health.bot_username}" if health.bot_username else ""
+                logging.info("Telegram transport health: healthy%s — %s", identity, health.detail)
+            else:
+                logging.warning("Telegram transport health: degraded — %s", health.detail)
 
-        dp = build_dispatcher(mode_name=transport.mode_name)
-        moderation = TelegramModerationMiddleware()
-        rate_limit = TelegramRateLimitMiddleware()
-        dp.message.outer_middleware(moderation)
-        dp.message.outer_middleware(rate_limit)
-        dp.callback_query.outer_middleware(moderation)
-        dp.callback_query.outer_middleware(rate_limit)
-        dp.callback_query.outer_middleware(_CallbackRoutingMiddleware())
+            dp = build_dispatcher(mode_name=transport.mode_name)
+            moderation = TelegramModerationMiddleware()
+            rate_limit = TelegramRateLimitMiddleware()
+            dp.message.outer_middleware(moderation)
+            dp.message.outer_middleware(rate_limit)
+            dp.callback_query.outer_middleware(moderation)
+            dp.callback_query.outer_middleware(rate_limit)
+            dp.callback_query.outer_middleware(_CallbackRoutingMiddleware())
 
-        register_admin_handlers(dp)
-        register_search_handlers(
-            dp,
-            aggregate_callback=_aggregate_and_cleanup_search,
-            default_service=SEARCH_SERVICE,
-            direct_lookup=DIRECT_ID_LOOKUP,
-        )
+            register_admin_handlers(dp)
+            register_search_handlers(
+                dp,
+                aggregate_callback=_aggregate_and_cleanup_search,
+                default_service=context.search_service,
+                direct_lookup=context.direct_lookup,
+            )
 
-        await dp.start_polling(bot)
+            await dp.start_polling(bot)
     finally:
         mapping_task.cancel()
         await asyncio.gather(mapping_task, return_exceptions=True)
         await transport.close(bot)
+        await context.aclose()
 
 
 def main() -> None:
