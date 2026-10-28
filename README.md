@@ -192,6 +192,8 @@ Domain model locale-neutral: source adapters сохраняют canonical status
 /users
 /ban <user_id> [seconds] [reason]
 /unban <user_id>
+/mapping_overrides
+/mapping_history [limit]
 ```
 
 ## Запуск
@@ -296,6 +298,6 @@ Domain-модели anime/episode/broadcast теперь хранят кален
 
 - расширение persistent user/account/preferences/watch-state слоя поверх существующего repository boundary;
 - дальнейшее повышение общего coverage и постепенное расширение mypy/formatter scope на legacy modules;
-- admin UI/операционные инструменты для просмотра и управления mapping override history.
+- безопасный admin mutation workflow для mapping overrides с явным подтверждением; read-only просмотр уже доступен через `/mapping_overrides` и `/mapping_history`.
 
 Эти ограничения не меняют текущие non-regression contracts: source-independent identity, direct-only mapping safety, lazy sections, explicit provenance и scoped rate/session state.

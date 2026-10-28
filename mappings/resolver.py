@@ -157,11 +157,22 @@ def list_mapping_overrides(path: Path | None = None) -> list[MappingOverride]:
 
 def list_mapping_override_history(
     path: Path | None = None,
+    *,
+    limit: int | None = None,
+    newest_first: bool = False,
 ) -> list[MappingOverrideHistory]:
+    if limit is not None:
+        limit = int(limit)
+        if limit <= 0:
+            return []
+
     db_path = _database_path(path)
     if not db_path.is_file():
         return []
     uri = f"file:{db_path.resolve().as_posix()}?mode=ro"
+    order = "DESC" if newest_first else "ASC"
+    limit_sql = " LIMIT ?" if limit is not None else ""
+    params: tuple[int, ...] = (limit,) if limit is not None else ()
     try:
         with managed_sqlite_connection(
             sqlite3.connect(uri, uri=True, timeout=5.0)
@@ -169,11 +180,12 @@ def list_mapping_override_history(
             if not _table_columns(conn, "mapping_override_history"):
                 return []
             rows = conn.execute(
-                """
+                f"""
                 SELECT source_provider, source_id, target_provider, target_id, event,
                        override_action, reason, author, changed_at
-                FROM mapping_override_history ORDER BY id
-                """
+                FROM mapping_override_history ORDER BY id {order}{limit_sql}
+                """,
+                params,
             ).fetchall()
     except sqlite3.OperationalError:
         return []
