@@ -291,9 +291,7 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
         )
     card_source_ids = _card_source_ids(anime)
     if card_source_ids:
-        ids = " | ".join(
-            f"{name.upper()}: {value}" for name, value in card_source_ids
-        )
+        ids = " | ".join(f"{name.upper()}: {value}" for name, value in card_source_ids)
         source_lines.append(text("card", "ids", locale=locale, value=ids))
     if anime.errors:
         source_lines.append(
