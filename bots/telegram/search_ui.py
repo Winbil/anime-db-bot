@@ -29,7 +29,6 @@ from bots.telegram.callbacks import (
 from bots.telegram.card.renderer import plain_text_to_rich_html
 from core.contracts import AnimeSearchProvider
 from core.models import SearchCandidate, SearchResultSet
-from core.settings import get_settings
 from core.source_names import MAL_SOURCE_NAME
 from localization import text
 from search.registry import DEFAULT_SEARCH_PROVIDER_KEYS
@@ -128,18 +127,27 @@ class PendingAnimeInput:
     scope_label: str
 
 
-_input_ttl = max(60, get_settings().telegram.anime_input_ttl_seconds)
-SESSIONS: ExpiringSessionStore[SearchSession] = ExpiringSessionStore(
-    max_entries=MAX_SEARCH_SESSIONS,
-)
-SCOPE_SESSIONS: ExpiringSessionStore[ScopeSelectionSession] = ExpiringSessionStore(
-    max_entries=MAX_SCOPE_SESSIONS,
-    ttl_seconds=_input_ttl,
-)
-PENDING_INPUTS: ExpiringSessionStore[PendingAnimeInput] = ExpiringSessionStore(
-    max_entries=MAX_PENDING_INPUTS,
-    ttl_seconds=_input_ttl,
-)
+@dataclass(slots=True)
+class SearchUiState:
+    sessions: ExpiringSessionStore[SearchSession]
+    scope_sessions: ExpiringSessionStore[ScopeSelectionSession]
+    pending_inputs: ExpiringSessionStore[PendingAnimeInput]
+    service_cache: dict[tuple[str, ...], SearchService] = field(default_factory=dict)
+
+    @classmethod
+    def create(cls, input_ttl_seconds: int) -> "SearchUiState":
+        input_ttl = max(60, int(input_ttl_seconds))
+        return cls(
+            sessions=ExpiringSessionStore(max_entries=MAX_SEARCH_SESSIONS),
+            scope_sessions=ExpiringSessionStore(
+                max_entries=MAX_SCOPE_SESSIONS,
+                ttl_seconds=input_ttl,
+            ),
+            pending_inputs=ExpiringSessionStore(
+                max_entries=MAX_PENDING_INPUTS,
+                ttl_seconds=input_ttl,
+            ),
+        )
 
 
 def _ui(locale: str, key: str, **kwargs) -> str:
@@ -409,12 +417,13 @@ def _remember_preview_file_id(
 
 
 def _remember_results(
+    state: SearchUiState,
     query: str,
     owner_user_id: int,
     result_set: SearchResultSet,
 ) -> str:
     token = secrets.token_urlsafe(6)
-    SESSIONS[token] = SearchSession(
+    state.sessions[token] = SearchSession(
         query=query,
         owner_user_id=int(owner_user_id),
         items=list(result_set.items),
@@ -424,9 +433,9 @@ def _remember_results(
     return token
 
 
-def _remember_scope(owner_user_id: int, chat_id: int) -> str:
+def _remember_scope(state: SearchUiState, owner_user_id: int, chat_id: int) -> str:
     token = secrets.token_urlsafe(6)
-    SCOPE_SESSIONS[token] = ScopeSelectionSession(
+    state.scope_sessions[token] = ScopeSelectionSession(
         owner_user_id=int(owner_user_id),
         chat_id=int(chat_id),
     )
@@ -440,6 +449,9 @@ def _pending_key(user_id: int) -> str:
 class PendingAnimeInputFilter(BaseFilter):
     """Match only the next text from the owner/chat of a live /anime flow."""
 
+    def __init__(self, state: SearchUiState) -> None:
+        self._state = state
+
     async def __call__(self, message: Message) -> bool:
         if (
             message.from_user is None
@@ -447,16 +459,16 @@ class PendingAnimeInputFilter(BaseFilter):
             or message.text.startswith("/")
         ):
             return False
-        pending = PENDING_INPUTS.get(_pending_key(message.from_user.id))
+        pending = self._state.pending_inputs.get(_pending_key(message.from_user.id))
         return pending is not None and pending.chat_id == message.chat.id
 
 
-def _clear_pending(user_id: int) -> bool:
+def _clear_pending(state: SearchUiState, user_id: int) -> bool:
     key = _pending_key(user_id)
-    if PENDING_INPUTS.get(key) is None:
+    if state.pending_inputs.get(key) is None:
         return False
     try:
-        del PENDING_INPUTS[key]
+        del state.pending_inputs[key]
     except KeyError:
         return False
     return True
@@ -571,7 +583,7 @@ async def _execute_query(
     default_service: SearchService,
     direct_lookup: DirectIdLookupService,
     provider_map: Mapping[str, AnimeSearchProvider],
-    service_cache: dict[tuple[str, ...], SearchService],
+    state: SearchUiState,
 ) -> None:
     locale = get_user_locale(owner_user_id)
     parsed_direct = _parse_direct_query(query, direct_lookup.source_keys)
@@ -601,7 +613,7 @@ async def _execute_query(
             )
         else:
             service = _service_for(
-                provider_keys, default_service, provider_map, service_cache
+                provider_keys, default_service, provider_map, state.service_cache
             )
             result_set = await service.collect(query)
             if len(provider_keys) > 1:
@@ -622,8 +634,8 @@ async def _execute_query(
         await message.answer(_ui(locale, "failed"))
         return
 
-    token = _remember_results(query, owner_user_id, result_set)
-    await _send_preview(message, token, SESSIONS[token], 0, edit=False)
+    token = _remember_results(state, query, owner_user_id, result_set)
+    await _send_preview(message, token, state.sessions[token], 0, edit=False)
 
 
 def register_search_handlers(
@@ -633,10 +645,11 @@ def register_search_handlers(
     default_service: SearchService,
     direct_lookup: DirectIdLookupService,
     provider_map: Mapping[str, AnimeSearchProvider],
-) -> None:
+    input_ttl_seconds: int,
+) -> SearchUiState:
     """Register the single public anime-search command and its interactive flow."""
     provider_map = {str(key): provider for key, provider in provider_map.items()}
-    service_cache: dict[tuple[str, ...], SearchService] = {}
+    state = SearchUiState.create(input_ttl_seconds)
 
     @dp.message(Command("anime"))
     async def anime_handler(message: Message, command: CommandObject) -> None:
@@ -654,11 +667,11 @@ def register_search_handlers(
                 default_service=default_service,
                 direct_lookup=direct_lookup,
                 provider_map=provider_map,
-                service_cache=service_cache,
+                state=state,
             )
             return
 
-        token = _remember_scope(user_id, message.chat.id)
+        token = _remember_scope(state, user_id, message.chat.id)
         await message.answer(
             _ui(locale, "choose_source"),
             reply_markup=_scope_keyboard(token, locale),
@@ -668,7 +681,7 @@ def register_search_handlers(
     async def cancel_search_handler(message: Message) -> None:
         user_id = message.from_user.id if message.from_user else 0
         locale = get_user_locale(user_id)
-        if _clear_pending(user_id):
+        if _clear_pending(state, user_id):
             await message.answer(_ui(locale, "cancelled"))
         else:
             await message.answer(_ui(locale, "nothing_pending"))
@@ -685,7 +698,7 @@ def register_search_handlers(
 
         token = data.token
         selected = data.value
-        scope_session = SCOPE_SESSIONS.get(token)
+        scope_session = state.scope_sessions.get(token)
         if scope_session is None:
             await callback.answer(_ui(locale, "expired"), show_alert=True)
             return
@@ -712,7 +725,7 @@ def register_search_handlers(
             )
             return
 
-        PENDING_INPUTS[_pending_key(callback.from_user.id)] = PendingAnimeInput(
+        state.pending_inputs[_pending_key(callback.from_user.id)] = PendingAnimeInput(
             owner_user_id=callback.from_user.id,
             chat_id=scope_session.chat_id,
             provider_keys=provider_keys,
@@ -733,7 +746,7 @@ def register_search_handlers(
             await callback.answer()
             return
         token = data.token
-        scope_session = SCOPE_SESSIONS.get(token)
+        scope_session = state.scope_sessions.get(token)
         if (
             scope_session is not None
             and scope_session.owner_user_id != callback.from_user.id
@@ -743,9 +756,9 @@ def register_search_handlers(
             )
             return
 
-        _clear_pending(callback.from_user.id)
+        _clear_pending(state, callback.from_user.id)
         try:
-            del SCOPE_SESSIONS[token]
+            del state.scope_sessions[token]
         except KeyError:
             pass
         await callback.answer()
@@ -754,14 +767,14 @@ def register_search_handlers(
                 _ui(locale, "cancelled"), reply_markup=None
             )
 
-    @dp.message(PendingAnimeInputFilter())
+    @dp.message(PendingAnimeInputFilter(state))
     async def pending_anime_input_handler(message: Message) -> None:
         user_id = message.from_user.id if message.from_user else 0
-        pending = PENDING_INPUTS.get(_pending_key(user_id))
+        pending = state.pending_inputs.get(_pending_key(user_id))
         if pending is None or pending.chat_id != message.chat.id:
             return
 
-        _clear_pending(user_id)
+        _clear_pending(state, user_id)
         query = (message.text or "").strip()
         if not query:
             return
@@ -775,7 +788,7 @@ def register_search_handlers(
             default_service=default_service,
             direct_lookup=direct_lookup,
             provider_map=provider_map,
-            service_cache=service_cache,
+            state=state,
         )
 
     @dp.callback_query(F.data.startswith("sr:"))
@@ -789,7 +802,7 @@ def register_search_handlers(
             return
 
         token = data.token
-        session = SESSIONS.get(token)
+        session = state.sessions.get(token)
         if session is None:
             await callback.answer(
                 text("search", "expired", locale=locale), show_alert=True
@@ -825,7 +838,7 @@ def register_search_handlers(
             return
 
         token = data.token
-        session = SESSIONS.get(token)
+        session = state.sessions.get(token)
         if session is None:
             await callback.answer(
                 text("search", "expired", locale=locale), show_alert=True
@@ -850,3 +863,5 @@ def register_search_handlers(
         candidate = session.items[index]
         await callback.answer()
         await aggregate_callback(callback.message, candidate, session.owner_user_id)
+
+    return state

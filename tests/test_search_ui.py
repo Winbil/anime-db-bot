@@ -172,6 +172,7 @@ class UnifiedSearchUiTests(unittest.TestCase):
                 str(key): provider
                 for key, provider in get_search_provider_map().items()
             },
+            input_ttl_seconds=300,
         )
 
         self.assertEqual(
@@ -190,6 +191,32 @@ class UnifiedSearchUiTests(unittest.TestCase):
         self.assertFalse(hasattr(search_ui, "run_bot"))
         self.assertFalse(hasattr(search_ui, "PROVIDERS"))
         self.assertFalse(hasattr(search_ui, "SERVICES"))
+
+    def test_search_ui_exports_no_import_time_session_stores(self) -> None:
+        for name in ("SESSIONS", "SCOPE_SESSIONS", "PENDING_INPUTS"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(search_ui, name))
+
+    def test_search_ui_state_is_owned_by_each_registration(self) -> None:
+        providers = {
+            str(key): provider for key, provider in get_search_provider_map().items()
+        }
+
+        def register() -> search_ui.SearchUiState:
+            return search_ui.register_search_handlers(
+                Dispatcher(),
+                aggregate_callback=_noop_aggregate,
+                default_service=SearchService(tuple(providers.values())),
+                direct_lookup=DirectIdLookupService((DummyDirectSource(),)),
+                provider_map=providers,
+                input_ttl_seconds=300,
+            )
+
+        first = register()
+        second = register()
+        self.assertIsNot(first.sessions, second.sessions)
+        self.assertIsNot(first.pending_inputs, second.pending_inputs)
+        self.assertIsNot(first.service_cache, second.service_cache)
 
 
 class InitialSearchPreviewTests(unittest.IsolatedAsyncioTestCase):

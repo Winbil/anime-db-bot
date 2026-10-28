@@ -154,6 +154,7 @@ async def run_bot(
                 default_service=context.search_service,
                 direct_lookup=context.direct_lookup,
                 provider_map=context.search_provider_map,
+                input_ttl_seconds=context.settings.telegram.anime_input_ttl_seconds,
             )
 
             await dp.start_polling(bot)
