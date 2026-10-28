@@ -86,7 +86,7 @@ class ShikimoriSearchProvider:
                 operation="search",
             )
 
-        raw_items = ((body.get("data") or {}).get("animes") or [])
+        raw_items = (body.get("data") or {}).get("animes") or []
         items: list[SearchCandidate] = []
 
         for raw in raw_items:
@@ -99,7 +99,7 @@ class ShikimoriSearchProvider:
             romaji = _clean(raw.get("name"))
             english = _clean(raw.get("english"))
             japanese = _clean(raw.get("japanese"))
-            title = russian or romaji or english or japanese or "Без названия"
+            title = russian or romaji or english or japanese or "Untitled"
             aliases = _dedupe(
                 [
                     romaji,
@@ -108,7 +108,9 @@ class ShikimoriSearchProvider:
                     *[_clean(value) for value in raw.get("synonyms") or []],
                 ]
             )
-            aliases = [value for value in aliases if value.casefold() != title.casefold()]
+            aliases = [
+                value for value in aliases if value.casefold() != title.casefold()
+            ]
 
             scores: dict[str, float] = {}
             try:

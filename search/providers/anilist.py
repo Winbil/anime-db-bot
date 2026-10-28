@@ -111,7 +111,7 @@ class AniListSearchProvider:
             romaji = _clean(titles.get("romaji"))
             english = _clean(titles.get("english"))
             native = _clean(titles.get("native"))
-            title = english or romaji or native or "Без названия"
+            title = english or romaji or native or "Untitled"
 
             aliases = _dedupe(
                 [
@@ -121,7 +121,9 @@ class AniListSearchProvider:
                     *[_clean(value) for value in raw.get("synonyms") or []],
                 ]
             )
-            aliases = [value for value in aliases if value.casefold() != title.casefold()]
+            aliases = [
+                value for value in aliases if value.casefold() != title.casefold()
+            ]
 
             scores: dict[str, float] = {}
             try:
@@ -136,9 +138,7 @@ class AniListSearchProvider:
 
             cover = raw.get("coverImage") or {}
             poster_url = _clean(
-                cover.get("extraLarge")
-                or cover.get("large")
-                or cover.get("medium")
+                cover.get("extraLarge") or cover.get("large") or cover.get("medium")
             )
 
             items.append(

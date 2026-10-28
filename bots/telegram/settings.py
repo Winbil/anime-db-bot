@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from aiogram import Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from bots.telegram.callbacks import SettingsCallback
 from localization import available_locales, locale_name, text
@@ -26,24 +31,28 @@ def _settings_keyboard(locale: str) -> InlineKeyboardMarkup:
 
 def _language_keyboard(locale: str) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
-    for value, flag in (("ru", "🇷🇺"), ("en", "🇬🇧"), ("ja", "🇯🇵")):
+    for value, flag in (("en", "🇬🇧"), ("ru", "🇷🇺"), ("ja", "🇯🇵")):
         if value not in available_locales():
             continue
         label = f"{flag} {locale_name(value, display_locale=value)}"
         if value == locale:
             label = "✓ " + label
-        rows.append([
-            InlineKeyboardButton(
-                text=label,
-                callback_data=SettingsCallback("locale", value).encode(),
-            )
-        ])
-    rows.append([
-        InlineKeyboardButton(
-            text=text("settings", "back", locale=locale),
-            callback_data=SettingsCallback("back").encode(),
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=label,
+                    callback_data=SettingsCallback("locale", value).encode(),
+                )
+            ]
         )
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=text("settings", "back", locale=locale),
+                callback_data=SettingsCallback("back").encode(),
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -81,7 +90,11 @@ def register_settings_handlers(dp: Dispatcher) -> None:
     async def settings_locale_callback(callback: CallbackQuery) -> None:
         data = SettingsCallback.parse(callback.data)
         current_locale = get_user_locale(callback.from_user.id)
-        if data is None or data.action != "locale" or data.value not in available_locales():
+        if (
+            data is None
+            or data.action != "locale"
+            or data.value not in available_locales()
+        ):
             await callback.answer(
                 text("settings", "unsupported_language", locale=current_locale),
                 show_alert=True,

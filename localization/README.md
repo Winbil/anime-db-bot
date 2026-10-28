@@ -6,8 +6,8 @@
 
 - `data/aliases.json` — aliases used to recognize equivalent genres, roles and studios. Aliases map input text to stable canonical keys and are independent from the UI language.
 - `data/source_values.json` — mappings from external API enum values (AniList, MyAnimeList, Shikimori) to stable canonical keys.
+- `locales/en.json` — English interface labels and the default/fallback locale.
 - `locales/ru.json` — Russian interface labels.
-- `locales/en.json` — English interface labels.
 - `locales/ja.json` — Japanese interface labels.
 - `catalog.py` — cached loader, source-enum normalization and translation API.
 
@@ -29,8 +29,8 @@ Unknown upstream values are preserved instead of being discarded. This keeps the
 
 The supported interface locales are:
 
+- `en` — English (default and fallback);
 - `ru` — Русский;
-- `en` — English;
 - `ja` — 日本語.
 
 Telegram users change the locale through `/settings`. The choice is stored by platform and user ID in the user-settings repository and therefore survives process restarts.

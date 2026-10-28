@@ -245,7 +245,7 @@ def _candidate_from_record(record: AnimeRecord) -> SearchCandidate:
     title_order = ("russian", "english", "romaji", "japanese", "native")
     title = next(
         (record.titles[key] for key in title_order if record.titles.get(key)),
-        next(iter(record.titles.values()), "Без названия"),
+        next(iter(record.titles.values()), "Untitled"),
     )
 
     aliases = [

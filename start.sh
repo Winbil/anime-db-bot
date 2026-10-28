@@ -35,7 +35,7 @@ if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
     printf '[anime-db-bot] Restart the bot? [y/N]: '
     read -r restart_answer
     case "${restart_answer,,}" in
-        y|yes|д|да)
+        y|yes)
             info "Stopping the current bot session..."
             tmux kill-session -t "$SESSION_NAME"
             ;;

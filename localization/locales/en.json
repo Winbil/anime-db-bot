@@ -3,8 +3,9 @@
     "name": "English"
   },
   "locale_names": {
-    "ru": "Русский",
-    "en": "English"
+    "en": "English",
+    "ru": "Russian",
+    "ja": "Japanese"
   },
   "common": {
     "unknown": "Unknown",
@@ -33,13 +34,12 @@
     "merge_note": "After you select a result, the bot collects and merges metadata from every available source without duplicates.",
     "commands": "Commands:",
     "anime": "/anime <title> — search anime",
-    "search": "/search <title> — choose specific search providers",
     "settings": "/settings — interface settings",
     "ping": "/ping — check that the bot is running",
     "no_sources": "none"
   },
   "search": {
-    "default_scope": "Default: Shikimori + MAL",
+    "default_scope": "Default: Shikimori + MAL + AniList",
     "all_scope": "All search providers",
     "page": "Page {page}",
     "results": "Search results for “{query}”. Choose the anime you want:",
@@ -53,7 +53,6 @@
     "no_results_unavailable": "Could not get results. Unavailable search providers: {sources}",
     "nothing_unavailable": "Nothing was found. Unavailable: {sources}",
     "anime_usage": "Usage: /anime <title>\nExample: /anime That Time I Got Reincarnated as a Slime",
-    "search_usage": "Usage:\n/search <title> — choose a provider with buttons\n/search mal <title>\n/search shikimori <title>\n/search anilist <title>\n/search all <title>\n/search mal,shikimori <title>",
     "where": "Where should I search for “{query}”?",
     "invalid_provider": "Invalid search provider.",
     "expired": "This search has expired.",
@@ -65,6 +64,59 @@
     "result_unavailable": "This result is no longer available.",
     "loading": "Loading data for “{title}”…",
     "selected": "Selected: {title}"
+  },
+  "search_ui": {
+    "choose_source": "Where should I search? After choosing, send an anime title or ID.",
+    "all": "All",
+    "cancel": "Cancel",
+    "waiting": "Selected source: {scope}. Send an anime title or ID in your next message.\n\nCancel: /cancel",
+    "cancelled": "Search cancelled.",
+    "nothing_pending": "There is no active step-by-step search.",
+    "expired": "This search expired. Start /anime again.",
+    "details": "Details",
+    "result": "Search result",
+    "year": "Year: {year}",
+    "ids": "Source IDs:",
+    "no_ids": "No source IDs found.",
+    "unavailable": "Unavailable: {sources}",
+    "scope_mismatch": "This step-by-step search is restricted to {scope}.",
+    "failed": "Search failed. The reason was written to the log."
+  },
+  "admin": {
+    "forbidden": "Insufficient permissions.",
+    "users_title": "Saved Telegram IDs: {count}",
+    "users_empty": "No Telegram IDs have been saved yet.",
+    "ban_usage": "Usage: /ban <user_id> [seconds] [reason]\nWithout seconds the ban is permanent. Also supported: /ban <user_id> <reason> <seconds>.",
+    "invalid_id": "user_id must be a positive number.",
+    "admin_target": "An administrator cannot be banned.",
+    "ban_permanent": "User {user_id} was banned permanently.{reason}",
+    "ban_temporary": "User {user_id} was banned for {seconds} seconds.{reason}",
+    "unban_usage": "Usage: /unban <user_id>",
+    "unbanned": "User {user_id} was unbanned.",
+    "not_banned": "User {user_id} was not banned.",
+    "banned_permanent": "Access to the bot is permanently blocked.{reason}",
+    "banned_temporary": "Access to the bot is blocked for another {seconds} seconds.{reason}",
+    "reason": "\nReason: {reason}",
+    "mapping_overrides_title": "Mapping overrides: {count}",
+    "mapping_overrides_empty": "There are no mapping overrides yet.",
+    "mapping_history_title": "Latest mapping override history entries: {shown}",
+    "mapping_history_empty": "Mapping override history is empty.",
+    "mapping_history_usage": "Usage: /mapping_history [limit], limit must be 1..100.",
+    "mapping_set_usage": "Usage: /mapping_set <accept|reject> <source_provider> <source_id> <target_provider> <target_id> <reason>",
+    "mapping_delete_usage": "Usage: /mapping_delete <source_provider> <source_id> <target_provider> <target_id> <reason>",
+    "mapping_confirm_usage": "Usage: /mapping_confirm <token>.",
+    "mapping_cancel_usage": "Usage: /mapping_cancel <token>.",
+    "mapping_pending": "The change has NOT been applied yet. Review it:\n{preview}\nConfirm: /mapping_confirm {token}\nCancel: /mapping_cancel {token}",
+    "mapping_confirmed_set": "Mapping override applied: {preview}",
+    "mapping_confirmed_delete": "Mapping override deleted: {preview}",
+    "mapping_confirm_missing": "Confirmation was not found or has expired.",
+    "mapping_confirm_owner": "This confirmation belongs to another administrator.",
+    "mapping_cancelled": "Change cancelled.",
+    "mapping_delete_missing": "That mapping override no longer exists.",
+    "mapping_mutation_failed": "Could not apply the change: {error}"
+  },
+  "rate_limit": {
+    "too_many_requests": "Error: Too Many Requests\nToo many requests. Try again in {seconds} seconds."
   },
   "card": {
     "section_main": "Overview",

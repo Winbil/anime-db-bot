@@ -23,10 +23,12 @@ from core.models import AggregatedAnime, BroadcastSlot, PopularityStats
 from core.source_keys import SourceKey
 from core.source_names import MAL_SOURCE_NAME
 from core.temporal import format_time
-from localization import text
+from localization import DEFAULT_LOCALE, text
 
 
-def split_text(text_value: str, limit: int, *, locale: str = "ru") -> list[str]:
+def split_text(
+    text_value: str, limit: int, *, locale: str = DEFAULT_LOCALE
+) -> list[str]:
     text_value = text_value.strip()
     if not text_value:
         return [text("common", "no_data", locale=locale)]
@@ -72,10 +74,12 @@ def rich(text_value: str) -> InputRichMessage:
 
 
 def display_anime_title(anime: AggregatedAnime, locale: str) -> str:
-    if locale == "en":
-        order = ("english", "romaji", "japanese", "russian", "licensed_ru")
-    else:
+    if locale == "ja":
+        order = ("japanese", "romaji", "english", "russian", "licensed_ru")
+    elif locale == "ru":
         order = ("russian", "licensed_ru", "romaji", "english", "japanese")
+    else:
+        order = ("english", "romaji", "japanese", "russian", "licensed_ru")
     for key in order:
         value = (anime.titles.get(key) or "").strip()
         if value:
@@ -348,7 +352,7 @@ async def edit_standard_text(
     text_value: str,
     reply_markup: InlineKeyboardMarkup | None = None,
     *,
-    locale: str = "ru",
+    locale: str = DEFAULT_LOCALE,
     limit: int = STANDARD_MESSAGE_LIMIT,
 ) -> None:
     """Edit the callback message without discarding overflow text.
@@ -368,7 +372,7 @@ async def send_standard_text(
     text_value: str,
     reply_markup: InlineKeyboardMarkup | None = None,
     *,
-    locale: str = "ru",
+    locale: str = DEFAULT_LOCALE,
 ) -> None:
     chunks = split_text(text_value, STANDARD_MESSAGE_LIMIT, locale=locale)
     for index, chunk in enumerate(chunks):
@@ -684,7 +688,9 @@ def source_section_text(
     return text("common", "no_data", locale=locale)
 
 
-def anime_sections(anime: AggregatedAnime, *, locale: str = "ru") -> dict[str, str]:
+def anime_sections(
+    anime: AggregatedAnime, *, locale: str = DEFAULT_LOCALE
+) -> dict[str, str]:
     description_text = text(
         "card",
         "description_choose" if anime.descriptions else "description_empty",

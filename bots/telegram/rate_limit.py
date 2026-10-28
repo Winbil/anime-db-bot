@@ -6,25 +6,19 @@ from typing import Any
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message, TelegramObject
 
+from localization import text
 from services.access_control import is_telegram_admin
 from services.rate_limits import PersonalRateLimiter, get_personal_rate_limiter
 from services.user_settings import get_user_locale
 
 
-_TEXT = {
-    "ru": (
-        "Ошибка: Too Many Requests\n"
-        "Слишком много запросов. Повторите через {seconds} секунд."
-    ),
-    "en": (
-        "Error: Too Many Requests\nToo many requests. Try again in {seconds} seconds."
-    ),
-}
-
-
 def _notice(locale: str, retry_after: int) -> str:
-    language = "en" if locale == "en" else "ru"
-    return _TEXT[language].format(seconds=max(1, int(retry_after)))
+    return text(
+        "rate_limit",
+        "too_many_requests",
+        locale=locale,
+        seconds=max(1, int(retry_after)),
+    )
 
 
 class TelegramRateLimitMiddleware(BaseMiddleware):
