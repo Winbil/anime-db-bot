@@ -17,6 +17,3 @@ class OfficialTelegramTransport(TelegramTransport):
 
     def create_bot(self) -> Bot:
         return Bot(token=self.bot_token())
-
-
-TRANSPORT = OfficialTelegramTransport()
