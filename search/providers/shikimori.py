@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
-import httpx
-
-from core.http_config import USER_AGENT
+from core.http_client import http_request
 from core.models import SearchCandidate, SearchPage
+from core.settings import AppSettings, SourceSettings
+from core.source_errors import SourceInvalidResponse
 from services.rate_limits import wait_for_upstream
 
-DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
 SHIKIMORI_MAX_PAGE_SIZE = 50
 
 SEARCH_FIELDS = """
@@ -35,11 +33,15 @@ SEARCH_FIELDS = """
 class ShikimoriSearchProvider:
     name = "Shikimori"
 
+    def __init__(self, settings: SourceSettings | None = None) -> None:
+        self._settings = settings
+
+    @property
+    def settings(self) -> SourceSettings:
+        return self._settings or AppSettings.from_env().sources
+
     def api_url(self) -> str:
-        return (
-            os.getenv("SHIKIMORI_API_URL", DEFAULT_SHIKIMORI_GRAPHQL_URL).strip()
-            or DEFAULT_SHIKIMORI_GRAPHQL_URL
-        )
+        return self.settings.shikimori_api_url
 
     async def search(
         self,
@@ -50,39 +52,39 @@ class ShikimoriSearchProvider:
     ) -> SearchPage:
         page = max(1, int(page))
         limit = max(1, min(int(limit), SHIKIMORI_MAX_PAGE_SIZE))
-
-        headers = {
-            "Accept": "application/json",
-            "User-Agent": USER_AGENT,
-        }
         payload = {
             "query": _search_query(page, limit),
             "variables": {"search": query},
         }
 
         await wait_for_upstream("shikimori", "search")
-        async with httpx.AsyncClient(
+        response = await http_request(
+            "shikimori",
+            "POST",
+            self.api_url(),
+            operation="search",
             timeout=20.0,
-            headers=headers,
-            follow_redirects=True,
-        ) as client:
-            response = await client.post(self.api_url(), json=payload)
-
-        if response.is_error:
-            preview = response.text.replace("\n", " ")[:800]
-            raise RuntimeError(
-                f"Shikimori HTTP {response.status_code} from {response.url}: {preview}"
-            )
+            headers={"Accept": "application/json"},
+            json=payload,
+        )
 
         try:
             body: dict[str, Any] = response.json()
         except ValueError as exc:
             preview = response.text.replace("\n", " ")[:800]
-            raise RuntimeError(f"Shikimori returned non-JSON response: {preview}") from exc
+            raise SourceInvalidResponse(
+                f"Shikimori returned non-JSON response: {preview}",
+                source="shikimori",
+                operation="search",
+            ) from exc
 
         if body.get("errors"):
             messages = [error.get("message", str(error)) for error in body["errors"]]
-            raise RuntimeError("Shikimori GraphQL error: " + "; ".join(messages))
+            raise SourceInvalidResponse(
+                "Shikimori GraphQL error: " + "; ".join(messages),
+                source="shikimori",
+                operation="search",
+            )
 
         raw_items = ((body.get("data") or {}).get("animes") or [])
         items: list[SearchCandidate] = []

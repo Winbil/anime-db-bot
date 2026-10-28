@@ -1,30 +1,32 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
-import httpx
-
-from core.http_config import USER_AGENT
+from core.http_client import http_request
 from core.models import SearchCandidate, SearchPage
+from core.settings import AppSettings, SourceSettings
+from core.source_errors import SourceInvalidResponse
 from core.source_names import MAL_SOURCE_NAME
 from services.rate_limits import wait_for_upstream
 
-DEFAULT_MAL_API_URL = "https://api.myanimelist.net/v2"
 MAL_MAX_PAGE_SIZE = 100
 
 
 class MALSearchProvider:
     name = MAL_SOURCE_NAME
 
+    def __init__(self, settings: SourceSettings | None = None) -> None:
+        self._settings = settings
+
+    @property
+    def settings(self) -> SourceSettings:
+        return self._settings or AppSettings.from_env().sources
+
     def api_url(self) -> str:
-        return (
-            os.getenv("MAL_API_URL", DEFAULT_MAL_API_URL).strip().rstrip("/")
-            or DEFAULT_MAL_API_URL
-        )
+        return self.settings.mal_api_url
 
     def client_id(self) -> str:
-        client_id = os.getenv("MAL_CLIENT_ID", "").strip()
+        client_id = self.settings.mal_client_id
         if not client_id:
             raise RuntimeError(
                 "MAL_CLIENT_ID is empty. Create a MyAnimeList API application and add its Client ID to .env."
@@ -44,7 +46,6 @@ class MALSearchProvider:
 
         headers = {
             "Accept": "application/json",
-            "User-Agent": USER_AGENT,
             "X-MAL-CLIENT-ID": self.client_id(),
         }
         params = {
@@ -55,28 +56,25 @@ class MALSearchProvider:
         }
 
         await wait_for_upstream("mal", "search")
-        async with httpx.AsyncClient(
+        response = await http_request(
+            "mal",
+            "GET",
+            f"{self.api_url()}/anime",
+            operation="search",
             timeout=20.0,
             headers=headers,
-            follow_redirects=True,
-        ) as client:
-            response = await client.get(f"{self.api_url()}/anime", params=params)
-
-        if response.is_error:
-            preview = response.text.replace("\n", " ")[:800]
-            if response.status_code in {401, 403}:
-                raise RuntimeError(
-                    f"MyAnimeList rejected MAL_CLIENT_ID (HTTP {response.status_code}): {preview}"
-                )
-            raise RuntimeError(
-                f"MyAnimeList HTTP {response.status_code} from {response.url}: {preview}"
-            )
+            params=params,
+        )
 
         try:
             body: dict[str, Any] = response.json()
         except ValueError as exc:
             preview = response.text.replace("\n", " ")[:800]
-            raise RuntimeError(f"MyAnimeList returned non-JSON response: {preview}") from exc
+            raise SourceInvalidResponse(
+                f"MyAnimeList returned non-JSON response: {preview}",
+                source="mal",
+                operation="search",
+            ) from exc
 
         items: list[SearchCandidate] = []
         for entry in body.get("data") or []:

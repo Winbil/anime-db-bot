@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
-import httpx
-
-from core.http_config import USER_AGENT
+from core.http_client import http_request
 from core.models import SearchCandidate, SearchPage
+from core.settings import AppSettings, SourceSettings
+from core.source_errors import SourceInvalidResponse
 from services.rate_limits import wait_for_upstream
 
-DEFAULT_ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
 ANILIST_MAX_PAGE_SIZE = 50
 
 SEARCH_QUERY = """
@@ -35,11 +33,15 @@ class AniListSearchProvider:
 
     name = "AniList"
 
+    def __init__(self, settings: SourceSettings | None = None) -> None:
+        self._settings = settings
+
+    @property
+    def settings(self) -> SourceSettings:
+        return self._settings or AppSettings.from_env().sources
+
     def api_url(self) -> str:
-        return (
-            os.getenv("ANILIST_API_URL", DEFAULT_ANILIST_GRAPHQL_URL).strip()
-            or DEFAULT_ANILIST_GRAPHQL_URL
-        )
+        return self.settings.anilist_api_url
 
     async def search(
         self,
@@ -54,11 +56,9 @@ class AniListSearchProvider:
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": USER_AGENT,
         }
-        token = os.getenv("ANILIST_ACCESS_TOKEN", "").strip()
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
+        if self.settings.anilist_access_token:
+            headers["Authorization"] = f"Bearer {self.settings.anilist_access_token}"
 
         payload = {
             "query": SEARCH_QUERY,
@@ -70,30 +70,33 @@ class AniListSearchProvider:
         }
 
         await wait_for_upstream("anilist", "search")
-        async with httpx.AsyncClient(
+        response = await http_request(
+            "anilist",
+            "POST",
+            self.api_url(),
+            operation="search",
             timeout=20.0,
             headers=headers,
-            follow_redirects=True,
-        ) as client:
-            response = await client.post(self.api_url(), json=payload)
-
-        if response.is_error:
-            preview = response.text.replace("\n", " ")[:800]
-            retry_after = response.headers.get("Retry-After")
-            retry_text = f"; retry after {retry_after}s" if retry_after else ""
-            raise RuntimeError(
-                f"AniList HTTP {response.status_code}{retry_text}: {preview}"
-            )
+            json=payload,
+        )
 
         try:
             body: dict[str, Any] = response.json()
         except ValueError as exc:
             preview = response.text.replace("\n", " ")[:800]
-            raise RuntimeError(f"AniList returned non-JSON response: {preview}") from exc
+            raise SourceInvalidResponse(
+                f"AniList returned non-JSON response: {preview}",
+                source="anilist",
+                operation="search",
+            ) from exc
 
         if body.get("errors"):
             messages = [error.get("message", str(error)) for error in body["errors"]]
-            raise RuntimeError("AniList GraphQL error: " + "; ".join(messages))
+            raise SourceInvalidResponse(
+                "AniList GraphQL error: " + "; ".join(messages),
+                source="anilist",
+                operation="search",
+            )
 
         page_data = (body.get("data") or {}).get("Page") or {}
         items: list[SearchCandidate] = []
