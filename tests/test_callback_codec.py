@@ -6,6 +6,10 @@ from bots.telegram.callbacks import (
     EpisodeDetailCallback,
     IndexedCallback,
     SectionSourceCallback,
+    SettingsCallback,
+    TokenCallback,
+    TokenIndexCallback,
+    TokenValueCallback,
     ViewCallback,
 )
 
@@ -35,6 +39,26 @@ class CallbackCodecTests(unittest.TestCase):
         current = EpisodeDetailCallback("abc", 1, 7, 2)
         self.assertEqual(current.encode(), "ae:abc:1:7:2")
         self.assertEqual(EpisodeDetailCallback.parse(current.encode()), current)
+
+
+    def test_search_callback_codecs_preserve_wire_format(self) -> None:
+        scope = TokenValueCallback("sc", "abc", "anilist")
+        self.assertEqual(scope.encode(), "sc:abc:anilist")
+        self.assertEqual(TokenValueCallback.parse(scope.encode(), prefix="sc"), scope)
+        cancel = TokenCallback("sx", "abc")
+        self.assertEqual(cancel.encode(), "sx:abc")
+        self.assertEqual(TokenCallback.parse(cancel.encode(), prefix="sx"), cancel)
+        result = TokenIndexCallback("sr", "abc", 4)
+        self.assertEqual(result.encode(), "sr:abc:4")
+        self.assertEqual(TokenIndexCallback.parse(result.encode(), prefix="sr"), result)
+
+    def test_settings_callback_codec_preserves_wire_format(self) -> None:
+        language = SettingsCallback("language")
+        self.assertEqual(language.encode(), "settings:language")
+        self.assertEqual(SettingsCallback.parse(language.encode()), language)
+        locale = SettingsCallback("locale", "ru")
+        self.assertEqual(locale.encode(), "settings:locale:ru")
+        self.assertEqual(SettingsCallback.parse(locale.encode()), locale)
 
     def test_invalid_or_oversized_callbacks_are_rejected(self) -> None:
         self.assertIsNone(ViewCallback.parse("av:abc:voices:nope"))
