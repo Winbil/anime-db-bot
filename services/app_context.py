@@ -50,7 +50,7 @@ class AppContext:
             source_health=source_health,
             search_providers=search_providers,
             sources=sources,
-            search_service=SearchService(search_providers),
+            search_service=SearchService(search_providers, settings=settings.search),
             aggregator=AnimeAggregator(sources),
             character_service=CharacterService(sources),
             episode_service=EpisodeService(get_episode_sources()),

@@ -5,7 +5,6 @@ import re
 
 from core.canonicalization import normalize_key
 from core.models import SearchCandidate, SearchResultSet
-from core.settings import AppSettings
 from services.direct_lookup import DirectIdLookupService
 from services.search import SearchService, merge_candidates
 
@@ -94,7 +93,7 @@ async def expand_text_search(
     if not initial.items:
         return initial
 
-    settings = AppSettings.from_env().search
+    settings = service.settings
     max_seeds = min(max(settings.expansion_max_seeds, 0), 3)
     max_queries = min(max(settings.expansion_max_queries, 0), 3)
     max_pages = min(max(settings.expansion_max_pages, 1), 4)

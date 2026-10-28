@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 import secrets
 from dataclasses import dataclass, field
@@ -23,6 +22,7 @@ from aiogram.types import (
 from bots.session_store import ExpiringSessionStore
 from bots.telegram.card.renderer import plain_text_to_rich_html
 from core.models import SearchCandidate, SearchResultSet
+from core.settings import get_settings
 from core.source_names import MAL_SOURCE_NAME
 from localization import text
 from search.registry import DEFAULT_SEARCH_PROVIDER_KEYS, get_search_provider_map
@@ -34,14 +34,6 @@ from services.user_settings import get_user_locale
 MAX_SEARCH_SESSIONS = 200
 MAX_SCOPE_SESSIONS = 200
 MAX_PENDING_INPUTS = 500
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.getenv(name, str(default)).strip()
-    try:
-        return int(raw)
-    except ValueError:
-        return default
 
 
 PROVIDERS = get_search_provider_map()
@@ -130,7 +122,7 @@ class PendingAnimeInput:
     scope_label: str
 
 
-_input_ttl = max(60, _env_int("ANIME_INPUT_TTL_SECONDS", 300))
+_input_ttl = max(60, get_settings().telegram.anime_input_ttl_seconds)
 SESSIONS: ExpiringSessionStore[SearchSession] = ExpiringSessionStore(
     max_entries=MAX_SEARCH_SESSIONS,
 )
@@ -168,7 +160,10 @@ def _service_for(
     if service is None:
         if not provider_keys:
             raise ValueError("No search providers selected")
-        service = SearchService(tuple(PROVIDERS[key] for key in provider_keys))
+        service = SearchService(
+            tuple(PROVIDERS[key] for key in provider_keys),
+            settings=default_service.settings,
+        )
         SERVICES[provider_keys] = service
     return service
 
