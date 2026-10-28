@@ -43,7 +43,7 @@ class AppContext:
         http = HttpClientPool()
         source_health = SourceHealthRegistry()
         search_providers = get_search_providers(settings.sources)
-        sources = get_sources(source_health)
+        sources = get_sources(source_health, settings.sources)
         return cls(
             settings=settings,
             http=http,
@@ -53,8 +53,8 @@ class AppContext:
             search_service=SearchService(search_providers, settings=settings.search),
             aggregator=AnimeAggregator(sources),
             character_service=CharacterService(sources),
-            episode_service=EpisodeService(get_episode_sources()),
-            trailer_service=TrailerService(get_trailer_sources()),
+            episode_service=EpisodeService(get_episode_sources(settings.sources)),
+            trailer_service=TrailerService(get_trailer_sources(settings.sources)),
             direct_lookup=DirectIdLookupService(sources),
         )
 

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from aiogram import Bot
 
-from core.settings import get_settings
+from core.settings import AppSettings
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +28,7 @@ class TelegramTransport:
 
     @staticmethod
     def bot_token() -> str:
-        token = get_settings().telegram.bot_token
+        token = AppSettings.from_env().telegram.bot_token
         if not token:
             raise RuntimeError(
                 "BOT_TOKEN is not set. Copy .env.example to .env and add the bot token."

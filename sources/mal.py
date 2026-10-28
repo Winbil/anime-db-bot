@@ -217,12 +217,12 @@ class MALSource:
     source_key = SourceKey.MAL
 
     def __init__(self, settings: SourceSettings | None = None) -> None:
-        self._settings = settings
-        self._jikan = JikanSource()
+        self._settings = settings or _settings()
+        self._jikan = JikanSource(self._settings)
 
     @property
     def settings(self) -> SourceSettings:
-        return self._settings or _settings()
+        return self._settings
 
     async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
         mal_id = str(identity.get("mal") or "").strip()

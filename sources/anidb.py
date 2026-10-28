@@ -14,7 +14,7 @@ from core.http_config import USER_AGENT
 from core.identity import AnimeIdentity
 from core.models import AnimeRecord, CharacterRecord, EpisodePage, EpisodeRecord, PersonCredit
 from core.people_loading import PeopleBatch
-from core.settings import AppSettings
+from core.settings import AppSettings, SourceSettings
 from core.source_keys import SourceKey
 from services.rate_limits import wait_for_upstream
 
@@ -27,36 +27,36 @@ _LAST_NETWORK_REQUEST_AT = 0.0
 _MIN_REQUEST_INTERVAL_SECONDS = 2.2
 
 
-def _settings():
-    return AppSettings.from_env().sources
+def _settings(settings: SourceSettings | None = None) -> SourceSettings:
+    return settings or AppSettings.from_env().sources
 
 
-def enabled() -> bool:
-    return bool(_settings().anidb_client)
+def enabled(settings: SourceSettings | None = None) -> bool:
+    return bool(_settings(settings).anidb_client)
 
 
-def _client() -> str:
-    return _settings().anidb_client
+def _client(settings: SourceSettings | None = None) -> str:
+    return _settings(settings).anidb_client
 
 
-def _client_version() -> int:
-    return max(1, _settings().anidb_client_version)
+def _client_version(settings: SourceSettings | None = None) -> int:
+    return max(1, _settings(settings).anidb_client_version)
 
 
-def _api_url() -> str:
-    return _settings().anidb_http_api_url or DEFAULT_API_URL
+def _api_url(settings: SourceSettings | None = None) -> str:
+    return _settings(settings).anidb_http_api_url or DEFAULT_API_URL
 
 
-def _timeout() -> float:
-    return max(10.0, _settings().anidb_request_timeout_seconds)
+def _timeout(settings: SourceSettings | None = None) -> float:
+    return max(10.0, _settings(settings).anidb_request_timeout_seconds)
 
 
-def _cache_ttl() -> float:
-    return max(0.0, _settings().anidb_cache_ttl_seconds)
+def _cache_ttl(settings: SourceSettings | None = None) -> float:
+    return max(0.0, _settings(settings).anidb_cache_ttl_seconds)
 
 
-def _cache_dir() -> Path:
-    return _settings().anidb_cache_dir
+def _cache_dir(settings: SourceSettings | None = None) -> Path:
+    return _settings(settings).anidb_cache_dir
 
 
 def _clean(value: Any) -> str:
@@ -292,9 +292,10 @@ async def _write_atomic(path: Path, data: bytes) -> None:
     await asyncio.to_thread(write)
 
 
-async def _network_xml(aid: str) -> bytes:
+async def _network_xml(aid: str, settings: SourceSettings | None = None) -> bytes:
     global _LAST_NETWORK_REQUEST_AT
-    if not enabled():
+    settings = _settings(settings)
+    if not enabled(settings):
         raise RuntimeError("AniDB HTTP API is disabled: ANIDB_CLIENT is empty")
 
     async with _NETWORK_LOCK:
@@ -304,17 +305,17 @@ async def _network_xml(aid: str) -> bytes:
         params = {
             "request": "anime",
             "aid": aid,
-            "client": _client(),
-            "clientver": _client_version(),
+            "client": _client(settings),
+            "clientver": _client_version(settings),
             "protover": 1,
         }
         try:
             async with httpx.AsyncClient(
-                timeout=_timeout(),
+                timeout=_timeout(settings),
                 follow_redirects=True,
                 headers={"User-Agent": USER_AGENT},
             ) as client:
-                response = await client.get(_api_url(), params=params)
+                response = await client.get(_api_url(settings), params=params)
         finally:
             _LAST_NETWORK_REQUEST_AT = time.monotonic()
         response.raise_for_status()
@@ -336,9 +337,12 @@ class AniDBSource:
     source_key = SourceKey.ANIDB
     backend_key = "anidb"
 
+    def __init__(self, settings: SourceSettings | None = None) -> None:
+        self._settings = _settings(settings)
+
     @staticmethod
-    def is_enabled() -> bool:
-        return enabled()
+    def is_enabled(settings: SourceSettings | None = None) -> bool:
+        return enabled(settings)
 
     @staticmethod
     def _aid(identity: AnimeIdentity) -> str:
@@ -349,14 +353,14 @@ class AniDBSource:
         aid = self._aid(identity)
         if not aid:
             return None
-        cache_path = _cache_dir() / f"{aid}.xml"
-        ttl = _cache_ttl()
+        cache_path = _cache_dir(self._settings) / f"{aid}.xml"
+        ttl = _cache_ttl(self._settings)
         if cache_path.is_file() and (
             ttl <= 0 or time.time() - cache_path.stat().st_mtime < ttl
         ):
             data = await _read_bytes(cache_path)
         else:
-            data = await _network_xml(aid)
+            data = await _network_xml(aid, self._settings)
             await _write_atomic(cache_path, data)
         root = ET.fromstring(data)
         if root.tag.rsplit("}", 1)[-1] != "anime":

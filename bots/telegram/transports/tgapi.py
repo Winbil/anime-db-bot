@@ -5,7 +5,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 
 from bots.telegram.transports import TelegramTransport
-from core.settings import get_settings
+from core.settings import AppSettings
 
 
 class LocalTelegramTransport(TelegramTransport):
@@ -16,7 +16,7 @@ class LocalTelegramTransport(TelegramTransport):
 
     @property
     def api_url(self) -> str:
-        value = get_settings().telegram.bot_api_url.rstrip("/")
+        value = AppSettings.from_env().telegram.bot_api_url.rstrip("/")
         if not value:
             raise RuntimeError(
                 "TELEGRAM_BOT_API_URL is empty, but the local tg-bot-api transport was selected."
@@ -25,11 +25,11 @@ class LocalTelegramTransport(TelegramTransport):
 
     @property
     def endpoint_label(self) -> str:
-        return get_settings().telegram.bot_api_url.rstrip("/") or self.mode_name
+        return AppSettings.from_env().telegram.bot_api_url.rstrip("/") or self.mode_name
 
     @property
     def is_local(self) -> bool:
-        return get_settings().telegram.bot_api_local
+        return AppSettings.from_env().telegram.bot_api_local
 
     def create_bot(self) -> Bot:
         api = TelegramAPIServer.from_base(

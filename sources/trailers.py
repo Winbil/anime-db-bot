@@ -9,6 +9,8 @@ import httpx
 from core.http_config import USER_AGENT
 from core.identity import AnimeIdentity
 from core.models import TrailerRecord
+from core.settings import SourceSettings, get_settings
+from core.source_keys import SourceKey
 from services.rate_limits import wait_for_upstream
 from sources.anilist import _graphql as _anilist_graphql
 from sources.jikan import JikanSource
@@ -131,8 +133,11 @@ def _shikimori_trailers(body: list[Any]) -> list[TrailerRecord]:
 class AniListTrailerSource:
     name = "AniListTrailer"
     display_name = "AniList"
-    source_key = "anilist"
+    source_key = SourceKey.ANILIST
     backend_key = "anilist"
+
+    def __init__(self, settings: SourceSettings | None = None) -> None:
+        self._settings = settings or get_settings().sources
 
     async def load_trailers(self, identity: AnimeIdentity) -> list[TrailerRecord]:
         media_id = str(identity.get("anilist") or "").strip()
@@ -140,7 +145,11 @@ class AniListTrailerSource:
             return []
 
         await wait_for_upstream("anilist", "trailers")
-        data = await _anilist_graphql(ANILIST_TRAILER_QUERY, {"id": int(media_id)})
+        data = await _anilist_graphql(
+            ANILIST_TRAILER_QUERY,
+            {"id": int(media_id)},
+            self._settings,
+        )
         raw = (data.get("Media") or {}).get("trailer") or {}
         return _anilist_trailers(raw if isinstance(raw, dict) else None)
 
@@ -148,8 +157,11 @@ class AniListTrailerSource:
 class ShikimoriTrailerSource:
     name = "ShikimoriTrailer"
     display_name = "Shikimori"
-    source_key = "shikimori"
+    source_key = SourceKey.SHIKIMORI
     backend_key = "shikimori"
+
+    def __init__(self, settings: SourceSettings | None = None) -> None:
+        self._settings = settings or get_settings().sources
 
     async def load_trailers(self, identity: AnimeIdentity) -> list[TrailerRecord]:
         anime_id = str(identity.get("shikimori") or "").strip()
@@ -159,7 +171,7 @@ class ShikimoriTrailerSource:
         await wait_for_upstream("shikimori", "trailers")
         headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
         async with httpx.AsyncClient(timeout=20.0, headers=headers, follow_redirects=True) as client:
-            response = await client.get(f"{shikimori_site_url()}/api/animes/{anime_id}/videos")
+            response = await client.get(f"{shikimori_site_url(self._settings)}/api/animes/{anime_id}/videos")
         if response.is_error:
             preview = response.text.replace("\n", " ")[:800]
             raise RuntimeError(
@@ -174,6 +186,13 @@ class ShikimoriTrailerSource:
         return _shikimori_trailers(body)
 
 
-def get_builtin_trailer_sources():
+def get_builtin_trailer_sources(
+    settings: SourceSettings | None = None,
+):
     """Return trailer backends in the same logical order used by metadata cards."""
-    return (ShikimoriTrailerSource(), AniListTrailerSource(), JikanSource())
+    settings = settings or get_settings().sources
+    return (
+        ShikimoriTrailerSource(settings),
+        AniListTrailerSource(settings),
+        JikanSource(settings),
+    )
