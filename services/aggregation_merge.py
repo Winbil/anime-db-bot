@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from datetime import datetime
 
 from core.canonicalization import (
     canonical_role_token,
@@ -13,6 +14,7 @@ from core.canonicalization import (
 )
 from core.contracts import AnimeSource
 from core.models import AggregatedAnime, AnimeRecord, BroadcastSlot, PersonCredit
+from core.temporal import PartialDate
 from localization import canonicalize_domain_value
 
 
@@ -205,6 +207,38 @@ def _consensus_text(records: list[AnimeRecord], field_name: str) -> str | None:
             if isinstance((value := getattr(record, field_name)), str)
         ]
     )
+
+
+def _consensus_partial_date(
+    records: list[AnimeRecord],
+    field_name: str,
+) -> PartialDate | None:
+    values = [
+        value
+        for record in records
+        if isinstance((value := getattr(record, field_name)), PartialDate)
+    ]
+    if not values:
+        return None
+    counts = Counter(value.isoformat() for value in values)
+    best = max(counts.values())
+    return next(value for value in values if counts[value.isoformat()] == best)
+
+
+def _consensus_datetime(
+    records: list[AnimeRecord],
+    field_name: str,
+) -> datetime | None:
+    values = [
+        value
+        for record in records
+        if isinstance((value := getattr(record, field_name)), datetime)
+    ]
+    if not values:
+        return None
+    counts = Counter(value.isoformat() for value in values)
+    best = max(counts.values())
+    return next(value for value in values if counts[value.isoformat()] == best)
 
 
 def _consensus_domain(

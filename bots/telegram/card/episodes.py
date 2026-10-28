@@ -44,7 +44,7 @@ def _episode_summary_lines(episode: EpisodeRecord, *, locale: str) -> list[str]:
                 "card",
                 "episode_date",
                 locale=locale,
-                value=episode.aired_at[:10],
+                value=episode.aired_at.isoformat(),
             )
         )
     if episode.score is not None:
@@ -273,7 +273,7 @@ def _episode_detail_text(
     if other_titles:
         lines.append(text("card", "episode_other_titles", locale=locale, value=" / ".join(other_titles)))
     if episode.aired_at:
-        lines.append(text("card", "episode_date", locale=locale, value=episode.aired_at[:10]))
+        lines.append(text("card", "episode_date", locale=locale, value=episode.aired_at.isoformat()))
     duration = _duration_text(episode.duration_seconds, locale)
     if duration:
         lines.append(duration)

@@ -12,6 +12,7 @@ from core.http_client import http_request
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord, CharacterRecord, PersonCredit, PopularityRanking
 from core.settings import AppSettings, SourceSettings
+from core.temporal import PartialDate, parse_partial_date
 from core.source_errors import SourceInvalidResponse
 from localization import source_value_key
 
@@ -144,22 +145,15 @@ def _dedupe(values: list[str]) -> list[str]:
     return result
 
 
-def _format_date(value: dict[str, Any] | None) -> str | None:
-    if not value or not value.get("year"):
-        return None
-    result = f"{int(value['year']):04d}"
-    if value.get("month"):
-        result += f"-{int(value['month']):02d}"
-    if value.get("day"):
-        result += f"-{int(value['day']):02d}"
-    return result
+def _format_date(value: dict[str, Any] | None) -> PartialDate | None:
+    return parse_partial_date(value)
 
 
-def _format_timestamp(value: Any) -> str | None:
+def _format_timestamp(value: Any) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.fromtimestamp(int(value), tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(int(value), tz=timezone.utc)
     except (TypeError, ValueError, OSError):
         return None
 

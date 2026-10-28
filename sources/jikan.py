@@ -12,6 +12,7 @@ from core.settings import AppSettings, SourceSettings
 from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
 from core.source_names import MAL_SOURCE_NAME
+from core.temporal import parse_partial_date
 from services.rate_limits import wait_for_upstream
 
 DEFAULT_JIKAN_API_URL = "http://127.0.0.1:8091"
@@ -99,7 +100,7 @@ def _episode(raw: dict[str, Any]) -> EpisodeRecord:
         source="mal",
         backend="jikan",
         titles=titles,
-        aired_at=_clean(raw.get("aired_at")) or None,
+        aired_at=parse_partial_date(raw.get("aired_at")),
         duration_seconds=_int(raw.get("duration_seconds")),
         score=_float(raw.get("score")),
         filler=bool(raw.get("filler")),

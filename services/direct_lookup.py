@@ -193,10 +193,7 @@ class DirectIdLookupService:
 def _record_year(record: AnimeRecord) -> int | None:
     if record.season_year is not None:
         return record.season_year
-    aired_on = str(record.aired_on or "")
-    if len(aired_on) >= 4 and aired_on[:4].isdigit():
-        return int(aired_on[:4])
-    return None
+    return record.aired_on.year if record.aired_on is not None else None
 
 
 def _merge_candidate_records(

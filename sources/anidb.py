@@ -16,6 +16,7 @@ from core.people_loading import PeopleBatch
 from core.settings import AppSettings, SourceSettings
 from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
+from core.temporal import parse_partial_date
 from services.rate_limits import wait_for_upstream
 
 ANIDB_SOURCE_NAME = "AniDB"
@@ -270,7 +271,7 @@ def _episodes(root: ET.Element) -> list[EpisodeRecord]:
             source="anidb",
             backend="anidb",
             titles=titles,
-            aired_at=_text(episode.find("airdate")) or None,
+            aired_at=parse_partial_date(_text(episode.find("airdate"))),
             duration_seconds=length * 60 if length and length > 0 else None,
             score=score,
             urls=urls,
@@ -402,8 +403,8 @@ class AniDBSource:
             kind=_kind(_text(root.find("type"))),
             rating="adult" if restricted else None,
             episodes_total=_int(_text(root.find("episodecount"))),
-            aired_on=_text(root.find("startdate")) or None,
-            released_on=_text(root.find("enddate")) or None,
+            aired_on=parse_partial_date(_text(root.find("startdate"))),
+            released_on=parse_partial_date(_text(root.find("enddate"))),
             score=score,
             descriptions={ANIDB_SOURCE_NAME: description} if description else {},
             posters=[picture] if picture else [],

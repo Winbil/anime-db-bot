@@ -58,12 +58,12 @@ jobs:
         run: ruff check bots core localization mappings search services sources tests --select E9,F63,F7,F82
 
       - name: Check formatting of typed foundation
-        run: ruff format --check core/source_keys.py core/source_errors.py core/http_client.py services/app_context.py
+        run: ruff format --check core/source_keys.py core/source_errors.py core/http_client.py core/temporal.py services/app_context.py
 
       - name: Type-check typed foundation
         run: >-
           mypy --ignore-missing-imports --follow-imports=skip
-          core/source_keys.py core/settings.py core/source_errors.py services/source_health.py
+          core/source_keys.py core/settings.py core/source_errors.py core/temporal.py services/source_health.py
 
       - name: Run tests with coverage gate
         run: |
