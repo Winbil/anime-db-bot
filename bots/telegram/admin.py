@@ -214,7 +214,9 @@ def _clean_mapping_route_part(value: object) -> str:
     return _clean_admin_field(value).casefold()
 
 
-def _parse_mapping_set(text_value: str | None) -> tuple[str, str, str, str, str, str] | None:
+def _parse_mapping_set(
+    text_value: str | None,
+) -> tuple[str, str, str, str, str, str] | None:
     parts = (text_value or "").split(maxsplit=6)
     if len(parts) != 7:
         return None
@@ -238,7 +240,9 @@ def _parse_mapping_set(text_value: str | None) -> tuple[str, str, str, str, str,
     return action, source_provider, source_id, target_provider, target_id, reason
 
 
-def _parse_mapping_delete(text_value: str | None) -> tuple[str, str, str, str, str] | None:
+def _parse_mapping_delete(
+    text_value: str | None,
+) -> tuple[str, str, str, str, str] | None:
     parts = (text_value or "").split(maxsplit=5)
     if len(parts) != 6:
         return None
