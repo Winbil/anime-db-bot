@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import math
-import os
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -15,6 +14,8 @@ from core.http_config import USER_AGENT
 from core.identity import AnimeIdentity
 from core.models import AnimeRecord, CharacterRecord, EpisodePage, EpisodeRecord, PersonCredit
 from core.people_loading import PeopleBatch
+from core.settings import AppSettings
+from core.source_keys import SourceKey
 from services.rate_limits import wait_for_upstream
 
 ANIDB_SOURCE_NAME = "AniDB"
@@ -26,48 +27,36 @@ _LAST_NETWORK_REQUEST_AT = 0.0
 _MIN_REQUEST_INTERVAL_SECONDS = 2.2
 
 
+def _settings():
+    return AppSettings.from_env().sources
+
+
 def enabled() -> bool:
-    return bool(os.getenv("ANIDB_CLIENT", "").strip())
+    return bool(_settings().anidb_client)
 
 
 def _client() -> str:
-    return os.getenv("ANIDB_CLIENT", "").strip()
+    return _settings().anidb_client
 
 
 def _client_version() -> int:
-    raw = os.getenv("ANIDB_CLIENT_VERSION", "1").strip()
-    try:
-        return max(1, int(raw))
-    except ValueError:
-        return 1
+    return max(1, _settings().anidb_client_version)
 
 
 def _api_url() -> str:
-    return os.getenv("ANIDB_HTTP_API_URL", DEFAULT_API_URL).strip() or DEFAULT_API_URL
+    return _settings().anidb_http_api_url or DEFAULT_API_URL
 
 
 def _timeout() -> float:
-    raw = os.getenv("ANIDB_REQUEST_TIMEOUT_SECONDS", "45").strip()
-    try:
-        return max(10.0, float(raw))
-    except ValueError:
-        return 45.0
+    return max(10.0, _settings().anidb_request_timeout_seconds)
 
 
 def _cache_ttl() -> float:
-    raw = os.getenv("ANIDB_CACHE_TTL_SECONDS", "86400").strip()
-    try:
-        return max(0.0, float(raw))
-    except ValueError:
-        return 86400.0
+    return max(0.0, _settings().anidb_cache_ttl_seconds)
 
 
 def _cache_dir() -> Path:
-    raw = os.getenv("ANIDB_CACHE_DIR", "data/anidb").strip() or "data/anidb"
-    path = Path(raw)
-    if path.is_absolute():
-        return path
-    return Path(__file__).resolve().parents[1] / path
+    return _settings().anidb_cache_dir
 
 
 def _clean(value: Any) -> str:
@@ -299,7 +288,7 @@ async def _write_atomic(path: Path, data: bytes) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(path.suffix + ".tmp")
         temporary.write_bytes(data)
-        os.replace(temporary, path)
+        temporary.replace(path)
     await asyncio.to_thread(write)
 
 
@@ -344,7 +333,7 @@ async def _network_xml(aid: str) -> bytes:
 class AniDBSource:
     name = ANIDB_SOURCE_NAME
     display_name = ANIDB_SOURCE_NAME
-    source_key = "anidb"
+    source_key = SourceKey.ANIDB
     backend_key = "anidb"
 
     @staticmethod
