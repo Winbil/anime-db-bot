@@ -46,53 +46,16 @@ if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
     esac
 fi
 
-create_venv() {
-    info "Creating virtual environment in .venv..."
-    rm -rf "$VENV_DIR"
-    if ! python3 -m venv "$VENV_DIR"; then
-        fail "Could not create venv. On Ubuntu/Debian install python3-venv: sudo apt install python3-venv"
-    fi
-}
-
-if [[ ! -d "$VENV_DIR" ]]; then
-    create_venv
-else
-    info "Virtual environment already exists."
+PYTHON="$VENV_DIR/bin/python"
+if [[ ! -x "$PYTHON" ]] || ! "$PYTHON" -m pip --version >/dev/null 2>&1; then
+    info "Python environment is missing or incomplete; running scripts/setup.sh..."
+    "$SCRIPT_DIR/scripts/setup.sh"
 fi
 
 PYTHON="$VENV_DIR/bin/python"
-if [[ ! -x "$PYTHON" ]]; then
-    info "Virtual environment is incomplete. Recreating it..."
-    create_venv
-    PYTHON="$VENV_DIR/bin/python"
-fi
-
-if ! "$PYTHON" -m pip --version >/dev/null 2>&1; then
-    info "pip is missing from the virtual environment. Trying ensurepip..."
-    if ! "$PYTHON" -m ensurepip --upgrade >/dev/null 2>&1; then
-        info "Could not bootstrap pip in the existing venv. Recreating it once..."
-        create_venv
-        PYTHON="$VENV_DIR/bin/python"
-        if ! "$PYTHON" -m pip --version >/dev/null 2>&1; then
-            fail "pip is unavailable in the venv. On Ubuntu/Debian run: sudo apt update && sudo apt install python3-venv python3-pip, then remove .venv and run ./start.sh again."
-        fi
-    fi
-fi
+[[ -x "$PYTHON" ]] || fail "Virtual environment is unavailable after setup."
 
 info "Using Python: $($PYTHON --version 2>&1)"
-info "Using pip: $($PYTHON -m pip --version)"
-
-info "Checking and installing locked Python dependencies..."
-"$PYTHON" -m pip install --disable-pip-version-check -r "$SCRIPT_DIR/requirements.lock"
-
-info "Checking dependency consistency..."
-"$PYTHON" -m pip check
-
-info "Compiling Python sources..."
-"$PYTHON" -m compileall -q bots core localization mappings search services sources tests
-
-info "Running regression and wiring tests..."
-"$PYTHON" -m unittest discover -s tests -v
 
 if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
     cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
@@ -114,11 +77,6 @@ if [[ -z "$ANIDB_CLIENT_VALUE" ]]; then
     info "ANIDB_CLIENT is empty: AniDB HTTP metadata is disabled; mappings.db can still resolve AniDB IDs."
 else
     info "AniDB HTTP metadata source is configured."
-fi
-
-info "Checking external cross-ID mapping database..."
-if ! "$PYTHON" -m mappings; then
-    info "Mapping update failed; the bot will use the last valid mappings.db if one exists."
 fi
 
 ensure_jikan_container() {
@@ -151,6 +109,7 @@ info "Interactive /anime sources: All / MAL (MyAnimeList) / Jikan / Shikimori / 
 info "Direct external-ID lookup is source-independent."
 info "Metadata sources: Shikimori + AniList + MAL (MyAnimeList) / Jikan + optional AniDB."
 info "Staff/seiyuu/characters and episode backends are loaded lazily."
+info "Use scripts/check.sh for compile/tests and scripts/update-mappings.sh for an explicit mapping refresh."
 
 mkdir -p "$LOG_DIR"
 
