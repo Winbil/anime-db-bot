@@ -5,8 +5,7 @@ import logging
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputRichMessage, Message
 
-from bots.telegram.card.constants import STANDARD_MESSAGE_LIMIT
-from bots.telegram.card.renderer import plain_text_to_rich_html, split_text
+from bots.telegram.card.renderer import edit_standard_text, plain_text_to_rich_html
 from bots.telegram.card.service import CHARACTER_SERVICE
 from bots.telegram.card.state import AnimeCardSession
 from core.canonicalization import display_person_name, person_identity_keys
@@ -32,12 +31,33 @@ def _role_priority(role: str | None) -> int:
 
 def _merge_characters(groups: list[list[CharacterRecord]]) -> list[CharacterRecord]:
     merged: list[CharacterRecord] = []
-    keys: list[set[str]] = []
+    name_keys_by_index: list[set[str]] = []
     for group in groups:
         for character in group:
             names = _dedupe([character.name, *character.aliases])
             name_keys = person_identity_keys(names)
-            match_index = next((i for i, existing in enumerate(keys) if existing & name_keys), None)
+            identity = character.identity
+
+            match_index = next(
+                (
+                    index
+                    for index, existing in enumerate(merged)
+                    if existing.identity.matches(identity)
+                ),
+                None,
+            )
+            matched_by_id = match_index is not None
+            if match_index is None:
+                match_index = next(
+                    (
+                        index
+                        for index, existing in enumerate(merged)
+                        if name_keys_by_index[index] & name_keys
+                        and not existing.identity.conflicts_with(identity)
+                    ),
+                    None,
+                )
+
             if match_index is None:
                 merged.append(CharacterRecord(
                     name=character.name,
@@ -46,19 +66,37 @@ def _merge_characters(groups: list[list[CharacterRecord]]) -> list[CharacterReco
                     external_ids=dict(character.external_ids),
                     portraits={source: list(urls) for source, urls in character.portraits.items()},
                 ))
-                keys.append(name_keys)
+                name_keys_by_index.append(name_keys)
                 continue
 
             existing = merged[match_index]
-            all_names = _dedupe([existing.name, *existing.aliases, character.name, *character.aliases])
-            existing.aliases = [value for value in all_names if value.casefold() != existing.name.casefold()]
-            keys[match_index].update(name_keys)
+            all_names = _dedupe([
+                existing.name,
+                *existing.aliases,
+                character.name,
+                *character.aliases,
+            ])
+            existing.aliases = [
+                value
+                for value in all_names
+                if value.casefold() != existing.name.casefold()
+            ]
+            name_keys_by_index[match_index].update(name_keys)
             if _role_priority(character.role) > _role_priority(existing.role):
                 existing.role = character.role
-            for source_key, external_id in character.external_ids.items():
-                existing.external_ids.setdefault(source_key, external_id)
+            if matched_by_id:
+                merged_identity = existing.identity
+                merged_identity.merge_missing(identity)
+                existing.external_ids = dict(merged_identity.external_ids)
+            elif not existing.external_ids and character.external_ids:
+                # A name-only presentation merge may carry one source-local ID,
+                # but it must not infer a new cross-provider mapping.
+                existing.external_ids = dict(character.external_ids)
             for source_name, urls in character.portraits.items():
-                existing.portraits[source_name] = _dedupe([*existing.portraits.get(source_name, []), *urls])
+                existing.portraits[source_name] = _dedupe([
+                    *existing.portraits.get(source_name, []),
+                    *urls,
+                ])
     return merged
 
 
@@ -299,7 +337,9 @@ async def edit_characters_view(
         except Exception:
             logging.exception("Rich character view edit failed; falling back to text")
 
-    await message.edit_text(
-        text=split_text(content, STANDARD_MESSAGE_LIMIT, locale=locale)[0],
+    await edit_standard_text(
+        message,
+        content,
         reply_markup=keyboard,
+        locale=locale,
     )

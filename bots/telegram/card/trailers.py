@@ -4,7 +4,7 @@ import logging
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputRichMessage, Message
 
-from bots.telegram.card.renderer import plain_text_to_rich_html, split_text
+from bots.telegram.card.renderer import edit_standard_text, plain_text_to_rich_html
 from bots.telegram.card.service import TRAILER_SERVICE
 from bots.telegram.card.state import AnimeCardSession
 from core.models import TrailerRecord
@@ -234,7 +234,10 @@ async def edit_trailers_view(
         )
     except Exception:
         logging.exception("Rich trailer view edit failed; falling back to text")
-        await message.edit_text(
-            text=split_text(content, 3900, locale=locale)[0],
+        await edit_standard_text(
+            message,
+            content,
             reply_markup=keyboard,
+            locale=locale,
+            limit=3900,
         )

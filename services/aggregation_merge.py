@@ -332,13 +332,6 @@ def _best_text(values: list[str]) -> str | None:
     return max(unique, key=lambda value: (len(value), value.casefold()))
 
 
-def _average_score(scores: dict[str, float]) -> float | None:
-    values = [value for value in scores.values() if isinstance(value, (int, float))]
-    if not values:
-        return None
-    return round(sum(float(value) for value in values) / len(values), 2)
-
-
 def _merge_source_text(target: dict[str, str], values: dict[str, str]) -> None:
     for source, value in values.items():
         source = _clean(source)

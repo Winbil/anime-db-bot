@@ -62,7 +62,7 @@ Cross-ID enrichment построен консервативно:
 
 Произвольного recursive graph traversal через TVDB/TMDB и другие промежуточные сущности в production нет. Такой traversal опасен для season/special grouping и был удалён.
 
-Mappings DB строится потоково из нескольких datasets и остаётся на диске — полный граф не копируется в RAM. Directional manual overrides поддерживают `accept` и `reject`; overrides сохраняются при atomic rebuild.
+Mappings DB строится потоково из нескольких datasets и остаётся на диске — полный граф не копируется в RAM. Directional manual overrides поддерживают `accept` и `reject`, сохраняют `author`/timestamp и append-only audit history; overrides и история сохраняются при atomic rebuild.
 
 ## Metadata sources
 
@@ -97,7 +97,7 @@ AniDB сохраняет XML cache на диске, сериализует proce
 
 Foreign dub voices не входят в основной voice list. Localization/ADR staff отфильтровывается из original production staff.
 
-`PersonCredit` и `CharacterRecord` — разные domain models. Portraits хранят provenance по source, а не одним плоским URL.
+`PersonCredit` и `CharacterRecord` — разные domain models. `CharacterIdentity` хранит только source-local ID персонажа и никогда не смешивается с anime/person identity. Portraits хранят provenance по source, а не одним плоским URL.
 
 People UI разделён на:
 
@@ -292,10 +292,9 @@ anime-db-bot/
 
 После текущего refactor foundation основные долги уже не относятся к primary-ID или transport wiring. Наиболее заметные следующие шаги:
 
-- полноценный `CharacterIdentity`: текущий cross-source character display merge всё ещё использует нормализованные варианты имени и не считается canonical identity;
 - typed date/datetime values вместо части строковых дат в domain models;
 - расширение persistent user/account/preferences/watch-state слоя поверх существующего repository boundary;
 - дальнейшее повышение общего coverage и постепенное расширение mypy/formatter scope на legacy modules;
-- richer audit metadata/history для manual mapping overrides.
+- admin UI/операционные инструменты для просмотра и управления mapping override history.
 
 Эти ограничения не меняют текущие non-regression contracts: source-independent identity, direct-only mapping safety, lazy sections, explicit provenance и scoped rate/session state.

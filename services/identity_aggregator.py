@@ -7,10 +7,10 @@ from core.canonicalization import canonical_genre_token
 from core.contracts import AnimeSource
 from core.identity import AnimeIdentity
 from core.models import AggregatedAnime, AnimeRecord, PersonCredit, PopularityStats, SearchCandidate
+from core.score_summary import consensus_score, normalize_source_scores
 from localization import canonicalize_domain_value
 from services.aggregation_merge import (
     AggregationMergeSupport,
-    _average_score,
     _best_text,
     _clean,
     _consensus_domain,
@@ -224,6 +224,8 @@ class AnimeAggregator(AggregationMergeSupport):
             if stats.has_data():
                 popularity_by_source[record.source] = stats
 
+        scores = normalize_source_scores(scores)
+
         return AggregatedAnime(
             title=title,
             titles=titles,
@@ -243,7 +245,7 @@ class AnimeAggregator(AggregationMergeSupport):
             released_on=_consensus_text(records, "released_on"),
             next_episode_at=_consensus_text(records, "next_episode_at"),
             scores=scores,
-            score_average=_average_score(scores),
+            score_average=consensus_score(scores.values()),
             score_sources_count=len(scores),
             popularity_by_source=popularity_by_source,
             genres=canonical_genres,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from core.character_identity import CharacterIdentity
 from core.identity import AnimeIdentity
 
 
@@ -185,6 +186,10 @@ class CharacterRecord:
     aliases: list[str] = field(default_factory=list)
     external_ids: dict[str, str] = field(default_factory=dict)
     portraits: dict[str, list[str]] = field(default_factory=dict)
+
+    @property
+    def identity(self) -> CharacterIdentity:
+        return CharacterIdentity.from_mapping(self.external_ids)
 
 
 @dataclass(slots=True)
