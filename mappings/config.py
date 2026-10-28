@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-ROOT_DIR = Path(__file__).resolve().parents[1]
-load_dotenv(ROOT_DIR / ".env")
+from core.settings import get_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,44 +63,29 @@ SOURCE_SPECS: tuple[MappingSourceSpec, ...] = (
 )
 
 
-def _bool_env(name: str, default: bool) -> bool:
-    raw = os.getenv(name, "1" if default else "0").strip().casefold()
-    return raw not in {"", "0", "false", "no", "off"}
-
-
-def _float_env(name: str, default: float, minimum: float = 0.0) -> float:
-    raw = os.getenv(name, str(default)).strip()
-    try:
-        return max(minimum, float(raw))
-    except ValueError:
-        return float(default)
-
-
 def mappings_db_path() -> Path:
-    raw = os.getenv("MAPPINGS_DB_PATH", "data/mappings/mappings.db").strip()
-    path = Path(raw or "data/mappings/mappings.db")
-    return path if path.is_absolute() else ROOT_DIR / path
+    return get_settings().mappings.db_path
 
 
 def mappings_auto_update() -> bool:
-    return _bool_env("MAPPINGS_AUTO_UPDATE", True)
+    return get_settings().mappings.auto_update
 
 
 def mappings_keep_downloads() -> bool:
-    return _bool_env("MAPPINGS_KEEP_DOWNLOADS", False)
+    return get_settings().mappings.keep_downloads
 
 
 def mappings_keep_previous() -> bool:
-    return _bool_env("MAPPINGS_KEEP_PREVIOUS", True)
+    return get_settings().mappings.keep_previous
 
 
 def mappings_update_max_age_hours() -> float:
-    return _float_env("MAPPINGS_UPDATE_MAX_AGE_HOURS", 24.0, 0.25)
+    return get_settings().mappings.update_max_age_hours
 
 
 def mappings_request_timeout_seconds() -> float:
-    return _float_env("MAPPINGS_REQUEST_TIMEOUT_SECONDS", 300.0, 30.0)
+    return get_settings().mappings.request_timeout_seconds
 
 
 def mappings_check_interval_seconds() -> float:
-    return _float_env("MAPPINGS_CHECK_INTERVAL_SECONDS", 3600.0, 300.0)
+    return get_settings().mappings.check_interval_seconds

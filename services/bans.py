@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import os
 import sqlite3
 import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_BANS_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "bans.sqlite3"
+from core.settings import get_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,11 +89,7 @@ class SQLiteBanStore:
             raise ValueError("duration_seconds must be positive")
 
         created_at = int(time.time() if now is None else now)
-        expires_at = (
-            created_at + int(duration_seconds)
-            if duration_seconds is not None
-            else None
-        )
+        expires_at = created_at + int(duration_seconds) if duration_seconds is not None else None
         clean_reason = (reason or "").strip() or None
 
         self._ensure_schema()
@@ -110,24 +105,10 @@ class SQLiteBanStore:
                     created_at = excluded.created_at,
                     expires_at = excluded.expires_at
                 """,
-                (
-                    platform_key,
-                    user_id,
-                    clean_reason,
-                    banned_by,
-                    created_at,
-                    expires_at,
-                ),
+                (platform_key, user_id, clean_reason, banned_by, created_at, expires_at),
             )
 
-        return BanRecord(
-            platform=platform_key,
-            user_id=user_id,
-            reason=clean_reason,
-            banned_by=banned_by,
-            created_at=created_at,
-            expires_at=expires_at,
-        )
+        return BanRecord(platform_key, user_id, clean_reason, banned_by, created_at, expires_at)
 
     def get_active(
         self,
@@ -185,12 +166,7 @@ class SQLiteBanStore:
             connection.execute("DELETE FROM bans")
 
 
-def _default_bans_db_path() -> str:
-    configured = os.getenv("BANS_DB_PATH", "").strip()
-    return configured or str(DEFAULT_BANS_DB_PATH)
-
-
-BANS = SQLiteBanStore(_default_bans_db_path())
+BANS = SQLiteBanStore(get_settings().storage.bans_db_path)
 
 
 def ban_user(
