@@ -8,7 +8,9 @@ from core.models import EpisodePage, EpisodeRecord
 class EpisodeService:
     """Source-independent entry point for lazy episode capabilities."""
 
-    def __init__(self, sources: tuple[AnimeEpisodeSource, ...] | list[AnimeEpisodeSource]) -> None:
+    def __init__(
+        self, sources: tuple[AnimeEpisodeSource, ...] | list[AnimeEpisodeSource]
+    ) -> None:
         self._sources = tuple(sources)
         self._by_backend = {source.backend_key: source for source in self._sources}
 
