@@ -136,8 +136,6 @@ query AnimeCharacters($id: Int!, $page: Int!) {
 }
 """
 
-_PEOPLE_CACHE = BoundedTTLCache[tuple[str, str], list[PersonCredit]](max_entries=1000)
-
 
 def _settings(settings: SourceSettings | None = None) -> SourceSettings:
     return settings or get_settings().sources
@@ -647,10 +645,11 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
 async def _cached_people(
     media_id: str,
     section: str,
+    cache: BoundedTTLCache[tuple[str, str], list[PersonCredit]],
     settings: SourceSettings | None = None,
 ) -> list[PersonCredit]:
     key = (media_id, section)
-    cached = _PEOPLE_CACHE.get(key)
+    cached = cache.get(key)
     if cached is not None:
         return copy.deepcopy(cached)
 
@@ -663,7 +662,7 @@ async def _cached_people(
 
     ttl = _people_cache_ttl(settings)
     if ttl > 0:
-        _PEOPLE_CACHE.set(key, copy.deepcopy(people), ttl_seconds=ttl)
+        cache.set(key, copy.deepcopy(people), ttl_seconds=ttl)
     return people
 
 
@@ -675,6 +674,9 @@ class AniListSource:
 
     def __init__(self, settings: SourceSettings | None = None) -> None:
         self._settings = _settings(settings)
+        self._people_cache = BoundedTTLCache[tuple[str, str], list[PersonCredit]](
+            max_entries=1000
+        )
 
     async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
         anilist_id = str(identity.get(SourceKey.ANILIST) or "").strip()
@@ -712,13 +714,17 @@ class AniListSource:
         media_id = str(identity.get(SourceKey.ANILIST) or "").strip()
         if not media_id.isdigit():
             return []
-        return await _cached_people(media_id, "staff", self._settings)
+        return await _cached_people(
+            media_id, "staff", self._people_cache, self._settings
+        )
 
     async def load_voices(self, identity: AnimeIdentity) -> list[PersonCredit]:
         media_id = str(identity.get(SourceKey.ANILIST) or "").strip()
         if not media_id.isdigit():
             return []
-        return await _cached_people(media_id, "voices", self._settings)
+        return await _cached_people(
+            media_id, "voices", self._people_cache, self._settings
+        )
 
     async def load_staff_batch(
         self,

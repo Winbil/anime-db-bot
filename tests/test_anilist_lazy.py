@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from core.identity import AnimeIdentity
+from core.models import PersonCredit
 from sources.anilist import AniListSource, BY_ID_QUERY, DETAIL_QUERY
 
 
@@ -52,6 +53,25 @@ class AniListLazyPeopleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record.voices, [])
         self.assertEqual(record.external_ids["anilist"], "101280")
         graphql.assert_awaited_once()
+
+    async def test_people_cache_is_owned_by_source_instance(self) -> None:
+        identity = AnimeIdentity({"anilist": "101280"})
+        people = [PersonCredit(name="Test Staff")]
+        first = AniListSource()
+        second = AniListSource()
+
+        with patch(
+            "sources.anilist._all_staff",
+            new=AsyncMock(return_value=people),
+        ) as load_staff:
+            first_result = await first.load_staff(identity)
+            cached_result = await first.load_staff(identity)
+            second_result = await second.load_staff(identity)
+
+        self.assertEqual(first_result[0].name, "Test Staff")
+        self.assertEqual(cached_result[0].name, "Test Staff")
+        self.assertEqual(second_result[0].name, "Test Staff")
+        self.assertEqual(load_staff.await_count, 2)
 
     async def test_direct_anilist_identity_uses_anilist_id_query(self) -> None:
         payload = {
