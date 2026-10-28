@@ -7,6 +7,7 @@ import logging
 from mappings.config import mappings_auto_update
 from mappings.resolver import (
     delete_mapping_override,
+    list_mapping_override_history,
     list_mapping_overrides,
     set_mapping_override,
 )
@@ -21,6 +22,22 @@ def _override_dict(override: object) -> dict[str, str]:
         "target_id": str(getattr(override, "target_id")),
         "action": str(getattr(override, "action")),
         "reason": str(getattr(override, "reason")),
+        "author": str(getattr(override, "author", "")),
+        "updated_at": str(getattr(override, "updated_at", "")),
+    }
+
+
+def _history_dict(item: object) -> dict[str, str]:
+    return {
+        "source_provider": str(getattr(item, "source_provider")),
+        "source_id": str(getattr(item, "source_id")),
+        "target_provider": str(getattr(item, "target_provider")),
+        "target_id": str(getattr(item, "target_id")),
+        "event": str(getattr(item, "event")),
+        "override_action": str(getattr(item, "override_action")),
+        "reason": str(getattr(item, "reason")),
+        "author": str(getattr(item, "author")),
+        "changed_at": str(getattr(item, "changed_at")),
     }
 
 
@@ -29,6 +46,11 @@ def main() -> None:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--force", action="store_true", help="rebuild even when the DB is fresh")
     group.add_argument("--status", action="store_true", help="print DB status without updating")
+    group.add_argument(
+        "--override-history",
+        action="store_true",
+        help="list mapping override audit history",
+    )
     group.add_argument(
         "--override-list",
         action="store_true",
@@ -46,22 +68,32 @@ def main() -> None:
         metavar=("SOURCE", "SOURCE_ID", "TARGET", "TARGET_ID"),
         help="delete one directional manual override",
     )
-    parser.add_argument(
-        "--reason",
-        default="",
-        help="required audit reason for --override-set",
-    )
+    parser.add_argument("--reason", default="", help="audit reason for override changes")
+    parser.add_argument("--author", default="cli", help="audit author for override changes")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 
+    if args.override_history:
+        print(
+            json.dumps(
+                [_history_dict(item) for item in list_mapping_override_history()],
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
     if args.override_list:
-        print(json.dumps(
-            [_override_dict(item) for item in list_mapping_overrides()],
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-        ))
+        print(
+            json.dumps(
+                [_override_dict(item) for item in list_mapping_overrides()],
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return
 
     if args.override_set:
@@ -73,18 +105,28 @@ def main() -> None:
             target_id,
             action=action,
             reason=args.reason,
+            author=args.author,
         )
-        print(json.dumps(
-            _override_dict(override),
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-        ))
+        print(
+            json.dumps(
+                _override_dict(override),
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return
 
     if args.override_delete:
         source, source_id, target, target_id = args.override_delete
-        removed = delete_mapping_override(source, source_id, target, target_id)
+        removed = delete_mapping_override(
+            source,
+            source_id,
+            target,
+            target_id,
+            reason=args.reason or "manual override deleted",
+            author=args.author,
+        )
         print(json.dumps({"removed": removed}, ensure_ascii=False, indent=2))
         return
 
@@ -102,14 +144,21 @@ def main() -> None:
     if stats is None:
         print(json.dumps(mapping_status(), ensure_ascii=False, indent=2, sort_keys=True))
         return
-    print(json.dumps({
-        "datasets": stats.datasets,
-        "records": stats.records,
-        "evidence": stats.evidence,
-        "edges": stats.edges,
-        "accepted_edges": stats.accepted_edges,
-        "conflicts": stats.conflicts,
-    }, ensure_ascii=False, indent=2, sort_keys=True))
+    print(
+        json.dumps(
+            {
+                "datasets": stats.datasets,
+                "records": stats.records,
+                "evidence": stats.evidence,
+                "edges": stats.edges,
+                "accepted_edges": stats.accepted_edges,
+                "conflicts": stats.conflicts,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 if __name__ == "__main__":
