@@ -8,30 +8,32 @@
 - `data/source_values.json` — mappings from external API enum values (AniList, MyAnimeList, Shikimori) to stable canonical keys.
 - `locales/ru.json` — Russian interface labels.
 - `locales/en.json` — English interface labels.
+- `locales/ja.json` — Japanese interface labels.
 - `catalog.py` — cached loader, source-enum normalization and translation API.
 
 ## Rules
 
 Source adapters must not own translated dictionaries such as `STATUS_NAMES` or `KIND_NAMES`. External values are mapped through `source_values.json` to locale-neutral keys such as `airing`, `movie`, `spring`, `fantasy` and `light_novel`.
 
-`AnimeRecord` and `AggregatedAnime` keep these canonical values. Translation happens only in a platform renderer for the current user's locale. This means one aggregated card can be rendered in Russian or English without repeating metadata API requests.
+`AnimeRecord` and `AggregatedAnime` keep these canonical values. Translation happens only in a platform renderer for the current user's locale. This means one aggregated card can be rendered in Russian, English or Japanese without repeating metadata API requests.
 
 Canonicalization aliases live in `aliases.json`, while algorithms such as normalization, transliteration, identity matching and raw person-name handling stay in Python.
 
-Person names and aliases are stored as raw variants. `display_person_name()` selects and formats them at render time: Russian prefers a Cyrillic display name, English prefers a Latin display name, while Japanese/native aliases remain available. This prevents presentation strings from being recursively merged back into aliases.
+Person names and aliases are stored as raw variants. `display_person_name()` selects and formats them at render time: Russian prefers a Cyrillic display name, English prefers a Latin display name, and Japanese prefers a Japanese/native display name with a Latin alias when available. This prevents presentation strings from being recursively merged back into aliases.
 
-Dynamic voice credits are stored as internal tokens such as `voice_of::Rimuru Tempest`; the renderer turns them into `Озвучка: Rimuru Tempest` or `Voice: Rimuru Tempest`.
+Dynamic voice credits are stored as internal tokens such as `voice_of::Rimuru Tempest`; the renderer turns them into `Озвучка: Rimuru Tempest`, `Voice: Rimuru Tempest` or `声: Rimuru Tempest`.
 
 Unknown upstream values are preserved instead of being discarded. This keeps the bot forward-compatible when an API introduces a new enum before the catalog is updated.
 
 ## Supported interface languages
 
-The supported interface locales are intentionally limited to:
+The supported interface locales are:
 
 - `ru` — Русский;
-- `en` — English.
+- `en` — English;
+- `ja` — 日本語.
 
-Telegram users change the locale through `/settings`. The choice is stored by Telegram user ID in the user-settings repository and therefore survives process restarts.
+Telegram users change the locale through `/settings`. The choice is stored by platform and user ID in the user-settings repository and therefore survives process restarts.
 
 Additional interface languages should only be added when there is a real product/source-data reason to maintain them; adding another JSON file alone is not treated as a complete localization.
 
