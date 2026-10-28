@@ -1,0 +1,78 @@
+name: Bug report
+description: Report reproducible incorrect behavior in anime-db-bot
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not include bot tokens, API keys, passwords, private URLs, or other secrets.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+      placeholder: A concise description of the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the command/callback flow and the smallest reliable reproduction.
+      placeholder: |
+        1. Run /anime ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit or version
+      description: Commit SHA, branch, or release if known.
+      placeholder: main / abc1234
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options:
+        - Telegram Bot API
+        - Self-hosted Telegram Bot API
+        - Tests / development environment
+        - Other
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, Docker availability, and other relevant deployment details. Do not include secrets.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Redact tokens, credentials, private URLs, user IDs, and other sensitive data before posting.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for the same problem.
+          required: true
+        - label: I removed secrets and private information from this report.
+          required: true
+        - label: This is not a security vulnerability that should be reported privately.
+          required: true

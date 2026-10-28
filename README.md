@@ -9,6 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11--3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
 [![CI](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](LICENSE)
 
 `anime-db-bot` searches multiple anime databases, resolves confirmed cross-database identities, and builds one source-independent card without treating any external database as the canonical source of truth.
 
@@ -325,6 +326,10 @@ Useful direct commands:
 
 GitHub Actions runs the test matrix on Python 3.11, 3.12, and 3.13. The quality job additionally runs Ruff correctness checks, formatter checks for the typed foundation, mypy for the typed foundation, full tests with a coverage gate of at least 70%, and ShellCheck for shell scripts.
 
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request and follow the project [Code of Conduct](CODE_OF_CONDUCT.md). Bug reports and feature requests should use the repository issue forms.
+
 ## Security
 
 - Keep `.env` and credentials outside version control.
@@ -333,7 +338,7 @@ GitHub Actions runs the test matrix on Python 3.11, 3.12, and 3.13. The quality 
 - Do not expose a self-hosted Telegram Bot API, future metrics endpoint, or future external API publicly without explicit authentication/network controls.
 - Mapping overrides are audited because an incorrect identity edge can affect multiple capabilities.
 
-If a security-sensitive issue is discovered, do not publish credentials, tokens, or private deployment details in a public issue.
+For vulnerability reporting and supported security channels, see [SECURITY.md](SECURITY.md). Do not publish credentials, tokens, or private deployment details in a public issue.
 
 ## Project status
 
@@ -341,7 +346,7 @@ The project is under active development. The core Telegram search/card flow, ide
 
 ## License
 
-No license file is currently published in this repository. Until a license is explicitly added, do not assume permission to redistribute or reuse the code outside the rights granted by the repository owner.
+Licensed under the [Apache License 2.0](LICENSE). You may use, modify, and distribute the project under its terms; preserve the required notices and mark significant modifications as required by the license.
 
 ## Data sources and acknowledgements
 

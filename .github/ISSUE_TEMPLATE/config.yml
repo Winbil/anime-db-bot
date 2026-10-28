@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security policy
+    url: https://github.com/Winbil/anime-db-bot/security/policy
+    about: Do not report vulnerabilities or leaked credentials in a public issue.
