@@ -21,6 +21,7 @@ from mappings.resolver import (
     MappingResolver,
     copy_mapping_overrides,
     delete_mapping_override,
+    list_mapping_override_history,
     list_mapping_overrides,
     set_mapping_override,
 )
@@ -197,6 +198,58 @@ class MappingDatabaseTests(unittest.TestCase):
             {},
         )
 
+    def test_override_audit_metadata_and_history_are_persisted(self) -> None:
+        self._build([("direct", [
+            MappingRecord("1", {"mal": ("100",), "anidb": ("200",)}, "direct", 95),
+        ])])
+        override = set_mapping_override(
+            "mal", "100", "anidb", "201",
+            action="accept", reason="verified", author="tester", path=self.path,
+        )
+        self.assertEqual(override.author, "tester")
+        self.assertTrue(override.updated_at)
+        self.assertTrue(delete_mapping_override(
+            "mal", "100", "anidb", "201",
+            reason="superseded", author="tester2", path=self.path,
+        ))
+        history = list_mapping_override_history(self.path)
+        self.assertEqual([item.event for item in history], ["set", "delete"])
+        self.assertEqual([item.author for item in history], ["tester", "tester2"])
+        self.assertEqual(history[-1].reason, "superseded")
+
+    def test_legacy_override_table_is_migrated_on_write(self) -> None:
+        self._build([])
+        with sqlite3.connect(self.path) as conn:
+            conn.execute("DROP TABLE mapping_override_history")
+            conn.execute("ALTER TABLE mapping_overrides RENAME TO mapping_overrides_new")
+            conn.execute("""
+                CREATE TABLE mapping_overrides (
+                    source_provider TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    target_provider TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    reason TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(source_provider, source_id, target_provider, target_id)
+                ) WITHOUT ROWID
+            """)
+            conn.execute("""
+                INSERT INTO mapping_overrides(
+                    source_provider, source_id, target_provider, target_id, action, reason
+                ) VALUES ('mal','1','anidb','2','accept','legacy')
+            """)
+            conn.execute("DROP TABLE mapping_overrides_new")
+            conn.commit()
+        self.assertEqual(list_mapping_overrides(self.path)[0].author, "")
+        set_mapping_override(
+            "mal", "1", "anidb", "2",
+            action="reject", reason="updated", author="migration-test", path=self.path,
+        )
+        current = list_mapping_overrides(self.path)[0]
+        self.assertEqual(current.author, "migration-test")
+        self.assertEqual(current.action, "reject")
+        self.assertEqual(len(list_mapping_override_history(self.path)), 1)
+
     def test_overrides_can_be_copied_into_atomic_rebuild(self) -> None:
         self._build([("direct", [
             MappingRecord("1", {"mal": ("100",), "anidb": ("200",)}, "direct", 95),
@@ -208,6 +261,7 @@ class MappingDatabaseTests(unittest.TestCase):
             "201",
             action="accept",
             reason="preserve across rebuild",
+            author="rebuild-test",
             path=self.path,
         )
 
@@ -228,6 +282,8 @@ class MappingDatabaseTests(unittest.TestCase):
             {"anidb": "201"},
         )
         self.assertEqual(len(list_mapping_overrides(rebuilt_path)), 1)
+        self.assertEqual(list_mapping_overrides(rebuilt_path)[0].author, "rebuild-test")
+        self.assertEqual(len(list_mapping_override_history(rebuilt_path)), 1)
 
 
 class MappingImporterTests(unittest.TestCase):
