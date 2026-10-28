@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 import re
 import secrets
-from dataclasses import dataclass, field
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
 from aiogram import Dispatcher, F
@@ -64,43 +64,6 @@ _SOURCE_LABELS = {
 
 _DIRECT_ID_RE = re.compile(r"^(?:(?P<source>[a-zA-Z0-9_-]+):)?(?P<id>[0-9]+)$")
 
-_UI = {
-    "ru": {
-        "choose_source": "Где искать аниме? После выбора отправь название или ID.",
-        "all": "Все",
-        "cancel": "Отмена",
-        "waiting": "Источник выбран: {scope}. Отправь название аниме или ID следующим сообщением.\n\nОтмена: /cancel",
-        "cancelled": "Поиск отменён.",
-        "nothing_pending": "Нет активного пошагового поиска.",
-        "expired": "Этот поиск устарел. Запусти /anime ещё раз.",
-        "details": "Подробнее",
-        "result": "Результат поиска",
-        "year": "Год: {year}",
-        "ids": "ID источников:",
-        "no_ids": "ID источников не найдены.",
-        "unavailable": "Недоступны: {sources}",
-        "scope_mismatch": "Этот пошаговый поиск ограничен источником {scope}.",
-        "failed": "Не удалось выполнить поиск. Причина записана в лог.",
-    },
-    "en": {
-        "choose_source": "Where should I search? After choosing, send an anime title or ID.",
-        "all": "All",
-        "cancel": "Cancel",
-        "waiting": "Selected source: {scope}. Send an anime title or ID in your next message.\n\nCancel: /cancel",
-        "cancelled": "Search cancelled.",
-        "nothing_pending": "There is no active step-by-step search.",
-        "expired": "This search expired. Start /anime again.",
-        "details": "Details",
-        "result": "Search result",
-        "year": "Year: {year}",
-        "ids": "Source IDs:",
-        "no_ids": "No source IDs found.",
-        "unavailable": "Unavailable: {sources}",
-        "scope_mismatch": "This step-by-step search is restricted to {scope}.",
-        "failed": "Search failed. The reason was written to the log.",
-    },
-}
-
 
 @dataclass(slots=True)
 class SearchSession:
@@ -150,10 +113,8 @@ class SearchUiState:
         )
 
 
-def _ui(locale: str, key: str, **kwargs) -> str:
-    language = "en" if str(locale).casefold().startswith("en") else "ru"
-    value = _UI[language][key]
-    return value.format(**kwargs) if kwargs else value
+def _ui(locale: str, key: str, **kwargs: object) -> str:
+    return text("search_ui", key, locale=locale, **kwargs)
 
 
 def _normalize_provider_keys(keys: tuple[str, ...] | list[str]) -> tuple[str, ...]:

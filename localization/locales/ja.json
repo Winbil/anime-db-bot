@@ -3,8 +3,9 @@
     "name": "日本語"
   },
   "locale_names": {
+    "en": "英語",
     "ru": "ロシア語",
-    "en": "英語"
+    "ja": "日本語"
   },
   "common": {
     "unknown": "不明",
@@ -33,13 +34,12 @@
     "merge_note": "結果を選択すると、利用可能なすべてのソースからメタデータを収集し、重複なしで統合します。",
     "commands": "コマンド:",
     "anime": "/anime <タイトル> — アニメを検索",
-    "search": "/search <タイトル> — 特定の検索プロバイダーを選択",
     "settings": "/settings — インターフェース設定",
     "ping": "/ping — ボットの動作確認",
     "no_sources": "なし"
   },
   "search": {
-    "default_scope": "デフォルト: Shikimori + MAL",
+    "default_scope": "デフォルト: Shikimori + MAL + AniList",
     "all_scope": "すべての検索プロバイダー",
     "page": "ページ {page}",
     "results": "「{query}」の検索結果です。アニメを選択してください:",
@@ -53,7 +53,6 @@
     "no_results_unavailable": "結果を取得できませんでした。利用できない検索プロバイダー: {sources}",
     "nothing_unavailable": "何も見つかりませんでした。利用不可: {sources}",
     "anime_usage": "使い方: /anime <タイトル>\n例: /anime 転生したらスライムだった件",
-    "search_usage": "使い方:\n/search <タイトル> — ボタンでプロバイダーを選択\n/search mal <タイトル>\n/search shikimori <タイトル>\n/search anilist <タイトル>\n/search all <タイトル>\n/search mal,shikimori <タイトル>",
     "where": "「{query}」をどこで検索しますか？",
     "invalid_provider": "無効な検索プロバイダーです。",
     "expired": "この検索は期限切れです。",
@@ -65,6 +64,59 @@
     "result_unavailable": "この結果は利用できなくなりました。",
     "loading": "「{title}」のデータを読み込み中…",
     "selected": "選択: {title}"
+  },
+  "search_ui": {
+    "choose_source": "どこでアニメを検索しますか？選択後、タイトルまたはIDを送信してください。",
+    "all": "すべて",
+    "cancel": "キャンセル",
+    "waiting": "検索元を選択しました: {scope}。次のメッセージでアニメのタイトルまたはIDを送信してください。\n\nキャンセル: /cancel",
+    "cancelled": "検索をキャンセルしました。",
+    "nothing_pending": "進行中の段階式検索はありません。",
+    "expired": "この検索は期限切れです。もう一度 /anime を実行してください。",
+    "details": "詳細",
+    "result": "検索結果",
+    "year": "年: {year}",
+    "ids": "ソースID:",
+    "no_ids": "ソースIDが見つかりません。",
+    "unavailable": "利用不可: {sources}",
+    "scope_mismatch": "この段階式検索は {scope} に限定されています。",
+    "failed": "検索に失敗しました。原因はログに記録されています。"
+  },
+  "admin": {
+    "forbidden": "権限がありません。",
+    "users_title": "保存済みの Telegram ID: {count}",
+    "users_empty": "保存済みの Telegram ID はまだありません。",
+    "ban_usage": "使用方法: /ban <user_id> [seconds] [reason]\nseconds を省略すると永久BANになります。/ban <user_id> <reason> <seconds> も使用できます。",
+    "invalid_id": "user_id は正の整数である必要があります。",
+    "admin_target": "管理者をBANすることはできません。",
+    "ban_permanent": "ユーザー {user_id} を永久にBANしました。{reason}",
+    "ban_temporary": "ユーザー {user_id} を {seconds} 秒間BANしました。{reason}",
+    "unban_usage": "使用方法: /unban <user_id>",
+    "unbanned": "ユーザー {user_id} のBANを解除しました。",
+    "not_banned": "ユーザー {user_id} はBANされていませんでした。",
+    "banned_permanent": "このボットへのアクセスは永久にブロックされています。{reason}",
+    "banned_temporary": "このボットへのアクセスはあと {seconds} 秒間ブロックされています。{reason}",
+    "reason": "\n理由: {reason}",
+    "mapping_overrides_title": "Mapping overrides: {count}",
+    "mapping_overrides_empty": "Mapping override はまだありません。",
+    "mapping_history_title": "最新の mapping override 履歴: {shown}",
+    "mapping_history_empty": "Mapping override の履歴は空です。",
+    "mapping_history_usage": "使用方法: /mapping_history [limit]。limit は 1..100 です。",
+    "mapping_set_usage": "使用方法: /mapping_set <accept|reject> <source_provider> <source_id> <target_provider> <target_id> <reason>",
+    "mapping_delete_usage": "使用方法: /mapping_delete <source_provider> <source_id> <target_provider> <target_id> <reason>",
+    "mapping_confirm_usage": "使用方法: /mapping_confirm <token>。",
+    "mapping_cancel_usage": "使用方法: /mapping_cancel <token>。",
+    "mapping_pending": "変更はまだ適用されていません。内容を確認してください:\n{preview}\n確認: /mapping_confirm {token}\nキャンセル: /mapping_cancel {token}",
+    "mapping_confirmed_set": "Mapping override を適用しました: {preview}",
+    "mapping_confirmed_delete": "Mapping override を削除しました: {preview}",
+    "mapping_confirm_missing": "確認情報が見つからないか、有効期限が切れています。",
+    "mapping_confirm_owner": "この確認情報は別の管理者に属しています。",
+    "mapping_cancelled": "変更をキャンセルしました。",
+    "mapping_delete_missing": "その mapping override は既に存在しません。",
+    "mapping_mutation_failed": "変更を適用できませんでした: {error}"
+  },
+  "rate_limit": {
+    "too_many_requests": "エラー: Too Many Requests\nリクエストが多すぎます。{seconds} 秒後にもう一度お試しください。"
   },
   "card": {
     "section_main": "概要",

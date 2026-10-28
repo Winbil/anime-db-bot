@@ -1,201 +1,217 @@
+<p align="center">
+  <strong>English</strong> · <a href="README.ru.md">Русский</a> · <a href="README.ja.md">日本語</a>
+</p>
+
 # anime-db-bot
 
-Telegram-бот для поиска аниме и сборки одной общей карточки из нескольких независимых баз данных.
+> Identity-native Telegram anime search and metadata aggregation across MyAnimeList/Jikan, AniList, Shikimori, and AniDB.
 
-Главный принцип проекта: **search, identity, metadata sources, mappings, aggregation, localization и platform UI — отдельные слои**. Ни MAL, ни AniList, ни Shikimori, ни AniDB не считаются «главной» базой: `AnimeIdentity` хранит подтверждённые external IDs как равноправные связи.
+[![Python](https://img.shields.io/badge/Python-3.11--3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
+[![CI](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml)
 
-## Поиск
+`anime-db-bot` searches multiple anime databases, resolves confirmed cross-database identities, and builds one source-independent card without treating any external database as the canonical source of truth.
 
-Единственная пользовательская команда поиска — `/anime`. Старой `/search` нет и возвращать её не нужно.
+The project is designed around explicit boundaries between **search**, **identity**, **mappings**, **metadata sources**, **aggregation**, **localization**, and **platform UI**. Expensive data such as staff portraits, characters, trailers, and episodes is loaded lazily only when the user opens the corresponding section.
 
-Быстрый режим:
+## Highlights
+
+- **Multi-provider search** — Shikimori, MyAnimeList, and AniList are queried through one `/anime` flow.
+- **Source-independent identity** — `AnimeIdentity` stores peer external IDs; there is no global primary database ID.
+- **Conservative cross-ID mapping** — runtime mapping is direct-only and conflict-aware, with provenance and manual audited overrides.
+- **Aggregated metadata cards** — values from successful metadata sources are normalized and merged while source-specific provenance is preserved.
+- **Lazy heavy sections** — people, portraits, characters, trailers, and episodes are fetched on demand.
+- **Shared resilience layer** — typed source errors, retries, circuit breakers, half-open recovery, rate limits, and shared HTTP lifecycle.
+- **Persistent platform-scoped settings** — user locale, known users, and moderation state are stored in SQLite.
+- **Three UI languages** — English is the default/fallback locale; Russian and Japanese are fully selectable in `/settings`.
+- **Production-oriented checks** — Python 3.11–3.13 CI, Ruff, formatter checks, mypy scope, coverage gate, and ShellCheck.
+
+## Source capabilities
+
+| Source | Search | Metadata | People | Characters | Trailers | Episodes |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: |
+| Shikimori | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| AniDB | — | ✓ | ✓ | ✓ | — | ✓ |
+
+AniDB is optional and is enabled only when `ANIDB_CLIENT` is configured. Jikan is **not** a separate identity database: it is a local MAL backend used for data that is not available through the official MAL API.
+
+## How it works
 
 ```text
-/anime <название>
+Telegram /anime
+      │
+      ▼
+SearchService
+      │
+      ▼
+SearchCandidate
+      │
+      ▼
+AnimeIdentity  ◄──── disk-backed mappings.db
+      │                + live MAL → Shikimori fallback
+      ▼
+AnimeAggregator
+      │
+      ├── Shikimori
+      ├── AniList
+      ├── MAL / Jikan
+      └── AniDB (optional)
+      │
+      ▼
+AggregatedAnime
+      │
+      ▼
+Telegram card + lazy sections
 ```
 
-параллельно использует:
+### Identity rules
 
-- Shikimori Search;
-- MyAnimeList Search;
-- AniList Search.
+`AnimeIdentity` has no primary ID. A numeric ID from one database is never assumed to identify the same title in another database simply because the number matches.
 
-`/anime` без аргумента открывает пошаговый выбор `Все / MAL / Shikimori / AniList`. Pending input хранится только для конкретной пары user/chat, имеет TTL и отменяется `/cancel`.
+Cross-source merging follows conservative rules:
 
-Числовой запрос — source-independent direct lookup:
+1. explicit shared external IDs are strong identity evidence;
+2. conflicting IDs from the same provider prevent a merge;
+3. text search may use a constrained exact normalized romaji fallback only when no same-provider conflict exists;
+4. direct-ID lookup does **not** use title-only merging;
+5. runtime mappings are direct-only and do not recursively traverse arbitrary TVDB/TMDB-style chains.
+
+The full enriched identity remains available internally for routing and lazy capabilities. The card's visible ID block shows only IDs belonging to metadata sources that actually contributed to that card.
+
+## Search
+
+The only user-facing search command is `/anime`.
 
 ```text
+/anime Frieren
 /anime 37430
 /anime mal:37430
 /anime anilist:<id>
 /anime shikimori:<id>
 ```
 
-Одинаковое число в разных базах **никогда** само по себе не означает одну сущность. Direct lookup не использует title-only merge: стартовый source должен подтвердить свой ID, а объединение происходит только по подтверждённым cross-ID edges.
+`/anime <title>` queries all registered search providers in parallel and collects a bounded query-scoped result set before Telegram pagination. Relevance considers titles, aliases, native/romaji variants, token/prefix matches, transliteration, and a conservative similarity fallback.
 
-Text search сначала объединяет результаты по непротиворечивым external IDs, затем может использовать точный нормализованный romaji fallback для ещё не связанных результатов. Конфликт ID одного provider всегда запрещает merge.
+Hard page/item caps protect upstream quotas. When the bot cannot prove that the collected count is final, the UI reports an incomplete count instead of presenting it as exact.
 
-Перед Telegram-пагинацией `SearchService.collect()` формирует query-scoped relevant result set. Relevance policy учитывает title/romaji/native/aliases, prefix/token matches, transliteration и консервативный similarity fallback. Нерелевантный хвост upstream страниц останавливается, hard caps защищают quota. Telegram листает уже зафиксированный локальный набор, поэтому `▶` не делает новый upstream search.
+Running `/anime` without arguments opens an interactive source selector. Pending input is scoped to the user/chat pair, expires automatically, and can be cancelled with `/cancel`.
 
-Если итог не гарантирован из-за hard cap или частично недоступных sources, UI показывает честное `N/N+`, а не выдуманный точный count.
+## Lazy card sections
 
-## Identity и mappings
+The main card stays metadata-first. The following sections are loaded only when requested:
 
-```text
-SearchCandidate
-      │
-      ▼
-AnimeIdentity
-├── mal: ...
-├── anilist: ...
-├── shikimori: ...
-└── anidb: ...
+- staff and creators;
+- original Japanese voice actors;
+- characters and portraits;
+- trailers/promos;
+- episodes.
+
+Foreign dub credits are not mixed into the original Japanese voice list. Localization/ADR staff is excluded from the primary production staff list.
+
+## Requirements
+
+Recommended environment:
+
+- Linux server;
+- Python **3.11, 3.12, or 3.13**;
+- Git;
+- `tmux` for the bundled `start.sh` runtime;
+- Docker + Docker Compose for the optional local Jikan supplement.
+
+The application can still run without Docker; MAL remains available through its official API, while Jikan-only supplemental features are disabled.
+
+## Quick start
+
+```bash
+git clone git@github.com:Winbil/anime-db-bot.git
+cd anime-db-bot
+
+cp .env.example .env
+# Edit .env and add at least BOT_TOKEN.
+
+./scripts/setup.sh
+./scripts/check.sh
+./start.sh
 ```
 
-`AnimeIdentity` не имеет primary ID. Каждый source использует только тот ключ, который умеет обслуживать.
+`start.sh` starts the Telegram bot in a detached `tmux` session and attempts to start the local Jikan container when Docker Compose is available.
 
-Cross-ID enrichment построен консервативно:
+Useful runtime commands:
 
-1. direct accepted mappings из disk-backed SQLite;
-2. live MAL → Shikimori fallback там, где он действительно нужен;
-3. после расширения identity aggregator один раз повторяет ранее неприменимые sources.
+```bash
+tmux attach -t anime-db-bot
+tail -f logs/bot.log
+```
 
-Произвольного recursive graph traversal через TVDB/TMDB и другие промежуточные сущности в production нет. Такой traversal опасен для season/special grouping и был удалён.
+## Configuration
 
-Mappings DB строится потоково из нескольких datasets и остаётся на диске — полный граф не копируется в RAM. Directional manual overrides поддерживают `accept` и `reject`, сохраняют `author`/timestamp и append-only audit history; overrides и история сохраняются при atomic rebuild.
+All runtime environment parsing is centralized in `core/settings.py`. Start from `.env.example`; it documents every supported setting and safe default.
 
-Telegram admin mutation workflow двухэтапный: `/mapping_set` и `/mapping_delete` сначала создают только временное подтверждение, а изменение БД выполняется лишь после `/mapping_confirm <token>`. Token живёт 5 минут, привязан к создавшему его администратору, а audit author записывается как `telegram:<admin_id>`. `/mapping_cancel <token>` отменяет pending-изменение.
+### Essential settings
 
-## Metadata sources
+| Variable | Required | Purpose |
+| --- | :---: | --- |
+| `BOT_TOKEN` | Yes | Telegram bot token from BotFather. |
+| `MAL_CLIENT_ID` | Recommended | Enables official MyAnimeList search and metadata. |
+| `ANIDB_CLIENT` | No | Enables AniDB HTTP API metadata/people/episodes. |
+| `ANIDB_CLIENT_VERSION` | No | Registered AniDB HTTP API client version; defaults to `1`. |
+| `ANILIST_ACCESS_TOKEN` | No | Optional AniList token when authenticated access is desired. |
+| `ADMIN_TELEGRAM_USER_IDS` | No | Comma/space/semicolon-separated Telegram admin user IDs. |
+| `TELEGRAM_BOT_API_URL` | No | Custom/self-hosted Telegram Bot API endpoint. |
+| `USER_SETTINGS_DB_PATH` | No | SQLite path for per-user settings and known-user registry. |
+| `BANS_DB_PATH` | No | SQLite path for moderation bans. |
+| `MAPPINGS_DB_PATH` | No | Runtime cross-ID mapping database. |
 
-Основные sources:
-
-- Shikimori;
-- AniList;
-- MAL (MyAnimeList) / Jikan;
-- AniDB — optional, включается только при настроенном `ANIDB_CLIENT`.
-
-### MAL / Jikan
-
-Jikan — **не отдельная identity-база**. Это локальный on-demand MAL web supplement. В `AnimeIdentity` нет `jikan` key; provenance хранится как `source=mal`, `backend=jikan`.
-
-Jikan дополняет официальный MAL API тем, чего там не хватает для текущего UI: licensors, score distribution, lazy staff, Japanese voice actors, characters, trailers/promos и episodes. Ошибка локального Jikan parser не ломает официальный MAL metadata/search.
+Do not commit `.env`, bot tokens, access tokens, passwords, or private API credentials.
 
 ### AniDB
 
-AniDB не участвует в обычном text search. Его ID появляется через mappings/direct lookup. HTTP source включается только при `ANIDB_CLIENT`.
+The integration uses the AniDB HTTP API. It requires a registered HTTP API **client name and version**, not an AniDB account password.
 
-AniDB сохраняет XML cache на диске, сериализует process-wide network requests и выдерживает минимальный интервал между обращениями. Из XML доступны metadata, staff, original voices, characters и episodes.
-
-## Lazy sections
-
-Главная карточка остаётся metadata-first. Тяжёлые разделы загружаются только при открытии:
-
-- staff;
-- original Japanese seiyuu;
-- characters;
-- trailers;
-- episodes.
-
-Foreign dub voices не входят в основной voice list. Localization/ADR staff отфильтровывается из original production staff.
-
-`PersonCredit` и `CharacterRecord` — разные domain models. `CharacterIdentity` хранит только source-local ID персонажа и никогда не смешивается с anime/person identity. Portraits хранят provenance по source, а не одним плоским URL.
-
-People UI разделён на:
-
-```text
-bots/telegram/people_loading.py   # progress/state и progressive batches
-bots/telegram/people_views.py     # rendering/keyboards
-bots/telegram/people_portraits.py # callback orchestration
+```env
+ANIDB_CLIENT=your_registered_client_name
+ANIDB_CLIENT_VERSION=1
 ```
 
-Страница `0` существует только если действительно есть записи без портрета; иначе UI сразу начинает с portrait page.
+AniDB XML responses are cached on disk and network requests are serialized with an additional minimum request interval to respect the service's API expectations.
 
-## Source catalog и configuration
+### MAL / Jikan
 
-Source keys типизированы в `core/source_keys.py`, а capabilities объявлены в `core/capabilities.py`. Jikan намеренно отсутствует среди identity sources и остаётся backend’ом MAL.
+MAL is the identity source. Jikan is a local supplemental backend and never introduces a `jikan` identity key.
 
-Environment parsing централизован в `core/settings.py`:
+The bundled service lives under:
 
 ```text
-AppSettings
-├── TelegramSettings
-├── StorageSettings
-├── SearchSettings
-├── MappingSettings
-├── SourceSettings
-└── RateLimitSettings
+compose.yml
+jikan_service/
+scripts/update-jikan.sh
+deploy/systemd/anime-db-bot-jikan-update.{service,timer}
 ```
 
-Runtime-модули не должны самостоятельно разбирать `os.getenv()`; они получают typed settings через composition layer или совместимые typed accessors.
+A Jikan outage does not make official MAL search/metadata unavailable.
 
-## AppContext и lifecycle
+## Commands
 
-`services/app_context.py` — application composition root. Один `AppContext` владеет:
-
-- `AppSettings`;
-- shared `HttpClientPool`;
-- `SourceHealthRegistry`;
-- search providers;
-- metadata sources;
-- `SearchService`;
-- `AnimeAggregator`;
-- lazy character/episode/trailer services;
-- direct lookup service.
-
-Telegram runtime создаёт context при старте, активирует его на время dispatch и закрывает owned resources при shutdown. Импорт UI-модулей сам по себе не должен создавать runtime services.
-
-Для небольших standalone/test-вызовов некоторые repository/rate-limit/HTTP accessors сохраняют compatibility fallback вне активного `AppContext`; production Telegram runtime использует явно собранный context.
-
-## Shared HTTP, errors и source health
-
-Outbound source HTTP проходит через общий transport boundary в `core/http_client.py`. Он переиспользует `httpx.AsyncClient` внутри application lifecycle и нормализует сетевые/HTTP ошибки в typed source errors из `core/source_errors.py`.
-
-Resilience layer различает transient и non-transient failures. Один `SourceHealthRegistry` из `AppContext` применяется к metadata/people, text search, trailers и episodes: transient failures проходят через общий retry policy и circuit breaker с half-open recovery probe.
-
-Identity-source health и backend health разделены там, где это необходимо. Например, Jikan trailer/episode failures учитываются под ключом `jikan`, поэтому локальный supplement outage не открывает circuit официального MAL search/metadata.
-
-Provider-specific safety semantics сохраняются поверх общего transport: например, AniDB serialization/min interval и Shikimori people Retry-After handling.
-
-## Rate limiting
-
-Personal Telegram limits scoped по `(platform, user_id)`. Общего user bucket на всех пользователей нет.
-
-Admin bypass относится только к personal limiter. Upstream provider safety limits остаются отдельными и обязательными даже для admin.
-
-## Telegram callbacks
-
-`bots/telegram/callbacks.py` содержит типизированный codec для существующих callback namespaces (`av`, `as`, `ad`, `ap`, `ae`, `ac`, `at`). Card handlers разбирают payload через codec, сохраняя прежний wire-format и совместимость уже отправленных кнопок.
-
-Search/card callback sessions остаются bounded in-memory state со sliding TTL/LRU и привязкой к владельцу.
-
-## Localization и settings
-
-Поддерживаются:
-
-- `ru`;
-- `en`;
-- `ja`.
-
-Domain model locale-neutral: source adapters сохраняют canonical status/kind/season/genre/role values, а перевод выполняется только в renderer/localization layer. Свободные descriptions машинно не переводятся.
-
-Пользовательские settings и registry известных users хранятся в SQLite и scoped по `(platform, user_id)`. Legacy `user_settings` без platform автоматически мигрируют как Telegram-записи. Баны также persistent и platform-scoped.
-
-## Команды
+### User commands
 
 ```text
 /start
 /ping
 /settings
 /anime
-/anime <название>
+/anime <title>
 /anime <external_id>
 /anime mal:<id>
 /anime anilist:<id>
 /anime shikimori:<id>
 /cancel
+```
 
-# admin-only
+### Admin commands
+
+```text
 /users
 /ban <user_id> [seconds] [reason]
 /unban <user_id>
@@ -207,109 +223,134 @@ Domain model locale-neutral: source adapters сохраняют canonical status
 /mapping_cancel <token>
 ```
 
-## Запуск
+Mapping mutations are intentionally two-step. `/mapping_set` and `/mapping_delete` create a short-lived pending mutation; the database changes only after `/mapping_confirm <token>`. Audit history records the Telegram administrator responsible for the change.
 
-```bash
-cd anime-db-bot
-git pull
-./start.sh
-```
+## Localization
 
-Обычный `start.sh` больше не переустанавливает dependencies и не запускает весь test suite при каждом restart.
+The domain model is locale-neutral. Source adapters normalize upstream status/type/season/genre/role values into canonical keys, and translation happens only at render time.
 
-Разделение задач:
+Supported UI locales:
 
-```text
-scripts/setup.sh           # создать/починить venv и поставить requirements.lock
-scripts/check.sh           # compile + unit tests
-scripts/update-mappings.sh # явное обновление mappings DB
-start.sh                   # config/Jikan checks + запуск bot в tmux
-```
+- `en` — English (**default and fallback**);
+- `ru` — Русский;
+- `ja` — 日本語.
 
-`start.sh` остаётся executable (`100755`).
+Existing users keep their explicitly saved locale. New users, missing settings, invalid locale values, and missing translation keys fall back to English.
 
-## Jikan container
+Free-form source text such as anime descriptions is not machine-translated. See [`localization/README.md`](localization/README.md) for localization architecture and maintenance rules.
 
-Локальный parser-service находится в этом репозитории:
+## Persistence
 
-```text
-compose.yml
-jikan_service/
-├── Dockerfile
-├── composer.json
-└── public/router.php
-scripts/update-jikan.sh
-deploy/systemd/anime-db-bot-jikan-update.{service,timer}
-```
+The runtime keeps different kinds of state separate:
 
-Он слушает localhost и используется best-effort. Daily updater умеет health-check/rollback при неудачном обновлении.
+- user settings and known users — SQLite, scoped by `(platform, user_id)`;
+- bans — separate persistent SQLite store;
+- `mappings.db` — disk-backed cross-ID resolver database;
+- AniDB XML — disk cache;
+- Telegram search/card callback sessions — bounded in-memory TTL/LRU state.
 
-## CI
+Legacy user settings created before platform scoping are migrated as Telegram records without changing their saved locale.
 
-GitHub Actions проверяет Python 3.11, 3.12 и 3.13. Основная matrix выполняет locked install, `pip check`, compileall и unit tests.
+## Resilience and rate limiting
 
-Отдельный quality job добавляет:
+Outbound HTTP uses shared `httpx.AsyncClient` instances owned by `AppContext`. Source failures are normalized into typed errors and passed through a common retry/circuit-breaker layer.
 
-- Ruff correctness lint;
-- formatter check для typed foundation;
-- mypy для typed foundation;
-- полный test suite под coverage;
-- coverage gate `>=70%`;
-- ShellCheck для `start.sh` и `scripts/*.sh`.
+The source health registry supports:
 
-Typed foundation scope расширяется постепенно; в quality gate дополнительно включены общие capability contracts, search service, episode service и access-control слой.
+- transient vs. non-transient failure handling;
+- bounded retries with backoff;
+- circuit breaker thresholds;
+- cooldowns;
+- exactly one half-open recovery probe.
 
-## Архитектура
+Personal Telegram limits are scoped per `(platform, user_id)`. Administrators may bypass the personal limiter, but **never** bypass upstream provider safety limits.
+
+## Architecture
 
 ```text
 anime-db-bot/
-├── bots/
-│   ├── session_store.py
-│   └── telegram/
-│       ├── bot.py
-│       ├── callbacks.py
-│       ├── people_loading.py
-│       ├── people_views.py
-│       ├── people_portraits.py
-│       ├── search_ui.py
-│       ├── settings.py
-│       ├── admin.py
-│       ├── card/
-│       └── transports/
-├── core/
-│   ├── identity.py
-│   ├── source_keys.py
-│   ├── capabilities.py
-│   ├── settings.py
-│   ├── source_errors.py
-│   ├── http_client.py
-│   ├── canonicalization.py
-│   ├── contracts.py
-│   └── models.py
-├── mappings/
-├── localization/
-├── search/
-├── services/
-│   ├── app_context.py
-│   ├── source_health.py
-│   ├── identity_aggregator.py
-│   ├── aggregation_merge.py
-│   ├── direct_lookup.py
-│   └── ...
-├── sources/
-├── tests/
-├── scripts/
-├── start.sh
-└── README.md
+├── bots/telegram/      # Telegram transport, handlers, card/search UI
+├── core/               # contracts, models, identity, settings, HTTP, errors
+├── localization/       # locale catalogs and canonical localization data
+├── mappings/           # cross-ID database, importers, resolver, updater
+├── search/             # search providers and registry
+├── services/           # application services and AppContext composition
+├── sources/            # metadata/lazy capability adapters
+├── tests/              # unit, integration, wiring and regression tests
+├── jikan_service/      # local Jikan/MAL supplement service
+├── scripts/            # setup, checks and maintenance helpers
+└── deploy/systemd/     # optional maintenance units
 ```
 
-## Оставшиеся архитектурные долги
+`services/app_context.py` is the application composition root. Production runtime dependencies should be owned there rather than created as import-time service singletons.
 
-Domain-модели anime/episode/broadcast теперь хранят календарные и временные значения типизированно (`PartialDate`, `datetime`, `time`); строковый parsing остаётся только на adapter/compatibility границах.
+More detail: [`docs/app-context.md`](docs/app-context.md).
 
-После текущего refactor foundation основные долги уже не относятся к primary-ID, transport wiring, platform scoping settings или capability-wide resilience. Наиболее заметные следующие шаги:
+## Cross-ID mappings
 
-- расширение persistent user/account/preferences/watch-state слоя поверх существующего repository boundary;
-- дальнейшее повышение общего coverage и постепенное расширение mypy/formatter scope на legacy modules.
+The mapping updater streams several external datasets into SQLite, records provenance/evidence/conflicts, validates the rebuilt database, and atomically swaps it into place. The complete graph is not loaded into RAM.
 
-Эти ограничения не меняют текущие non-regression contracts: source-independent identity, direct-only mapping safety, lazy sections, explicit provenance и scoped rate/session state.
+Manual directional overrides support `accept` and `reject`, carry author/reason/timestamp metadata, and preserve append-only history across rebuilds.
+
+Maintenance commands:
+
+```bash
+./scripts/update-mappings.sh
+.venv/bin/python -m mappings --status
+.venv/bin/python -m mappings --override-list
+.venv/bin/python -m mappings --override-history
+```
+
+## Development
+
+Set up the locked environment:
+
+```bash
+./scripts/setup.sh
+```
+
+Run the normal local checks:
+
+```bash
+./scripts/check.sh
+```
+
+Useful direct commands:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m compileall -q bots core localization mappings search services sources tests
+.venv/bin/python -m pip check
+```
+
+GitHub Actions runs the test matrix on Python 3.11, 3.12, and 3.13. The quality job additionally runs Ruff correctness checks, formatter checks for the typed foundation, mypy for the typed foundation, full tests with a coverage gate of at least 70%, and ShellCheck for shell scripts.
+
+## Security
+
+- Keep `.env` and credentials outside version control.
+- Logs use secret redaction; avoid adding raw credentials to custom log messages.
+- Admin-only actions must remain behind the access-control layer.
+- Do not expose a self-hosted Telegram Bot API, future metrics endpoint, or future external API publicly without explicit authentication/network controls.
+- Mapping overrides are audited because an incorrect identity edge can affect multiple capabilities.
+
+If a security-sensitive issue is discovered, do not publish credentials, tokens, or private deployment details in a public issue.
+
+## Project status
+
+The project is under active development. The core Telegram search/card flow, identity model, mapping database, multi-source aggregation, localization, lazy capabilities, persistence, resilience, and CI foundation are implemented. Additional discovery/search filters, user account integrations, notifications, monitoring/Prometheus metrics, external API/Mini App support, and more sources are planned work.
+
+## License
+
+No license file is currently published in this repository. Until a license is explicitly added, do not assume permission to redistribute or reuse the code outside the rights granted by the repository owner.
+
+## Data sources and acknowledgements
+
+`anime-db-bot` integrates with or builds on data from projects and services including:
+
+- [MyAnimeList](https://myanimelist.net/)
+- [Jikan](https://jikan.moe/)
+- [AniList](https://anilist.co/)
+- [Shikimori](https://shikimori.one/)
+- [AniDB](https://anidb.net/)
+
+Cross-ID mapping data is assembled from multiple community datasets. Each upstream service and dataset remains subject to its own terms, rate limits, and attribution requirements.

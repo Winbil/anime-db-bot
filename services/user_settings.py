@@ -13,7 +13,6 @@ from core.settings import get_settings
 from core.sqlite import managed_sqlite_connection
 from localization import DEFAULT_LOCALE, normalize_locale
 
-
 _DEFAULT_PLATFORM = "telegram"
 
 
@@ -59,7 +58,7 @@ class SQLiteUserSettingsStore:
             CREATE TABLE user_settings (
                 platform TEXT NOT NULL,
                 user_id INTEGER NOT NULL,
-                locale TEXT NOT NULL DEFAULT 'ru',
+                locale TEXT NOT NULL DEFAULT 'en',
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (platform, user_id)
             )

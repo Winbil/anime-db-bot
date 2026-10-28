@@ -12,6 +12,7 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message, TelegramObject
 
 from bots.session_store import ExpiringSessionStore
+from localization import text
 from mappings.resolver import (
     MappingOverride,
     MappingOverrideHistory,
@@ -29,102 +30,6 @@ from services.user_settings import (
 )
 
 
-_ADMIN_TEXT = {
-    "ru": {
-        "forbidden": "Недостаточно прав.",
-        "users_title": "Сохранённые Telegram ID: {count}",
-        "users_empty": "Сохранённых Telegram ID пока нет.",
-        "ban_usage": (
-            "Использование: /ban <user_id> [seconds] [reason]\n"
-            "Без seconds бан постоянный. Также поддерживается: /ban <user_id> <reason> <seconds>."
-        ),
-        "invalid_id": "user_id должен быть положительным числом.",
-        "admin_target": "Администратора нельзя заблокировать.",
-        "ban_permanent": "Пользователь {user_id} заблокирован навсегда.{reason}",
-        "ban_temporary": "Пользователь {user_id} заблокирован на {seconds} сек.{reason}",
-        "unban_usage": "Использование: /unban <user_id>",
-        "unbanned": "Блокировка пользователя {user_id} снята.",
-        "not_banned": "Пользователь {user_id} не был заблокирован.",
-        "banned_permanent": "Доступ к боту заблокирован навсегда.{reason}",
-        "banned_temporary": "Доступ к боту заблокирован ещё на {seconds} сек.{reason}",
-        "reason": "\nПричина: {reason}",
-        "mapping_overrides_title": "Mapping overrides: {count}",
-        "mapping_overrides_empty": "Mapping overrides пока нет.",
-        "mapping_history_title": "Последние записи mapping override history: {shown}",
-        "mapping_history_empty": "История mapping overrides пока пуста.",
-        "mapping_history_usage": "Использование: /mapping_history [limit], limit от 1 до 100.",
-        "mapping_set_usage": (
-            "Использование: /mapping_set <accept|reject> <source_provider> <source_id> "
-            "<target_provider> <target_id> <reason>"
-        ),
-        "mapping_delete_usage": (
-            "Использование: /mapping_delete <source_provider> <source_id> "
-            "<target_provider> <target_id> <reason>"
-        ),
-        "mapping_confirm_usage": "Использование: /mapping_confirm <token>.",
-        "mapping_cancel_usage": "Использование: /mapping_cancel <token>.",
-        "mapping_pending": (
-            "Изменение ещё НЕ применено. Проверьте:\n{preview}\n"
-            "Подтвердить: /mapping_confirm {token}\n"
-            "Отменить: /mapping_cancel {token}"
-        ),
-        "mapping_confirmed_set": "Mapping override применён: {preview}",
-        "mapping_confirmed_delete": "Mapping override удалён: {preview}",
-        "mapping_confirm_missing": "Подтверждение не найдено или уже истекло.",
-        "mapping_confirm_owner": "Это подтверждение принадлежит другому администратору.",
-        "mapping_cancelled": "Изменение отменено.",
-        "mapping_delete_missing": "Такого mapping override уже нет.",
-        "mapping_mutation_failed": "Не удалось применить изменение: {error}",
-    },
-    "en": {
-        "forbidden": "Insufficient permissions.",
-        "users_title": "Saved Telegram IDs: {count}",
-        "users_empty": "No Telegram IDs have been saved yet.",
-        "ban_usage": (
-            "Usage: /ban <user_id> [seconds] [reason]\n"
-            "Without seconds the ban is permanent. Also supported: /ban <user_id> <reason> <seconds>."
-        ),
-        "invalid_id": "user_id must be a positive number.",
-        "admin_target": "An administrator cannot be banned.",
-        "ban_permanent": "User {user_id} was banned permanently.{reason}",
-        "ban_temporary": "User {user_id} was banned for {seconds} seconds.{reason}",
-        "unban_usage": "Usage: /unban <user_id>",
-        "unbanned": "User {user_id} was unbanned.",
-        "not_banned": "User {user_id} was not banned.",
-        "banned_permanent": "Access to the bot is permanently blocked.{reason}",
-        "banned_temporary": "Access to the bot is blocked for another {seconds} seconds.{reason}",
-        "reason": "\nReason: {reason}",
-        "mapping_overrides_title": "Mapping overrides: {count}",
-        "mapping_overrides_empty": "There are no mapping overrides yet.",
-        "mapping_history_title": "Latest mapping override history entries: {shown}",
-        "mapping_history_empty": "Mapping override history is empty.",
-        "mapping_history_usage": "Usage: /mapping_history [limit], limit must be 1..100.",
-        "mapping_set_usage": (
-            "Usage: /mapping_set <accept|reject> <source_provider> <source_id> "
-            "<target_provider> <target_id> <reason>"
-        ),
-        "mapping_delete_usage": (
-            "Usage: /mapping_delete <source_provider> <source_id> "
-            "<target_provider> <target_id> <reason>"
-        ),
-        "mapping_confirm_usage": "Usage: /mapping_confirm <token>.",
-        "mapping_cancel_usage": "Usage: /mapping_cancel <token>.",
-        "mapping_pending": (
-            "The change has NOT been applied yet. Review it:\n{preview}\n"
-            "Confirm: /mapping_confirm {token}\n"
-            "Cancel: /mapping_cancel {token}"
-        ),
-        "mapping_confirmed_set": "Mapping override applied: {preview}",
-        "mapping_confirmed_delete": "Mapping override deleted: {preview}",
-        "mapping_confirm_missing": "Confirmation was not found or has expired.",
-        "mapping_confirm_owner": "This confirmation belongs to another administrator.",
-        "mapping_cancelled": "Change cancelled.",
-        "mapping_delete_missing": "That mapping override no longer exists.",
-        "mapping_mutation_failed": "Could not apply the change: {error}",
-    },
-}
-
-
 @dataclass(frozen=True, slots=True)
 class _PendingMappingMutation:
     admin_id: int
@@ -138,12 +43,7 @@ class _PendingMappingMutation:
 
 
 def _t(locale: str, key: str, **params: object) -> str:
-    language = "en" if locale == "en" else "ru"
-    value = _ADMIN_TEXT[language][key]
-    try:
-        return value.format(**params)
-    except (KeyError, ValueError):
-        return value
+    return text("admin", key, locale=locale, **params)
 
 
 def _reason_suffix(locale: str, reason: str | None) -> str:

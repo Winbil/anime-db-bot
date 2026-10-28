@@ -5,7 +5,7 @@ from functools import lru_cache
 from importlib import resources
 from typing import Any
 
-DEFAULT_LOCALE = "ru"
+DEFAULT_LOCALE = "en"
 
 
 @lru_cache(maxsize=None)
@@ -14,7 +14,9 @@ def _load_json(relative_path: str) -> dict[str, Any]:
     resource = package_root.joinpath(*relative_path.split("/"))
     data = json.loads(resource.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
-        raise RuntimeError(f"Localization resource {relative_path} must contain a JSON object")
+        raise RuntimeError(
+            f"Localization resource {relative_path} must contain a JSON object"
+        )
     return data
 
 
@@ -150,7 +152,9 @@ def _source_field(source: str, field: str) -> tuple[str, dict[str, str]] | None:
     return domain, {str(key): str(value) for key, value in values.items()}
 
 
-def source_canonical_key(source: str, field: str, value: object) -> tuple[str, str] | None:
+def source_canonical_key(
+    source: str, field: str, value: object
+) -> tuple[str, str] | None:
     mapping = _source_field(source, field)
     raw = str(value or "").strip()
     if mapping is None or not raw:
@@ -161,7 +165,11 @@ def source_canonical_key(source: str, field: str, value: object) -> tuple[str, s
     if canonical is None:
         folded = raw.casefold()
         canonical = next(
-            (mapped for candidate, mapped in values.items() if candidate.casefold() == folded),
+            (
+                mapped
+                for candidate, mapped in values.items()
+                if candidate.casefold() == folded
+            ),
             None,
         )
     if canonical is None:

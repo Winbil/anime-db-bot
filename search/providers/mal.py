@@ -83,7 +83,7 @@ class MALSearchProvider:
             if not mal_id:
                 continue
 
-            title = str(node.get("title") or "Без названия").strip()
+            title = str(node.get("title") or "Untitled").strip()
             alternative = node.get("alternative_titles") or {}
             aliases: list[str] = []
             for value in (
