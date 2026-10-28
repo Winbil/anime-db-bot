@@ -1,5 +1,5 @@
 <p align="center">
-  <strong>English</strong> · <a href="README.ru.md">Русский</a> · <a href="README.ja.md">日本語</a>
+  <strong>English</strong> · <a href="docs/README.ru.md">Русский</a> · <a href="docs/README.ja.md">日本語</a>
 </p>
 
 # anime-db-bot
