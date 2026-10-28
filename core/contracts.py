@@ -3,7 +3,13 @@ from __future__ import annotations
 from typing import Protocol
 
 from core.identity import AnimeIdentity
-from core.models import AnimeRecord, EpisodePage, EpisodeRecord, SearchPage, TrailerRecord
+from core.models import (
+    AnimeRecord,
+    EpisodePage,
+    EpisodeRecord,
+    SearchPage,
+    TrailerRecord,
+)
 from core.source_keys import SourceKey
 
 
@@ -18,8 +24,7 @@ class AnimeSearchProvider(Protocol):
         *,
         page: int,
         limit: int,
-    ) -> SearchPage:
-        ...
+    ) -> SearchPage: ...
 
 
 class AnimeSource(Protocol):
@@ -33,8 +38,7 @@ class AnimeSource(Protocol):
     name: str
     source_key: SourceKey
 
-    async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
-        ...
+    async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None: ...
 
 
 class AnimeEpisodeSource(Protocol):
@@ -55,15 +59,13 @@ class AnimeEpisodeSource(Protocol):
         identity: AnimeIdentity,
         *,
         page: int = 1,
-    ) -> EpisodePage:
-        ...
+    ) -> EpisodePage: ...
 
     async def load_episode(
         self,
         identity: AnimeIdentity,
         episode_number: int,
-    ) -> EpisodeRecord | None:
-        ...
+    ) -> EpisodeRecord | None: ...
 
 
 class AnimeTrailerSource(Protocol):
@@ -74,5 +76,4 @@ class AnimeTrailerSource(Protocol):
     source_key: SourceKey
     backend_key: str
 
-    async def load_trailers(self, identity: AnimeIdentity) -> list[TrailerRecord]:
-        ...
+    async def load_trailers(self, identity: AnimeIdentity) -> list[TrailerRecord]: ...
