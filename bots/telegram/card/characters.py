@@ -12,12 +12,12 @@ from aiogram.types import (
 
 from bots.telegram.callbacks import KeyedPageCallback, resolve_key_or_legacy_index
 from bots.telegram.card.renderer import edit_standard_text, plain_text_to_rich_html
-from bots.telegram.card.service import CHARACTER_SERVICE
 from bots.telegram.card.state import AnimeCardSession
 from core.canonicalization import display_person_name, person_identity_keys
 from core.capabilities import source_key_for_display_name
 from core.models import CharacterRecord
 from localization import text
+from services.app_context import get_app_context
 
 
 def _dedupe(values: list[str]) -> list[str]:
@@ -359,7 +359,7 @@ async def _ensure_loaded(
     except Exception:
         logging.debug("Could not show character loading state", exc_info=True)
 
-    result = await CHARACTER_SERVICE.load(session.anime.identity)
+    result = await get_app_context().character_service.load(session.anime.identity)
     session.anime.characters_by_source = result.by_source
     session.character_key_by_source = result.key_by_source
     session.anime.characters = _merge_characters(

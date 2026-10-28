@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterator
-from typing import Any
 
 from aiogram.types import Message
 
@@ -10,69 +8,8 @@ from bots.telegram.card.renderer import send_anime_view
 from bots.telegram.card.state import remember_anime
 from core.models import SearchCandidate
 from localization import text
-from search.registry import get_search_providers
 from services.app_context import get_app_context
 from services.user_settings import get_user_locale
-
-
-class _ContextAttributeProxy:
-    """Compatibility view over one AppContext attribute.
-
-    It never constructs services at import time. Legacy UI modules can migrate to
-    explicit context access incrementally without restoring module-global service
-    ownership.
-    """
-
-    def __init__(
-        self,
-        attribute: str,
-        *,
-        fallback: Callable[[], Any] | None = None,
-    ) -> None:
-        self._attribute = attribute
-        self._fallback = fallback
-
-    def _value(self) -> Any:
-        try:
-            context = get_app_context()
-        except RuntimeError:
-            if self._fallback is None:
-                raise
-            return self._fallback()
-        return getattr(context, self._attribute)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._value(), name)
-
-    def __iter__(self) -> Iterator[Any]:
-        return iter(self._value())
-
-    def __len__(self) -> int:
-        return len(self._value())
-
-    def __bool__(self) -> bool:
-        return bool(self._value())
-
-    # Keep common service methods visible on the proxy class itself so unittest
-    # patching can replace them without activating an AppContext first.
-    def display_name(self, *args: Any, **kwargs: Any) -> Any:
-        return self._value().display_name(*args, **kwargs)
-
-
-# Temporary compatibility surfaces for UI modules. These are lazy views, not
-# service singletons; AppContext remains the sole owner of the actual objects.
-# Search providers are lightweight and may be materialized lazily for legacy
-# callers outside an active context; runtime ownership still stays in AppContext.
-SEARCH_PROVIDERS = _ContextAttributeProxy(
-    "search_providers",
-    fallback=get_search_providers,
-)
-SEARCH_SERVICE = _ContextAttributeProxy("search_service")
-SOURCES = _ContextAttributeProxy("sources")
-AGGREGATOR = _ContextAttributeProxy("aggregator")
-CHARACTER_SERVICE = _ContextAttributeProxy("character_service")
-EPISODE_SERVICE = _ContextAttributeProxy("episode_service")
-TRAILER_SERVICE = _ContextAttributeProxy("trailer_service")
 
 
 async def aggregate_and_send(

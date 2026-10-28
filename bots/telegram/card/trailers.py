@@ -11,10 +11,10 @@ from aiogram.types import (
 
 from bots.telegram.callbacks import KeyedPageCallback, resolve_key_or_legacy_index
 from bots.telegram.card.renderer import edit_standard_text, plain_text_to_rich_html
-from bots.telegram.card.service import TRAILER_SERVICE
 from bots.telegram.card.state import AnimeCardSession
 from core.models import TrailerRecord
 from localization import text
+from services.app_context import get_app_context
 
 TRAILERS_PER_PAGE = 5
 
@@ -209,7 +209,7 @@ async def _ensure_loaded(
     except Exception:
         logging.debug("Could not show trailer loading state", exc_info=True)
 
-    result = await TRAILER_SERVICE.load(session.anime.identity)
+    result = await get_app_context().trailer_service.load(session.anime.identity)
     session.trailers_by_source = result.by_source
     session.trailer_key_by_source = result.key_by_source
     session.trailer_errors = result.errors

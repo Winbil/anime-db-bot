@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from bots.telegram.card.service import SEARCH_SERVICE, SOURCES
+from bots.telegram.card import service as card_service
 from core.settings import AppSettings
 from services.app_context import AppContext, activate_app_context, get_app_context
 
@@ -42,21 +42,33 @@ class AppContextTests(unittest.IsolatedAsyncioTestCase):
         )
         await context.aclose()
 
-    async def test_legacy_ui_surfaces_are_lazy_context_views(self) -> None:
+    async def test_context_activation_exposes_owned_context(self) -> None:
         context = AppContext.create(self._settings())
         with self.assertRaises(RuntimeError):
-            bool(SOURCES)
+            get_app_context()
 
         with activate_app_context(context):
             self.assertIs(get_app_context(), context)
-            self.assertTrue(SOURCES)
-            self.assertEqual(
-                SEARCH_SERVICE.provider_name, context.search_service.provider_name
-            )
+            self.assertTrue(context.sources)
+            self.assertTrue(context.search_service.provider_name)
 
         with self.assertRaises(RuntimeError):
             get_app_context()
         await context.aclose()
+
+    def test_card_service_exports_no_runtime_service_proxies(self) -> None:
+        for name in (
+            "SEARCH_PROVIDERS",
+            "SEARCH_SERVICE",
+            "SOURCES",
+            "AGGREGATOR",
+            "CHARACTER_SERVICE",
+            "EPISODE_SERVICE",
+            "TRAILER_SERVICE",
+            "_ContextAttributeProxy",
+        ):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(card_service, name))
 
 
 if __name__ == "__main__":
