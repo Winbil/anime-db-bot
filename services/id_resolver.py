@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
-import time
 
+from core.cache import BoundedTTLCache
 from core.identity import AnimeIdentity
 from mappings.resolver import MAPPING_RESOLVER
 from search.providers.shikimori import ShikimoriSearchProvider
@@ -11,7 +11,7 @@ from search.providers.shikimori import ShikimoriSearchProvider
 _SHIKIMORI_RESOLVER = ShikimoriSearchProvider()
 _CACHE_TTL_SECONDS = 21600.0
 _NEGATIVE_CACHE_TTL_SECONDS = 1800.0
-_CACHE: dict[str, tuple[float, str | None]] = {}
+_CACHE = BoundedTTLCache[str, str | None](max_entries=2000)
 
 
 def _dedupe(values: list[str]) -> list[str]:
@@ -30,12 +30,10 @@ async def _resolve_shikimori_from_mal(
     mal_id: str,
     titles: list[str],
 ) -> str | None:
-    now = time.monotonic()
-    cached = _CACHE.get(mal_id)
-    if cached is not None and cached[0] > now:
-        return cached[1]
-    if cached is not None:
-        _CACHE.pop(mal_id, None)
+    try:
+        return _CACHE[mal_id]
+    except KeyError:
+        pass
 
     for query in _dedupe(titles)[:5]:
         try:
@@ -55,13 +53,10 @@ async def _resolve_shikimori_from_mal(
                 continue
             shikimori_id = candidate_identity.get("shikimori")
             if shikimori_id and shikimori_id.isdigit():
-                _CACHE[mal_id] = (
-                    time.monotonic() + _CACHE_TTL_SECONDS,
-                    shikimori_id,
-                )
+                _CACHE.set(mal_id, shikimori_id, ttl_seconds=_CACHE_TTL_SECONDS)
                 return shikimori_id
 
-    _CACHE[mal_id] = (time.monotonic() + _NEGATIVE_CACHE_TTL_SECONDS, None)
+    _CACHE.set(mal_id, None, ttl_seconds=_NEGATIVE_CACHE_TTL_SECONDS)
     return None
 
 
