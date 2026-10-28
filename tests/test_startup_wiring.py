@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import inspect
 import unittest
 from unittest.mock import patch
 
 from aiogram.types import InputRichMessage
 
 from bots.telegram.bot import _CallbackRoutingMiddleware, select_transport
+from bots.telegram.card import handlers as card_handlers
 from bots.telegram.card.constants import SOURCE_SELECTABLE_SECTIONS
 from bots.telegram.card.selectors import source_section_sources
-from bots.telegram.people_portraits import _sources_with_portraits, handle_people_callback
+from bots.telegram.people_portraits import (
+    _sources_with_portraits,
+    handle_people_callback,
+)
 from bots.telegram.search_ui import register_search_handlers
 from bots.telegram.transports.official import (
     OfficialTelegramTransport,
@@ -27,7 +32,14 @@ from core.canonicalization import (
 )
 from core.contracts import AnimeSearchProvider, AnimeSource
 from core.http_config import USER_AGENT
-from core.models import AggregatedAnime, AnimeRecord, PersonCredit, PopularityStats, SearchCandidate, SearchPage
+from core.models import (
+    AggregatedAnime,
+    AnimeRecord,
+    PersonCredit,
+    PopularityStats,
+    SearchCandidate,
+    SearchPage,
+)
 from search.providers.anilist import AniListSearchProvider
 from search.providers.mal import MALSearchProvider
 from search.providers.shikimori import ShikimoriSearchProvider
@@ -78,6 +90,9 @@ class StartupWiringTests(unittest.TestCase):
         ):
             self.assertIsNotNone(imported)
 
+    def test_callback_handlers_use_real_message_attribute(self) -> None:
+        self.assertNotIn(".messae", inspect.getsource(card_handlers))
+
     def test_telegram_transport_selection(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
             transport = select_transport()
@@ -96,7 +111,9 @@ class StartupWiringTests(unittest.TestCase):
     def test_canonicalization_contracts(self) -> None:
         self.assertEqual(canonical_genre("Fantasy"), canonical_genre("Фэнтези"))
         self.assertEqual(canonical_role("Director"), canonical_role("Режиссёр"))
-        self.assertTrue(person_identity_keys(["Fuse"]) & person_identity_keys(["Фусэ", "Fuse"]))
+        self.assertTrue(
+            person_identity_keys(["Fuse"]) & person_identity_keys(["Фусэ", "Fuse"])
+        )
         self.assertTrue(is_primary_voice_role("Сэйю"))
         self.assertFalse(is_primary_voice_role("Сэйю (EN)"))
 
@@ -113,22 +130,34 @@ class StartupWiringTests(unittest.TestCase):
             popularity_by_source={
                 "AniList": PopularityStats(list_users=100, scoring_users=80)
             },
-            staff=[PersonCredit(
-                name="Test Person",
-                portraits={"AniList": ["https://example.invalid/staff.jpg"]},
-            )],
-            voices=[PersonCredit(
-                name="Test Voice",
-                portraits={"AniList": ["https://example.invalid/voice.jpg"]},
-            )],
-            staff_by_source={"AniList": [PersonCredit(
-                name="Test Person",
-                portraits={"AniList": ["https://example.invalid/staff.jpg"]},
-            )]},
-            voices_by_source={"AniList": [PersonCredit(
-                name="Test Voice",
-                portraits={"AniList": ["https://example.invalid/voice.jpg"]},
-            )]},
+            staff=[
+                PersonCredit(
+                    name="Test Person",
+                    portraits={"AniList": ["https://example.invalid/staff.jpg"]},
+                )
+            ],
+            voices=[
+                PersonCredit(
+                    name="Test Voice",
+                    portraits={"AniList": ["https://example.invalid/voice.jpg"]},
+                )
+            ],
+            staff_by_source={
+                "AniList": [
+                    PersonCredit(
+                        name="Test Person",
+                        portraits={"AniList": ["https://example.invalid/staff.jpg"]},
+                    )
+                ]
+            },
+            voices_by_source={
+                "AniList": [
+                    PersonCredit(
+                        name="Test Voice",
+                        portraits={"AniList": ["https://example.invalid/voice.jpg"]},
+                    )
+                ]
+            },
         )
 
         self.assertEqual(source_section_sources(sample, "titles"), ["AniList"])
@@ -137,22 +166,26 @@ class StartupWiringTests(unittest.TestCase):
         self.assertEqual(_sources_with_portraits(sample, "voices"), ["AniList"])
 
     def test_shikimori_structural_voice_links(self) -> None:
-        voices = _rest_voice_credits([{
-            "roles": ["Main"],
-            "roles_russian": ["Главная роль"],
-            "person": {
-                "id": 1,
-                "name": "Test Seiyuu",
-                "russian": "",
-                "image": {},
-            },
-            "character": {
-                "id": 2,
-                "name": "Test Character",
-                "russian": "Тестовый персонаж",
-                "image": {},
-            },
-        }])
+        voices = _rest_voice_credits(
+            [
+                {
+                    "roles": ["Main"],
+                    "roles_russian": ["Главная роль"],
+                    "person": {
+                        "id": 1,
+                        "name": "Test Seiyuu",
+                        "russian": "",
+                        "image": {},
+                    },
+                    "character": {
+                        "id": 2,
+                        "name": "Test Character",
+                        "russian": "Тестовый персонаж",
+                        "image": {},
+                    },
+                }
+            ]
+        )
 
         self.assertEqual(len(voices), 1)
         self.assertEqual(voices[0].roles, ["voice_of::Test Character"])
@@ -166,16 +199,24 @@ class StartupWiringTests(unittest.TestCase):
         )
 
     def test_cross_source_portrait_merge(self) -> None:
-        people = _merge_people([
-            [PersonCredit(
-                name="Test Person",
-                portraits={"AniList": ["https://example.invalid/anilist.jpg"]},
-            )],
-            [PersonCredit(
-                name="Test Person",
-                portraits={"Shikimori": ["https://example.invalid/shikimori.jpg"]},
-            )],
-        ])
+        people = _merge_people(
+            [
+                [
+                    PersonCredit(
+                        name="Test Person",
+                        portraits={"AniList": ["https://example.invalid/anilist.jpg"]},
+                    )
+                ],
+                [
+                    PersonCredit(
+                        name="Test Person",
+                        portraits={
+                            "Shikimori": ["https://example.invalid/shikimori.jpg"]
+                        },
+                    )
+                ],
+            ]
+        )
 
         self.assertEqual(len(people), 1)
         self.assertEqual(set(people[0].portraits), {"AniList", "Shikimori"})

@@ -27,7 +27,9 @@ from localization import text
 from services.user_settings import get_user_locale
 
 
-def _session_for_callback(callback: CallbackQuery, token: str) -> AnimeCardSession | None:
+def _session_for_callback(
+    callback: CallbackQuery, token: str
+) -> AnimeCardSession | None:
     session = ANIME_SESSIONS.get(token)
     if session is None or session.owner_user_id != callback.from_user.id:
         return None
@@ -88,10 +90,14 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
         token = data.token
         raw_session = ANIME_SESSIONS.get(token)
         if raw_session is None:
-            await callback.answer(text("card", "expired", locale=locale), show_alert=True)
+            await callback.answer(
+                text("card", "expired", locale=locale), show_alert=True
+            )
             return
         if raw_session.owner_user_id != callback.from_user.id:
-            await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
+            await callback.answer(
+                text("card", "not_owner", locale=locale), show_alert=True
+            )
             return
         anime = raw_session.anime
         if callback.message is None:
@@ -108,7 +114,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
 
         await callback.answer()
         await edit_description_view(
-            callback.messae,
+            callback.message,
             token,
             anime,
             source_index=source_index,
@@ -130,10 +136,14 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
         section = data.section
         raw_session = ANIME_SESSIONS.get(token)
         if raw_session is None:
-            await callback.answer(text("card", "expired", locale=locale), show_alert=True)
+            await callback.answer(
+                text("card", "expired", locale=locale), show_alert=True
+            )
             return
         if raw_session.owner_user_id != callback.from_user.id:
-            await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
+            await callback.answer(
+                text("card", "not_owner", locale=locale), show_alert=True
+            )
             return
         anime = raw_session.anime
         if callback.message is None:
@@ -150,7 +160,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
 
         await callback.answer()
         await edit_source_section_view(
-            callback.messae,
+            callback.message,
             token,
             anime,
             section,
@@ -164,7 +174,9 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
         locale = get_user_locale(callback.from_user.id)
         data = IndexedCallback.parse(callback.data, prefix="ap")
         if data is None:
-            await callback.answer(text("card", "invalid_source", locale=locale), show_alert=True)
+            await callback.answer(
+                text("card", "invalid_source", locale=locale), show_alert=True
+            )
             return
         token = data.token
         session = _session_for_callback(callback, token)
@@ -173,7 +185,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             key = "not_owner" if raw_session is not None else "expired"
             await callback.answer(text("card", key, locale=locale), show_alert=True)
             return
-        if callback.messae is None:
+        if callback.message is None:
             await callback.answer()
             return
         await callback.answer()
@@ -213,7 +225,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             key = "not_owner" if raw_session is not None else "expired"
             await callback.answer(text("card", key, locale=locale), show_alert=True)
             return
-        if callback.messae is None:
+        if callback.message is None:
             await callback.answer()
             return
 
@@ -233,7 +245,9 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
         locale = get_user_locale(callback.from_user.id)
         data = IndexedCallback.parse(callback.data, prefix="ac")
         if data is None:
-            await callback.answer(text("card", "invalid_source", locale=locale), show_alert=True)
+            await callback.answer(
+                text("card", "invalid_source", locale=locale), show_alert=True
+            )
             return
 
         token = data.token
@@ -322,10 +336,14 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
         section = data.section
         raw_session = ANIME_SESSIONS.get(token)
         if raw_session is None:
-            await callback.answer(text("card", "expired", locale=locale), show_alert=True)
+            await callback.answer(
+                text("card", "expired", locale=locale), show_alert=True
+            )
             return
         if raw_session.owner_user_id != callback.from_user.id:
-            await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
+            await callback.answer(
+                text("card", "not_owner", locale=locale), show_alert=True
+            )
             return
         anime = raw_session.anime
         if section not in SECTION_LABELS:
@@ -333,7 +351,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 text("card", "invalid_section", locale=locale), show_alert=True
             )
             return
-        if callback.messae is None:
+        if callback.message is None:
             await callback.answer()
             return
 
@@ -370,7 +388,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             return
 
         await edit_anime_view(
-            callback.messae,
+            callback.message,
             token,
             anime,
             section=section,
