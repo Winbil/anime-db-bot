@@ -1,0 +1,48 @@
+name: One-shot remaining refactor
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'Add one-shot remaining refactor'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock
+          python -m pip check
+
+      - name: Apply validated refactor
+        run: python scripts/finalize_refactor.py
+
+      - name: Compile
+        run: python -m compileall -q bots core localization mappings search services sources tests
+
+      - name: Test
+        run: python -m unittest discover -s tests -v
+
+      - name: Commit refactor
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "Finish score and message fallback refactors"
+          git push origin HEAD:main
