@@ -17,7 +17,13 @@ from mappings.importers import (
     import_kometa,
     import_manami,
 )
-from mappings.resolver import MappingResolver
+from mappings.resolver import (
+    MappingResolver,
+    copy_mapping_overrides,
+    delete_mapping_override,
+    list_mapping_overrides,
+    set_mapping_override,
+)
 
 
 class MappingDatabaseTests(unittest.TestCase):
@@ -131,6 +137,97 @@ class MappingDatabaseTests(unittest.TestCase):
             resolver.resolve(AnimeIdentity({"mal": "100", "anilist": "999"})),
             {},
         )
+
+    def test_accept_override_replaces_automatic_route(self) -> None:
+        resolver = self._build([("direct", [
+            MappingRecord("1", {"mal": ("100",), "anidb": ("201",)}, "direct", 95),
+        ])])
+        set_mapping_override(
+            "MAL",
+            "100",
+            "AniDB",
+            "200",
+            action="accept",
+            reason="verified season split manually",
+            path=self.path,
+        )
+        self.assertEqual(
+            resolver.resolve(AnimeIdentity({"mal": "100"})),
+            {"anidb": "200"},
+        )
+        override = list_mapping_overrides(self.path)[0]
+        self.assertEqual(override.action, "accept")
+        self.assertEqual(override.reason, "verified season split manually")
+
+    def test_reject_override_removes_one_automatic_edge(self) -> None:
+        resolver = self._build([("direct", [
+            MappingRecord("1", {"mal": ("100",), "anidb": ("200",)}, "direct", 95),
+        ])])
+        set_mapping_override(
+            "mal",
+            "100",
+            "anidb",
+            "200",
+            action="reject",
+            reason="known wrong mapping",
+            path=self.path,
+        )
+        self.assertEqual(resolver.resolve(AnimeIdentity({"mal": "100"})), {})
+        self.assertTrue(delete_mapping_override("mal", "100", "anidb", "200", path=self.path))
+        self.assertEqual(
+            resolver.resolve(AnimeIdentity({"mal": "100"})),
+            {"anidb": "200"},
+        )
+
+    def test_override_cannot_silently_replace_confirmed_target_id(self) -> None:
+        resolver = self._build([("direct", [
+            MappingRecord("1", {"mal": ("100",), "anilist": ("300",)}, "direct", 95),
+        ])])
+        set_mapping_override(
+            "mal",
+            "100",
+            "anilist",
+            "999",
+            action="accept",
+            reason="deliberate conflicting fixture",
+            path=self.path,
+        )
+        self.assertEqual(
+            resolver.resolve(AnimeIdentity({"mal": "100", "anilist": "300"})),
+            {},
+        )
+
+    def test_overrides_can_be_copied_into_atomic_rebuild(self) -> None:
+        self._build([("direct", [
+            MappingRecord("1", {"mal": ("100",), "anidb": ("200",)}, "direct", 95),
+        ])])
+        set_mapping_override(
+            "mal",
+            "100",
+            "anidb",
+            "201",
+            action="accept",
+            reason="preserve across rebuild",
+            path=self.path,
+        )
+
+        rebuilt_path = self.root / "mappings.db.new"
+        with MappingDatabaseBuilder(rebuilt_path) as builder:
+            builder.ingest_dataset(
+                self._spec("direct"),
+                [MappingRecord("1", {"mal": ("100",), "anidb": ("200",)}, "direct", 95)],
+                sha256="sha-new",
+                downloaded_at="2026-10-28T00:00:00+00:00",
+            )
+            self.assertEqual(copy_mapping_overrides(self.path, builder.conn), 1)
+            builder.finalize(built_at="2026-10-28T00:00:00+00:00")
+
+        rebuilt = MappingResolver(rebuilt_path)
+        self.assertEqual(
+            rebuilt.resolve(AnimeIdentity({"mal": "100"})),
+            {"anidb": "201"},
+        )
+        self.assertEqual(len(list_mapping_overrides(rebuilt_path)), 1)
 
 
 class MappingImporterTests(unittest.TestCase):
