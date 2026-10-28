@@ -24,6 +24,7 @@ from mappings.config import (
 )
 from mappings.database import MappingBuildStats, MappingDatabase, MappingDatabaseBuilder
 from mappings.importers import IMPORTERS
+from mappings.resolver import copy_mapping_overrides
 
 
 def _utc_now() -> str:
@@ -153,10 +154,21 @@ def update_mapping_database(*, force: bool = False) -> MappingBuildStats | None:
                     "Required mapping sources missing: " + ", ".join(sorted(missing_required))
                 )
 
+            override_count = copy_mapping_overrides(db_path, builder.conn)
+            if override_count:
+                logging.info(
+                    "Mapping overrides preserved in rebuild: %d",
+                    override_count,
+                )
+
             stats = builder.finalize(built_at=_utc_now())
             builder.conn.execute(
                 "INSERT OR REPLACE INTO metadata(key, value) VALUES('optional_failures', ?)",
                 (json.dumps(failed_optional, ensure_ascii=False, sort_keys=True),),
+            )
+            builder.conn.execute(
+                "INSERT OR REPLACE INTO metadata(key, value) VALUES('overrides', ?)",
+                (str(override_count),),
             )
             builder.conn.commit()
 
@@ -169,13 +181,14 @@ def update_mapping_database(*, force: bool = False) -> MappingBuildStats | None:
             shutil.copy2(db_path, previous_path)
         os.replace(new_path, db_path)
         logging.info(
-            "Mapping database updated: datasets=%d records=%d evidence=%d edges=%d accepted=%d conflicts=%d",
+            "Mapping database updated: datasets=%d records=%d evidence=%d edges=%d accepted=%d conflicts=%d overrides=%d",
             stats.datasets,
             stats.records,
             stats.evidence,
             stats.edges,
             stats.accepted_edges,
             stats.conflicts,
+            override_count,
         )
         return stats
     finally:
