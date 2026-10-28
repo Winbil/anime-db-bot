@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from services.user_settings import SQLiteUserSettingsStore
@@ -62,29 +63,30 @@ class UserSettingsStoreTests(unittest.TestCase):
     def test_legacy_user_settings_schema_is_migrated_to_telegram(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "settings.sqlite3"
-            with sqlite3.connect(path) as connection:
-                connection.execute(
-                    """
-                    CREATE TABLE user_settings (
-                        user_id INTEGER PRIMARY KEY,
-                        locale TEXT NOT NULL DEFAULT 'ru',
-                        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            with closing(sqlite3.connect(path)) as connection:
+                with connection:
+                    connection.execute(
+                        """
+                        CREATE TABLE user_settings (
+                            user_id INTEGER PRIMARY KEY,
+                            locale TEXT NOT NULL DEFAULT 'ru',
+                            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        )
+                        """
                     )
-                    """
-                )
-                connection.execute(
-                    """
-                    INSERT INTO user_settings(user_id, locale, updated_at)
-                    VALUES (777, 'en', '2026-10-28 19:00:00')
-                    """
-                )
+                    connection.execute(
+                        """
+                        INSERT INTO user_settings(user_id, locale, updated_at)
+                        VALUES (777, 'en', '2026-10-28 19:00:00')
+                        """
+                    )
 
             store = SQLiteUserSettingsStore(path)
             self.assertEqual(store.get(777, platform="telegram").locale, "en")
             self.assertEqual(store.get(777, platform="discord").locale, "ru")
             self.assertEqual(store.list_user_ids("telegram"), [777])
 
-            with sqlite3.connect(path) as connection:
+            with closing(sqlite3.connect(path)) as connection:
                 columns = {
                     str(row[1])
                     for row in connection.execute("PRAGMA table_info(user_settings)")
