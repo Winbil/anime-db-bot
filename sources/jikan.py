@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-import time
 from typing import Any
 
+from core.cache import BoundedTTLCache
 from core.canonicalization import canonical_role_token, voice_role_token
 from core.http_client import http_request
 from core.identity import AnimeIdentity
-from core.models import CharacterRecord, EpisodePage, EpisodeRecord, PersonCredit, TrailerRecord
+from core.models import (
+    CharacterRecord,
+    EpisodePage,
+    EpisodeRecord,
+    PersonCredit,
+    TrailerRecord,
+)
 from core.people_loading import PeopleBatch
 from core.settings import AppSettings, SourceSettings
 from core.source_errors import SourceInvalidResponse
@@ -77,7 +83,9 @@ def _dedupe(values: list[str]) -> list[str]:
 def _episode(raw: dict[str, Any]) -> EpisodeRecord:
     number = _int(raw.get("number"))
     if number is None or number <= 0:
-        raise ValueError("Jikan episode payload does not contain a positive episode number")
+        raise ValueError(
+            "Jikan episode payload does not contain a positive episode number"
+        )
     titles = {
         key: value
         for key, raw_value in {
@@ -135,10 +143,12 @@ def _dedupe_people(values: list[PersonCredit]) -> list[PersonCredit]:
         existing.roles = _dedupe([*existing.roles, *person.roles])
         existing.aliases = _dedupe([*existing.aliases, *person.aliases])
         for source, urls in person.portraits.items():
-            existing.portraits[source] = _dedupe([
-                *existing.portraits.get(source, []),
-                *urls,
-            ])
+            existing.portraits[source] = _dedupe(
+                [
+                    *existing.portraits.get(source, []),
+                    *urls,
+                ]
+            )
     return list(result.values())
 
 
@@ -186,8 +196,8 @@ class JikanSource:
 
     def __init__(self, settings: SourceSettings | None = None) -> None:
         self._settings = _settings(settings)
-        self._supplement_cache: dict[str, tuple[float, dict[str, Any]]] = {}
-        self._people_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._supplement_cache = BoundedTTLCache[str, dict[str, Any]](max_entries=1000)
+        self._people_cache = BoundedTTLCache[str, dict[str, Any]](max_entries=1000)
 
     @staticmethod
     def _mal_id(identity: AnimeIdentity) -> str:
@@ -196,7 +206,7 @@ class JikanSource:
 
     async def _cached_payload(
         self,
-        cache: dict[str, tuple[float, dict[str, Any]]],
+        cache: BoundedTTLCache[str, dict[str, Any]],
         mal_id: str,
         *,
         path: str,
@@ -204,15 +214,14 @@ class JikanSource:
         ttl_env: str,
     ) -> dict[str, Any]:
         ttl = _cache_ttl(ttl_env, self._settings)
-        now = time.monotonic()
         cached = cache.get(mal_id)
-        if cached is not None and ttl > 0 and now - cached[0] < ttl:
-            return cached[1]
+        if cached is not None:
+            return cached
         body = await _get(path, operation=operation, settings=self._settings)
         raw = body.get("data")
         payload = raw if isinstance(raw, dict) else {}
         if ttl > 0:
-            cache[mal_id] = (now, payload)
+            cache.set(mal_id, payload, ttl_seconds=ttl)
         return payload
 
     async def load_metadata_supplement(self, identity: AnimeIdentity) -> dict[str, Any]:
@@ -226,12 +235,19 @@ class JikanSource:
             operation="metadata",
             ttl_env="JIKAN_SUPPLEMENT_CACHE_TTL_SECONDS",
         )
-        licensors = _dedupe([value for value in raw.get("licensors") or [] if isinstance(value, str)])
+        licensors = _dedupe(
+            [value for value in raw.get("licensors") or [] if isinstance(value, str)]
+        )
         distribution: dict[int, int] = {}
         for raw_score, raw_votes in (raw.get("score_distribution") or {}).items():
             score = _int(raw_score)
             votes = _int(raw_votes)
-            if score is not None and 1 <= score <= 10 and votes is not None and votes >= 0:
+            if (
+                score is not None
+                and 1 <= score <= 10
+                and votes is not None
+                and votes >= 0
+            ):
                 distribution[score] = votes
         return {"licensors": licensors, "score_distribution": distribution}
 
@@ -251,9 +267,15 @@ class JikanSource:
         raw = await self._load_people_payload(identity)
         result: list[CharacterRecord] = []
         seen: set[str] = set()
-        role_map = {"main": "main", "supporting": "supporting", "background": "background"}
+        role_map = {
+            "main": "main",
+            "supporting": "supporting",
+            "background": "background",
+        }
         for item in raw.get("characters") or []:
-            if not isinstance(item, dict) or not isinstance(item.get("character"), dict):
+            if not isinstance(item, dict) or not isinstance(
+                item.get("character"), dict
+            ):
                 continue
             raw_character = item["character"]
             name = _clean(raw_character.get("name"))
@@ -266,12 +288,14 @@ class JikanSource:
             seen.add(key)
             raw_role = _clean(item.get("role"))
             portrait = _clean(raw_character.get("image_url"))
-            result.append(CharacterRecord(
-                name=name,
-                role=role_map.get(raw_role.casefold(), raw_role.casefold() or None),
-                external_ids={"mal": character_id} if character_id else {},
-                portraits={JIKAN_DISPLAY_NAME: [portrait]} if portrait else {},
-            ))
+            result.append(
+                CharacterRecord(
+                    name=name,
+                    role=role_map.get(raw_role.casefold(), raw_role.casefold() or None),
+                    external_ids={"mal": character_id} if character_id else {},
+                    portraits={JIKAN_DISPLAY_NAME: [portrait]} if portrait else {},
+                )
+            )
         return result
 
     async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
@@ -298,13 +322,25 @@ class JikanSource:
                 people.append(person)
         return _dedupe_people(people)
 
-    async def load_staff_batch(self, identity: AnimeIdentity, *, cursor: str | None = None, portrait_limit: int = 50) -> PeopleBatch:
+    async def load_staff_batch(
+        self,
+        identity: AnimeIdentity,
+        *,
+        cursor: str | None = None,
+        portrait_limit: int = 50,
+    ) -> PeopleBatch:
         if cursor is not None:
             return PeopleBatch(complete=True)
         people = await self.load_staff(identity)
         return PeopleBatch(people=people, complete=True, total_count=len(people))
 
-    async def load_voices_batch(self, identity: AnimeIdentity, *, cursor: str | None = None, portrait_limit: int = 50) -> PeopleBatch:
+    async def load_voices_batch(
+        self,
+        identity: AnimeIdentity,
+        *,
+        cursor: str | None = None,
+        portrait_limit: int = 50,
+    ) -> PeopleBatch:
         if cursor is not None:
             return PeopleBatch(complete=True)
         people = await self.load_voices(identity)
@@ -329,19 +365,23 @@ class JikanSource:
             if not url or key in seen:
                 continue
             seen.add(key)
-            result.append(TrailerRecord(
-                source="mal",
-                backend="jikan",
-                title=_clean(raw.get("title")) or None,
-                kind="trailer",
-                hosting="YouTube" if _clean(raw.get("youtube_id")) else None,
-                url=url,
-                embed_url=_clean(raw.get("embed_url")) or None,
-                thumbnail=_clean(raw.get("thumbnail")) or None,
-            ))
+            result.append(
+                TrailerRecord(
+                    source="mal",
+                    backend="jikan",
+                    title=_clean(raw.get("title")) or None,
+                    kind="trailer",
+                    hosting="YouTube" if _clean(raw.get("youtube_id")) else None,
+                    url=url,
+                    embed_url=_clean(raw.get("embed_url")) or None,
+                    thumbnail=_clean(raw.get("thumbnail")) or None,
+                )
+            )
         return result
 
-    async def load_episode_page(self, identity: AnimeIdentity, *, page: int = 1) -> EpisodePage:
+    async def load_episode_page(
+        self, identity: AnimeIdentity, *, page: int = 1
+    ) -> EpisodePage:
         mal_id = self._mal_id(identity)
         if not mal_id:
             return EpisodePage(items=[], page=max(1, int(page)), has_next=False)
@@ -351,7 +391,9 @@ class JikanSource:
             params={"page": page},
             settings=self._settings,
         )
-        items = [_episode(item) for item in body.get("data") or [] if isinstance(item, dict)]
+        items = [
+            _episode(item) for item in body.get("data") or [] if isinstance(item, dict)
+        ]
         return EpisodePage(
             items=items,
             page=page,
@@ -359,7 +401,9 @@ class JikanSource:
             has_next=bool(body.get("has_next_page")),
         )
 
-    async def load_episode(self, identity: AnimeIdentity, episode_number: int) -> EpisodeRecord | None:
+    async def load_episode(
+        self, identity: AnimeIdentity, episode_number: int
+    ) -> EpisodeRecord | None:
         mal_id = self._mal_id(identity)
         episode_number = int(episode_number)
         if not mal_id or episode_number <= 0:

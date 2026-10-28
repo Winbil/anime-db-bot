@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
-import time
 
+from core.cache import BoundedTTLCache
 from core.people_loading import PeopleBatch
 from core.settings import AppSettings, SourceSettings
 from sources.shikimori_people import (
@@ -15,7 +15,7 @@ from sources.shikimori_people import (
     _voices_from_character_details,
 )
 
-_ROLE_INDEX_CACHE: dict[str, tuple[float, list[str]]] = {}
+_ROLE_INDEX_CACHE = BoundedTTLCache[str, list[str]](max_entries=1000)
 
 
 def _settings(settings: SourceSettings | None = None) -> SourceSettings:
@@ -33,12 +33,9 @@ async def _character_ids_for_anime(
     anime_id: str,
     settings: SourceSettings | None = None,
 ) -> list[str]:
-    now = time.monotonic()
     cached = _ROLE_INDEX_CACHE.get(anime_id)
-    if cached is not None and cached[0] > now:
-        return list(cached[1])
     if cached is not None:
-        _ROLE_INDEX_CACHE.pop(anime_id, None)
+        return list(cached)
 
     raw_roles = (
         await _rest_anime_roles(anime_id)
@@ -48,10 +45,7 @@ async def _character_ids_for_anime(
     character_ids = _character_ids_from_roles(raw_roles)
     ttl = _cache_ttl_seconds(settings)
     if ttl > 0:
-        _ROLE_INDEX_CACHE[anime_id] = (
-            time.monotonic() + ttl,
-            list(character_ids),
-        )
+        _ROLE_INDEX_CACHE.set(anime_id, list(character_ids), ttl_seconds=ttl)
     return character_ids
 
 
@@ -96,7 +90,7 @@ async def load_shikimori_voices_batch(
     people = []
 
     while index < len(character_ids):
-        batch_ids = character_ids[index:index + chunk_size]
+        batch_ids = character_ids[index : index + chunk_size]
         if not batch_ids:
             break
         details = (

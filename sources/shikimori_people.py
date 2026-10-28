@@ -6,6 +6,7 @@ import logging
 import time
 from typing import Any
 
+from core.cache import BoundedTTLCache
 from core.canonicalization import voice_role_token
 from core.http_client import http_request
 from core.http_config import USER_AGENT
@@ -41,8 +42,8 @@ query PeopleDetails($ids: [ID!]) {
 
 _REST_RATE_LOCK = asyncio.Lock()
 _NEXT_REST_REQUEST_AT = 0.0
-_CHARACTER_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
-_VOICE_CACHE: dict[str, tuple[float, list[PersonCredit]]] = {}
+_CHARACTER_CACHE = BoundedTTLCache[str, dict[str, Any]](max_entries=2000)
+_VOICE_CACHE = BoundedTTLCache[str, list[PersonCredit]](max_entries=1000)
 
 
 def _settings(settings: SourceSettings | None = None) -> SourceSettings:
@@ -63,7 +64,9 @@ def _clean_text(value: Any) -> str:
     return " ".join(str(value).replace("\r", " ").split())
 
 
-def _absolute_shikimori_url(value: Any, settings: SourceSettings | None = None) -> str | None:
+def _absolute_shikimori_url(
+    value: Any, settings: SourceSettings | None = None
+) -> str | None:
     url = _clean_text(value)
     if not url:
         return None
@@ -74,7 +77,9 @@ def _absolute_shikimori_url(value: Any, settings: SourceSettings | None = None) 
     return url
 
 
-def _best_rest_image_url(image: dict[str, Any], settings: SourceSettings | None = None) -> str | None:
+def _best_rest_image_url(
+    image: dict[str, Any], settings: SourceSettings | None = None
+) -> str | None:
     for field in ("original", "x96", "preview", "x48"):
         value = _absolute_shikimori_url(image.get(field), settings)
         if value:
@@ -82,7 +87,12 @@ def _best_rest_image_url(image: dict[str, Any], settings: SourceSettings | None 
     return None
 
 
-def _rest_person_credit(person: dict[str, Any], *, character_name: str, settings: SourceSettings | None = None) -> PersonCredit | None:
+def _rest_person_credit(
+    person: dict[str, Any],
+    *,
+    character_name: str,
+    settings: SourceSettings | None = None,
+) -> PersonCredit | None:
     name = _clean_text(person.get("name"))
     russian = _clean_text(person.get("russian"))
     names = _dedupe([name, russian])
@@ -91,7 +101,9 @@ def _rest_person_credit(person: dict[str, Any], *, character_name: str, settings
     preferred = name or russian
     person_id = _clean_text(person.get("id"))
     image = person.get("image") or {}
-    portrait = _best_rest_image_url(image, settings) if isinstance(image, dict) else None
+    portrait = (
+        _best_rest_image_url(image, settings) if isinstance(image, dict) else None
+    )
     return PersonCredit(
         name=preferred,
         roles=[voice_role_token(character_name or None)],
@@ -163,14 +175,18 @@ async def _rest_get_json(
         ) from exc
 
 
-async def _rest_anime_roles(anime_id: str, settings: SourceSettings | None = None) -> list[dict[str, Any]]:
+async def _rest_anime_roles(
+    anime_id: str, settings: SourceSettings | None = None
+) -> list[dict[str, Any]]:
     body = await _rest_get_json(f"/api/animes/{anime_id}/roles", settings)
     if not isinstance(body, list):
         raise RuntimeError("Shikimori anime roles returned non-list JSON")
     return [item for item in body if isinstance(item, dict)]
 
 
-def _characters_from_roles(entries: list[dict[str, Any]], settings: SourceSettings | None = None) -> list[CharacterRecord]:
+def _characters_from_roles(
+    entries: list[dict[str, Any]], settings: SourceSettings | None = None
+) -> list[CharacterRecord]:
     result: list[CharacterRecord] = []
     seen: set[str] = set()
     role_map = {"main": "main", "supporting": "supporting", "background": "background"}
@@ -189,22 +205,34 @@ def _characters_from_roles(entries: list[dict[str, Any]], settings: SourceSettin
             continue
         seen.add(key)
         raw_roles = entry.get("roles") or []
-        raw_role = _clean_text(raw_roles[0] if isinstance(raw_roles, list) and raw_roles else "")
+        raw_role = _clean_text(
+            raw_roles[0] if isinstance(raw_roles, list) and raw_roles else ""
+        )
         role = role_map.get(raw_role.casefold(), raw_role.casefold() or None)
         image = character.get("image") or {}
-        portrait = _best_rest_image_url(image, settings) if isinstance(image, dict) else None
+        portrait = (
+            _best_rest_image_url(image, settings) if isinstance(image, dict) else None
+        )
         aliases = _dedupe([name, russian])
-        result.append(CharacterRecord(
-            name=preferred,
-            role=role,
-            aliases=[value for value in aliases if value.casefold() != preferred.casefold()],
-            external_ids={"shikimori": character_id} if character_id else {},
-            portraits={"Shikimori": [portrait]} if portrait else {},
-        ))
+        result.append(
+            CharacterRecord(
+                name=preferred,
+                role=role,
+                aliases=[
+                    value
+                    for value in aliases
+                    if value.casefold() != preferred.casefold()
+                ],
+                external_ids={"shikimori": character_id} if character_id else {},
+                portraits={"Shikimori": [portrait]} if portrait else {},
+            )
+        )
     return result
 
 
-async def _load_shikimori_characters(anime_id: str, settings: SourceSettings | None = None) -> list[CharacterRecord]:
+async def _load_shikimori_characters(
+    anime_id: str, settings: SourceSettings | None = None
+) -> list[CharacterRecord]:
     roles = await _rest_anime_roles(anime_id, settings)
     return _characters_from_roles(roles, settings)
 
@@ -224,50 +252,67 @@ def _character_ids_from_roles(entries: list[dict[str, Any]]) -> list[str]:
     return result
 
 
-async def _rest_character_details(character_ids: list[str], settings: SourceSettings | None = None) -> list[dict[str, Any]]:
+async def _rest_character_details(
+    character_ids: list[str], settings: SourceSettings | None = None
+) -> list[dict[str, Any]]:
     if not character_ids:
         return []
     ttl = _cache_ttl_seconds(settings)
-    now = time.monotonic()
     result_by_id: dict[str, dict[str, Any]] = {}
     missing: list[str] = []
     for character_id in character_ids:
         cached = _CHARACTER_CACHE.get(character_id)
-        if cached is not None and cached[0] > now:
-            result_by_id[character_id] = copy.deepcopy(cached[1])
+        if cached is not None:
+            result_by_id[character_id] = copy.deepcopy(cached)
         else:
-            if cached is not None:
-                _CHARACTER_CACHE.pop(character_id, None)
             missing.append(character_id)
     if missing:
         responses = await asyncio.gather(
-            *(_rest_get_json(f"/api/characters/{character_id}", settings) for character_id in missing),
+            *(
+                _rest_get_json(f"/api/characters/{character_id}", settings)
+                for character_id in missing
+            ),
             return_exceptions=True,
         )
-        expires_at = time.monotonic() + ttl
         for character_id, response in zip(missing, responses):
             if isinstance(response, Exception):
-                logging.warning("Could not load Shikimori character %s for seiyuu lookup: %s", character_id, response)
+                logging.warning(
+                    "Could not load Shikimori character %s for seiyuu lookup: %s",
+                    character_id,
+                    response,
+                )
                 continue
             if isinstance(response, dict):
                 result_by_id[character_id] = response
                 if ttl > 0:
-                    _CHARACTER_CACHE[character_id] = (expires_at, copy.deepcopy(response))
-    return [result_by_id[character_id] for character_id in character_ids if character_id in result_by_id]
+                    _CHARACTER_CACHE.set(
+                        character_id, copy.deepcopy(response), ttl_seconds=ttl
+                    )
+    return [
+        result_by_id[character_id]
+        for character_id in character_ids
+        if character_id in result_by_id
+    ]
 
 
-def _voices_from_character_details(characters: list[dict[str, Any]], settings: SourceSettings | None = None) -> list[PersonCredit]:
+def _voices_from_character_details(
+    characters: list[dict[str, Any]], settings: SourceSettings | None = None
+) -> list[PersonCredit]:
     result: list[PersonCredit] = []
     by_identity: dict[str, PersonCredit] = {}
     for character in characters:
-        character_name = _clean_text(character.get("name")) or _clean_text(character.get("russian"))
+        character_name = _clean_text(character.get("name")) or _clean_text(
+            character.get("russian")
+        )
         seyu = character.get("seyu") or []
         if not isinstance(seyu, list):
             continue
         for raw_person in seyu:
             if not isinstance(raw_person, dict) or not raw_person:
                 continue
-            credit = _rest_person_credit(raw_person, character_name=character_name, settings=settings)
+            credit = _rest_person_credit(
+                raw_person, character_name=character_name, settings=settings
+            )
             if credit is None:
                 continue
             person_id = _clean_text(credit.external_ids.get("shikimori"))
@@ -279,18 +324,30 @@ def _voices_from_character_details(characters: list[dict[str, Any]], settings: S
                 continue
             existing.roles = _dedupe([*existing.roles, *credit.roles])
             existing.aliases = _dedupe([*existing.aliases, *credit.aliases])
-            portraits = _dedupe([*existing.portraits.get("Shikimori", []), *credit.portraits.get("Shikimori", [])])
+            portraits = _dedupe(
+                [
+                    *existing.portraits.get("Shikimori", []),
+                    *credit.portraits.get("Shikimori", []),
+                ]
+            )
             if portraits:
                 existing.portraits["Shikimori"] = portraits
     return result
 
 
-def _rest_voice_credits(entries: list[dict[str, Any]], settings: SourceSettings | None = None) -> list[PersonCredit]:
+def _rest_voice_credits(
+    entries: list[dict[str, Any]], settings: SourceSettings | None = None
+) -> list[PersonCredit]:
     characters: list[dict[str, Any]] = []
     for entry in entries:
         character = entry.get("character")
         person = entry.get("person")
-        if not isinstance(character, dict) or not character or not isinstance(person, dict) or not person:
+        if (
+            not isinstance(character, dict)
+            or not character
+            or not isinstance(person, dict)
+            or not person
+        ):
             continue
         converted = dict(character)
         converted["seyu"] = [person]
@@ -302,14 +359,28 @@ def _portrait_count(people: list[PersonCredit]) -> int:
     return sum(1 for person in people if person.portraits.get("Shikimori"))
 
 
-async def _refresh_people(people: list[PersonCredit], settings: SourceSettings | None = None) -> None:
-    ids = _dedupe([_clean_text(person.external_ids.get("shikimori")) for person in people if _clean_text(person.external_ids.get("shikimori"))])
+async def _refresh_people(
+    people: list[PersonCredit], settings: SourceSettings | None = None
+) -> None:
+    ids = _dedupe(
+        [
+            _clean_text(person.external_ids.get("shikimori"))
+            for person in people
+            if _clean_text(person.external_ids.get("shikimori"))
+        ]
+    )
     if not ids:
         return
-    by_id = {_clean_text(person.external_ids.get("shikimori")): person for person in people if _clean_text(person.external_ids.get("shikimori"))}
+    by_id = {
+        _clean_text(person.external_ids.get("shikimori")): person
+        for person in people
+        if _clean_text(person.external_ids.get("shikimori"))
+    }
     for offset in range(0, len(ids), 50):
-        batch = ids[offset:offset + 50]
-        data = await _graphql(PEOPLE_DETAILS_QUERY, {"ids": batch}, settings, operation="people")
+        batch = ids[offset : offset + 50]
+        data = await _graphql(
+            PEOPLE_DETAILS_QUERY, {"ids": batch}, settings, operation="people"
+        )
         for raw_person in data.get("people") or []:
             person_id = _clean_text(raw_person.get("id"))
             credit = by_id.get(person_id)
@@ -322,22 +393,23 @@ async def _refresh_people(people: list[PersonCredit], settings: SourceSettings |
             preferred = name or credit.name or russian or japanese
             if preferred:
                 credit.name = preferred
-                credit.aliases = [item for item in names if item.casefold() != preferred.casefold()]
+                credit.aliases = [
+                    item for item in names if item.casefold() != preferred.casefold()
+                ]
             poster = raw_person.get("poster") or {}
             portrait = _best_poster_url(poster) if isinstance(poster, dict) else None
             if portrait:
                 credit.portraits["Shikimori"] = [portrait]
 
 
-async def _load_shikimori_voices(anime_id: str, settings: SourceSettings | None = None) -> list[PersonCredit]:
+async def _load_shikimori_voices(
+    anime_id: str, settings: SourceSettings | None = None
+) -> list[PersonCredit]:
     ttl = _cache_ttl_seconds(settings)
-    now = time.monotonic()
     cached = _VOICE_CACHE.get(anime_id)
-    if cached is not None and cached[0] > now:
-        logging.info("Shikimori seiyuu cache hit for anime %s", anime_id)
-        return copy.deepcopy(cached[1])
     if cached is not None:
-        _VOICE_CACHE.pop(anime_id, None)
+        logging.info("Shikimori seiyuu cache hit for anime %s", anime_id)
+        return copy.deepcopy(cached)
     raw_roles = await _rest_anime_roles(anime_id, settings)
     character_ids = _character_ids_from_roles(raw_roles)
     characters = await _rest_character_details(character_ids, settings)
@@ -345,23 +417,42 @@ async def _load_shikimori_voices(anime_id: str, settings: SourceSettings | None 
     try:
         await _refresh_people(voices, settings)
     except Exception:
-        logging.warning("Could not refresh Shikimori seiyuu people for anime %s", anime_id, exc_info=True)
-    logging.info("Shikimori seiyuu for anime %s: roles=%d, characters=%d/%d, voices=%d, portraits=%d", anime_id, len(raw_roles), len(characters), len(character_ids), len(voices), _portrait_count(voices))
+        logging.warning(
+            "Could not refresh Shikimori seiyuu people for anime %s",
+            anime_id,
+            exc_info=True,
+        )
+    logging.info(
+        "Shikimori seiyuu for anime %s: roles=%d, characters=%d/%d, voices=%d, portraits=%d",
+        anime_id,
+        len(raw_roles),
+        len(characters),
+        len(character_ids),
+        len(voices),
+        _portrait_count(voices),
+    )
     if ttl > 0:
-        _VOICE_CACHE[anime_id] = (time.monotonic() + ttl, copy.deepcopy(voices))
+        _VOICE_CACHE.set(anime_id, copy.deepcopy(voices), ttl_seconds=ttl)
     return voices
 
 
 class ShikimoriSource(BaseShikimoriSource):
-    async def get_details(self, mal_id: str, known_ids: dict[str, str]) -> AnimeRecord | None:
+    async def get_details(
+        self, mal_id: str, known_ids: dict[str, str]
+    ) -> AnimeRecord | None:
         record = await super().get_details(mal_id, known_ids)
         if record is None:
             return None
         anime_id = _clean_text(known_ids.get("shikimori") or record.source_id)
-        logging.info("Shikimori people for anime %s: staff=deferred, voices=deferred", anime_id or "?")
+        logging.info(
+            "Shikimori people for anime %s: staff=deferred, voices=deferred",
+            anime_id or "?",
+        )
         return record
 
-    async def load_voices(self, mal_id: str, known_ids: dict[str, str]) -> list[PersonCredit]:
+    async def load_voices(
+        self, mal_id: str, known_ids: dict[str, str]
+    ) -> list[PersonCredit]:
         mal_id = _clean_text(mal_id)
         anime_id = _clean_text(known_ids.get("shikimori"))
         if not mal_id.isdigit() or not anime_id.isdigit():

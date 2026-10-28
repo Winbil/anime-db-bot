@@ -3,11 +3,15 @@ from __future__ import annotations
 import copy
 import html
 import re
-import time
 from datetime import datetime, timezone
 from typing import Any
 
-from core.canonicalization import canonical_genre_token, canonical_role_token, voice_role_token
+from core.cache import BoundedTTLCache
+from core.canonicalization import (
+    canonical_genre_token,
+    canonical_role_token,
+    voice_role_token,
+)
 from core.http_client import http_request
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord, CharacterRecord, PersonCredit, PopularityRanking
@@ -95,7 +99,7 @@ query AnimeCharacters($id: Int!, $page: Int!) {
 }
 """
 
-_PEOPLE_CACHE: dict[tuple[str, str], tuple[float, list[PersonCredit]]] = {}
+_PEOPLE_CACHE = BoundedTTLCache[tuple[str, str], list[PersonCredit]](max_entries=1000)
 
 
 def _settings(settings: SourceSettings | None = None) -> SourceSettings:
@@ -161,11 +165,13 @@ def _format_timestamp(value: Any) -> datetime | None:
 def _name_parts(value: dict[str, Any] | None) -> list[str]:
     value = value or {}
     name = value.get("name") or {}
-    return _dedupe([
-        _clean_text(name.get("full")),
-        _clean_text(name.get("native")),
-        *[_clean_text(item) for item in name.get("alternative") or []],
-    ])
+    return _dedupe(
+        [
+            _clean_text(name.get("full")),
+            _clean_text(name.get("native")),
+            *[_clean_text(item) for item in name.get("alternative") or []],
+        ]
+    )
 
 
 def _portrait_url(value: dict[str, Any] | None) -> str | None:
@@ -173,7 +179,9 @@ def _portrait_url(value: dict[str, Any] | None) -> str | None:
     return _clean_text(image.get("large")) or _clean_text(image.get("medium")) or None
 
 
-def _person_credit(value: dict[str, Any] | None, roles: list[str]) -> PersonCredit | None:
+def _person_credit(
+    value: dict[str, Any] | None, roles: list[str]
+) -> PersonCredit | None:
     value = value or {}
     names = _name_parts(value)
     if not names:
@@ -335,7 +343,9 @@ def _staff_from_connection(connection: dict[str, Any] | None) -> list[PersonCred
     return result
 
 
-def _characters_from_connection(connection: dict[str, Any] | None) -> list[CharacterRecord]:
+def _characters_from_connection(
+    connection: dict[str, Any] | None,
+) -> list[CharacterRecord]:
     result: list[CharacterRecord] = []
     role_map = {
         "MAIN": "main",
@@ -350,15 +360,23 @@ def _characters_from_connection(connection: dict[str, Any] | None) -> list[Chara
         preferred = names[0]
         character_id = _clean_text(node.get("id"))
         image = node.get("image") or {}
-        portraits = _dedupe([_clean_text(image.get("large")), _clean_text(image.get("medium"))])
+        portraits = _dedupe(
+            [_clean_text(image.get("large")), _clean_text(image.get("medium"))]
+        )
         raw_role = _clean_text(edge.get("role")).upper()
-        result.append(CharacterRecord(
-            name=preferred,
-            role=role_map.get(raw_role, raw_role.casefold() or None),
-            aliases=[name for name in names[1:] if name.casefold() != preferred.casefold()],
-            external_ids={"anilist": character_id} if character_id else {},
-            portraits={"AniList": portraits} if portraits else {},
-        ))
+        result.append(
+            CharacterRecord(
+                name=preferred,
+                role=role_map.get(raw_role, raw_role.casefold() or None),
+                aliases=[
+                    name
+                    for name in names[1:]
+                    if name.casefold() != preferred.casefold()
+                ],
+                external_ids={"anilist": character_id} if character_id else {},
+                portraits={"AniList": portraits} if portraits else {},
+            )
+        )
     return result
 
 
@@ -388,7 +406,7 @@ async def _all_characters(
             settings,
             operation="people",
         )
-        connection = ((data.get("Media") or {}).get("characters") or {})
+        connection = (data.get("Media") or {}).get("characters") or {}
         result.extend(_characters_from_connection(connection))
         has_next = bool((connection.get("pageInfo") or {}).get("hasNextPage"))
         page += 1
@@ -421,7 +439,7 @@ async def _all_staff(
             settings,
             operation="people",
         )
-        connection = ((data.get("Media") or {}).get("staff") or {})
+        connection = (data.get("Media") or {}).get("staff") or {}
         result.extend(_staff_from_connection(connection))
         has_next = bool((connection.get("pageInfo") or {}).get("hasNextPage"))
         page += 1
@@ -442,14 +460,16 @@ async def _all_voices(
             settings,
             operation="people",
         )
-        connection = ((data.get("Media") or {}).get("characters") or {})
+        connection = (data.get("Media") or {}).get("characters") or {}
         result.extend(_voices_from_connection(connection))
         has_next = bool((connection.get("pageInfo") or {}).get("hasNextPage"))
         page += 1
     return _dedupe_people(result)
 
 
-def _merge_portraits(target: dict[str, list[str]], values: dict[str, list[str]]) -> None:
+def _merge_portraits(
+    target: dict[str, list[str]], values: dict[str, list[str]]
+) -> None:
     for source, urls in values.items():
         target[source] = _dedupe([*target.get(source, []), *(urls or [])])
 
@@ -544,9 +564,17 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         titles=titles,
         synonyms=_dedupe(raw.get("synonyms") or []),
         external_ids=external_ids,
-        kind=source_value_key("anilist", "format", format_raw, default=str(format_raw) or None),
-        status=source_value_key("anilist", "status", status_raw, default=str(status_raw) or None),
-        rating=(source_value_key("anilist", "rating", "ADULT", default="adult") if raw.get("isAdult") else None),
+        kind=source_value_key(
+            "anilist", "format", format_raw, default=str(format_raw) or None
+        ),
+        status=source_value_key(
+            "anilist", "status", status_raw, default=str(status_raw) or None
+        ),
+        rating=(
+            source_value_key("anilist", "rating", "ADULT", default="adult")
+            if raw.get("isAdult")
+            else None
+        ),
         season=season,
         season_year=season_year,
         episodes_total=episodes_total,
@@ -564,9 +592,14 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         status_distribution=status_distribution,
         score_distribution=score_distribution,
         rankings=rankings,
-        genres=_dedupe([canonical_genre_token(value) for value in raw.get("genres") or []]),
+        genres=_dedupe(
+            [canonical_genre_token(value) for value in raw.get("genres") or []]
+        ),
         studios=_dedupe(
-            [node.get("name", "") for node in ((raw.get("studios") or {}).get("nodes") or [])]
+            [
+                node.get("name", "")
+                for node in ((raw.get("studios") or {}).get("nodes") or [])
+            ]
         ),
         descriptions={"AniList": description} if description else {},
         posters=[poster] if poster else [],
@@ -580,12 +613,9 @@ async def _cached_people(
     settings: SourceSettings | None = None,
 ) -> list[PersonCredit]:
     key = (media_id, section)
-    now = time.monotonic()
     cached = _PEOPLE_CACHE.get(key)
-    if cached is not None and cached[0] > now:
-        return copy.deepcopy(cached[1])
     if cached is not None:
-        _PEOPLE_CACHE.pop(key, None)
+        return copy.deepcopy(cached)
 
     if section == "staff":
         people = await _all_staff(int(media_id), settings)
@@ -596,7 +626,7 @@ async def _cached_people(
 
     ttl = _people_cache_ttl(settings)
     if ttl > 0:
-        _PEOPLE_CACHE[key] = (time.monotonic() + ttl, copy.deepcopy(people))
+        _PEOPLE_CACHE.set(key, copy.deepcopy(people), ttl_seconds=ttl)
     return people
 
 

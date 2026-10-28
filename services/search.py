@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import re
-import time
 import unicodedata
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
+from core.cache import BoundedTTLCache
 from core.canonicalization import contains_cyrillic, normalize_key, transliterate_ru
 from core.contracts import AnimeSearchProvider
 from core.identity import AnimeIdentity
@@ -14,46 +14,36 @@ from core.models import SearchCandidate, SearchPage, SearchResultSet
 from core.settings import AppSettings, SearchSettings
 
 
-_LOW_SIGNAL_TOKENS = frozenset({
-    "the",
-    "and",
-    "for",
-    "with",
-    "from",
-    "into",
-    "that",
-    "this",
-    "как",
-    "что",
-    "это",
-    "для",
-    "при",
-    "под",
-    "над",
-    "без",
-    "про",
-    "kak",
-    "chto",
-    "eto",
-    "dlya",
-    "pri",
-    "pod",
-    "nad",
-    "bez",
-    "pro",
-})
-
-
-@dataclass(slots=True)
-class _CacheEntry:
-    expires_at: float
-    page: SearchPage
-
-
-@dataclass(slots=True)
-class _ResultSetCacheEntry:
-    expires_at: float
-    result_set: SearchResultSet
+_LOW_SIGNAL_TOKENS = frozenset(
+    {
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "into",
+        "that",
+        "this",
+        "как",
+        "что",
+        "это",
+        "для",
+        "при",
+        "под",
+        "над",
+        "без",
+        "про",
+        "kak",
+        "chto",
+        "eto",
+        "dlya",
+        "pri",
+        "pod",
+        "nad",
+        "bez",
+        "pro",
+    }
+)
 
 
 @dataclass(slots=True)
@@ -81,8 +71,14 @@ class SearchService:
         if not self._providers:
             raise ValueError("SearchService requires at least one search provider")
         self._settings = settings or AppSettings.from_env().search
-        self._cache: dict[tuple[str, int, int], _CacheEntry] = {}
-        self._result_set_cache: dict[tuple[str, int, int, int, int], _ResultSetCacheEntry] = {}
+        cache_ttl = max(0.0, float(self._settings.cache_ttl_seconds))
+        cache_max = max(10, int(self._settings.cache_max_entries))
+        self._cache = BoundedTTLCache[tuple[str, int, int], SearchPage](
+            max_entries=cache_max, ttl_seconds=cache_ttl
+        )
+        self._result_set_cache = BoundedTTLCache[
+            tuple[str, int, int, int, int], SearchResultSet
+        ](max_entries=cache_max, ttl_seconds=cache_ttl)
 
     @property
     def provider_names(self) -> tuple[str, ...]:
@@ -95,12 +91,6 @@ class SearchService:
     @property
     def settings(self) -> SearchSettings:
         return self._settings
-
-    def _cache_ttl(self) -> int:
-        return max(0, int(self._settings.cache_ttl_seconds))
-
-    def _cache_max_entries(self) -> int:
-        return max(10, int(self._settings.cache_max_entries))
 
     def _collection_page_size(self) -> int:
         return min(max(5, int(self._settings.collection_page_size)), 50)
@@ -131,13 +121,8 @@ class SearchService:
 
         cache_key = (query.casefold(), page, page_size)
         cached = self._cache.get(cache_key)
-        now = time.monotonic()
-        if cached is not None and cached.expires_at > now:
-            self._cache.pop(cache_key, None)
-            self._cache[cache_key] = cached
-            return cached.page
         if cached is not None:
-            self._cache.pop(cache_key, None)
+            return cached
 
         async def run(provider: AnimeSearchProvider):
             try:
@@ -149,13 +134,8 @@ class SearchService:
         results = await asyncio.gather(*(run(provider) for provider in self._providers))
         merged = _merge_results(query, results, page=page, page_size=page_size)
 
-        ttl = self._cache_ttl()
-        if ttl > 0 and not merged.errors:
-            self._cache[cache_key] = _CacheEntry(
-                expires_at=time.monotonic() + ttl,
-                page=merged,
-            )
-            _trim_cache(self._cache, self._cache_max_entries())
+        if not merged.errors:
+            self._cache.set(cache_key, merged)
 
         return merged
 
@@ -186,13 +166,8 @@ class SearchService:
         cache_key = (query.casefold(), page_size, max_pages, threshold, tail_pages)
 
         cached = self._result_set_cache.get(cache_key)
-        now = time.monotonic()
-        if cached is not None and cached.expires_at > now:
-            self._result_set_cache.pop(cache_key, None)
-            self._result_set_cache[cache_key] = cached
-            return cached.result_set
         if cached is not None:
-            self._result_set_cache.pop(cache_key, None)
+            return cached
 
         async def collect_provider(
             provider_index: int,
@@ -275,13 +250,8 @@ class SearchService:
             errors=errors,
         )
 
-        ttl = self._cache_ttl()
-        if ttl > 0 and not errors:
-            self._result_set_cache[cache_key] = _ResultSetCacheEntry(
-                expires_at=time.monotonic() + ttl,
-                result_set=result_set,
-            )
-            _trim_cache(self._result_set_cache, self._cache_max_entries())
+        if not errors:
+            self._result_set_cache.set(cache_key, result_set)
 
         return result_set
 
@@ -301,7 +271,8 @@ def _group_entries_by_identity(
         matching_indexes = [
             index
             for index, group in enumerate(groups)
-            if not group.identity.is_empty() and group.identity.matches(candidate_identity)
+            if not group.identity.is_empty()
+            and group.identity.matches(candidate_identity)
         ]
         if not matching_indexes:
             groups.append(_CandidateGroup(candidate_identity.copy(), [entry]))
@@ -475,9 +446,7 @@ def _merge_entries(
             scores.update(candidate.scores)
 
         aliases = [
-            value
-            for value in _dedupe(aliases)
-            if value.casefold() != title.casefold()
+            value for value in _dedupe(aliases) if value.casefold() != title.casefold()
         ]
         ranked_items.append(
             (
@@ -553,11 +522,13 @@ def _merge_results(
 
 
 def _candidate_texts(candidate: SearchCandidate) -> list[str]:
-    return _dedupe([
-        candidate.title,
-        candidate.romaji_title or "",
-        *candidate.aliases,
-    ])
+    return _dedupe(
+        [
+            candidate.title,
+            candidate.romaji_title or "",
+            *candidate.aliases,
+        ]
+    )
 
 
 def _unicode_search_key(value: str) -> str:
@@ -595,9 +566,7 @@ def _normalized_variants(value: str) -> set[str]:
 def _meaningful_tokens(value: str) -> set[str]:
     tokens = set(value.split())
     meaningful = {
-        token
-        for token in tokens
-        if len(token) >= 3 and token not in _LOW_SIGNAL_TOKENS
+        token for token in tokens if len(token) >= 3 and token not in _LOW_SIGNAL_TOKENS
     }
     # A short one-token title such as "86" must remain searchable. Only discard
     # low-signal words when the query also contains something more informative.
@@ -623,7 +592,9 @@ def _relevance_score(query: str, candidate: SearchCandidate) -> int:
             candidate_tokens = _meaningful_tokens(candidate_key)
             if query_key == candidate_key:
                 return 100
-            if candidate_key.startswith(query_key) or query_key.startswith(candidate_key):
+            if candidate_key.startswith(query_key) or query_key.startswith(
+                candidate_key
+            ):
                 best = max(best, 94.0)
             if query_tokens and query_tokens <= candidate_tokens:
                 best = max(best, 90.0)
@@ -657,8 +628,3 @@ def _dedupe(values: list[str]) -> list[str]:
             seen.add(key)
             result.append(value)
     return result
-
-
-def _trim_cache(cache: dict, maximum: int) -> None:
-    while len(cache) > maximum:
-        cache.pop(next(iter(cache)), None)
