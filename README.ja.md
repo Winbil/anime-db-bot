@@ -9,6 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11--3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
 [![CI](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](LICENSE)
 
 `anime-db-bot` は複数のアニメデータベースを検索し、確認済みの cross-database identity を解決して、特定の外部データベースを唯一の正解とせずに 1 つの統合カードを生成します。
 
@@ -306,6 +307,10 @@ Manual directional override は `accept` / `reject`、author/reason/timestamp、
 
 GitHub Actions は Python 3.11 / 3.12 / 3.13 で test matrix を実行します。Quality job では Ruff、typed foundation formatter check、mypy、full test suite + coverage gate `>=70%`、ShellCheck も実行します。
 
+## Contributing
+
+Pull request を歓迎します。変更を送る前に [CONTRIBUTING.md](CONTRIBUTING.md) を読み、[Code of Conduct](CODE_OF_CONDUCT.md) に従ってください。Bug report と feature request には repository の issue form を使用してください。
+
 ## Security
 
 - `.env` と credentials は version control に含めないでください。
@@ -314,13 +319,15 @@ GitHub Actions は Python 3.11 / 3.12 / 3.13 で test matrix を実行します�
 - Self-hosted Telegram Bot API、将来の metrics endpoint、将来の external API を公開する場合は explicit authentication/network controls が必要です。
 - Mapping override は identity edge を変更するため audit 対象です。
 
+脆弱性の報告方法は [SECURITY.md](SECURITY.md) を参照してください。Credential、token、private deployment detail を public issue に投稿しないでください。
+
 ## Project status
 
 プロジェクトは active development 中です。Telegram search/card flow、identity model、mapping database、multi-source aggregation、localization、lazy capabilities、persistence、resilience、CI foundation は実装済みです。Structured discovery/search filters、user account integration、notifications、monitoring/Prometheus metrics、external API/Mini App、追加 source は今後の予定です。
 
 ## License
 
-現在、この repository には license file が公開されていません。明示的に license が追加されるまでは、repository owner が許可した範囲を超えて code を再配布・再利用できるとはみなさないでください。
+このプロジェクトは [Apache License 2.0](LICENSE) の下で提供されます。ライセンス条件に従って利用・変更・再配布でき、必要な notice の保持と重要な変更の明示が求められます。
 
 ## Data sources / acknowledgements
 

@@ -9,6 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11--3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
 [![CI](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](LICENSE)
 
 `anime-db-bot` ищет аниме сразу в нескольких базах, разрешает подтверждённые cross-ID связи и собирает единую карточку, не назначая ни одну внешнюю базу главным источником истины.
 
@@ -253,7 +254,7 @@ Outbound HTTP использует shared `httpx.AsyncClient`, которым в
 
 Поддерживаются transient/non-transient handling, bounded retries, cooldown, circuit breaker и ровно один half-open recovery probe.
 
-Personal Telegram limits scoped по `(platform, user_id)`. Admin может обходить personal limiter, но **никогда** не обходит upstream provider safety limits.
+Personal Telegram limits scoped по `(platform,user_id)`. Admin может обходить personal limiter, но **никогда** не обходит upstream provider safety limits.
 
 ## Архитектура
 
@@ -306,6 +307,10 @@ Manual directional overrides поддерживают `accept`/`reject`, author/
 
 GitHub Actions тестирует Python 3.11, 3.12 и 3.13. Quality job также запускает Ruff, formatter check typed foundation, mypy typed foundation, полный suite с coverage gate `>=70%` и ShellCheck.
 
+## Участие в разработке
+
+Pull requests приветствуются. Перед изменениями прочитайте [CONTRIBUTING.md](CONTRIBUTING.md) и соблюдайте [Code of Conduct](CODE_OF_CONDUCT.md). Для bug reports и feature requests используйте issue forms репозитория.
+
 ## Безопасность
 
 - `.env` и credentials должны оставаться вне version control.
@@ -314,13 +319,15 @@ GitHub Actions тестирует Python 3.11, 3.12 и 3.13. Quality job так�
 - Self-hosted Telegram Bot API, будущий metrics endpoint и будущий external API нельзя публиковать наружу без явных authentication/network controls.
 - Mapping overrides аудируются, потому что ошибочный identity edge способен затронуть несколько capabilities.
 
+Правила безопасного сообщения об уязвимостях описаны в [SECURITY.md](SECURITY.md). Не публикуйте credentials, tokens или private deployment details в публичном issue.
+
 ## Статус проекта
 
 Проект активно развивается. Уже реализованы основной Telegram search/card flow, identity model, mapping database, multi-source aggregation, localization, lazy capabilities, persistence, resilience и CI foundation. Structured discovery/search filters, user account integrations, notifications, monitoring/Prometheus metrics, external API/Mini App и дополнительные sources остаются в планах.
 
 ## Лицензия
 
-В репозитории пока нет опубликованного license file. До явного добавления лицензии не следует считать, что код разрешено свободно перераспространять или переиспользовать за пределами прав, предоставленных владельцем репозитория.
+Проект распространяется по [Apache License 2.0](LICENSE). Код можно использовать, изменять и распространять на условиях лицензии; обязательные notices должны сохраняться, а существенные изменения — отмечаться в предусмотренных лицензией случаях.
 
 ## Источники данных и благодарности
 
