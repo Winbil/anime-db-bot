@@ -294,6 +294,26 @@ def main_rich(
     )
 
 
+async def edit_standard_text(
+    message: Message,
+    text_value: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    *,
+    locale: str = "ru",
+    limit: int = STANDARD_MESSAGE_LIMIT,
+) -> None:
+    """Edit the callback message without discarding overflow text.
+
+    The keyboard remains on the edited message so subsequent callbacks keep
+    targeting one stable message. Overflow chunks are emitted as plain follow-up
+    messages instead of being silently truncated.
+    """
+    chunks = split_text(text_value, limit, locale=locale)
+    await message.edit_text(text=chunks[0], reply_markup=reply_markup)
+    for chunk in chunks[1:]:
+        await message.answer(chunk)
+
+
 async def send_standard_text(
     message: Message,
     text_value: str,
@@ -721,9 +741,11 @@ async def edit_anime_view(
     except Exception:
         logging.exception("Rich message edit failed; falling back to standard text edit")
         fallback = fallback_main_keyboard(token, locale=locale) if section == "main" else keyboard
-        await message.edit_text(
-            text=split_text(text_value, STANDARD_MESSAGE_LIMIT, locale=locale)[0],
+        await edit_standard_text(
+            message,
+            text_value,
             reply_markup=fallback,
+            locale=locale,
         )
 
 
@@ -764,9 +786,11 @@ async def edit_description_view(
         )
     except Exception:
         logging.exception("Rich description edit failed; falling back to standard text edit")
-        await message.edit_text(
-            text=split_text(pages[page], STANDARD_MESSAGE_LIMIT, locale=locale)[0],
+        await edit_standard_text(
+            message,
+            pages[page],
             reply_markup=keyboard,
+            locale=locale,
         )
 
 
@@ -830,7 +854,9 @@ async def edit_source_section_view(
         )
     except Exception:
         logging.exception("Rich source section edit failed; falling back to standard text edit")
-        await message.edit_text(
-            text=split_text(pages[page], STANDARD_MESSAGE_LIMIT, locale=locale)[0],
+        await edit_standard_text(
+            message,
+            pages[page],
             reply_markup=keyboard,
+            locale=locale,
         )

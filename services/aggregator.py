@@ -9,7 +9,6 @@ callers migrate to the more explicit modules.
 
 from services.aggregation_merge import (
     AggregationMergeSupport,
-    _average_score,
     _best_text,
     _clean,
     _consensus_domain,

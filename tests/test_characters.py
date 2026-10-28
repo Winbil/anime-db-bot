@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 from bots.telegram.card.characters import _keyboard, _merge_characters, _page_text
 from bots.telegram.card.state import AnimeCardSession
+from core.character_identity import CharacterIdentity
 from core.identity import AnimeIdentity
 from core.models import AggregatedAnime, CharacterRecord
 from services.characters import CharacterService
@@ -89,6 +90,21 @@ class CharacterServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("AniList", result.by_source)
 
 
+class CharacterIdentityTests(unittest.TestCase):
+    def test_shared_provider_id_confirms_match(self) -> None:
+        left = CharacterIdentity({"anilist": "1"})
+        right = CharacterIdentity({"anilist": "1", "shikimori": "2"})
+        self.assertTrue(left.matches(right))
+        left.merge_missing(right)
+        self.assertEqual(left.external_ids, {"anilist": "1", "shikimori": "2"})
+
+    def test_same_provider_different_id_is_conflict(self) -> None:
+        left = CharacterIdentity({"anilist": "1"})
+        right = CharacterIdentity({"anilist": "9"})
+        self.assertTrue(left.conflicts_with(right))
+        self.assertFalse(left.matches(right))
+
+
 class CharacterUiTests(unittest.TestCase):
     def test_cross_source_exact_name_variants_merge_with_portrait_provenance(self) -> None:
         merged = _merge_characters([
@@ -116,6 +132,29 @@ class CharacterUiTests(unittest.TestCase):
         ])
         self.assertEqual(len(merged), 1)
         self.assertIn("Kagenou, Cid", merged[0].aliases)
+
+    def test_same_name_with_conflicting_source_ids_does_not_merge(self) -> None:
+        values = _merge_characters([[
+            CharacterRecord(name="Cid Kagenou", external_ids={"anilist": "1"}),
+            CharacterRecord(name="Cid Kagenou", external_ids={"anilist": "2"}),
+        ]])
+        self.assertEqual(len(values), 2)
+
+    def test_name_fallback_does_not_infer_cross_provider_ids(self) -> None:
+        values = _merge_characters([
+            [CharacterRecord(name="Cid Kagenou", external_ids={"anilist": "1"})],
+            [CharacterRecord(name="Cid Kagenou", external_ids={"shikimori": "2"})],
+        ])
+        self.assertEqual(len(values), 1)
+        self.assertEqual(values[0].external_ids, {"anilist": "1"})
+
+    def test_shared_character_id_merges_even_when_names_differ(self) -> None:
+        values = _merge_characters([
+            [CharacterRecord(name="Kagenou, Cid", external_ids={"anilist": "1"})],
+            [CharacterRecord(name="Cid Kagenou", external_ids={"anilist": "1"})],
+        ])
+        self.assertEqual(len(values), 1)
+        self.assertEqual(values[0].external_ids["anilist"], "1")
 
     def test_character_view_has_same_source_and_portrait_navigation_shape(self) -> None:
         anime = AggregatedAnime(

@@ -5,8 +5,7 @@ import logging
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bots.telegram.callbacks import SectionSourceCallback, ViewCallback
-from bots.telegram.card.constants import STANDARD_MESSAGE_LIMIT
-from bots.telegram.card.renderer import split_text
+from bots.telegram.card.renderer import edit_standard_text
 from bots.telegram.card.state import ANIME_SESSIONS
 from bots.telegram.people_loading import (
     PEOPLE_LOADS as _PEOPLE_LOADS,
@@ -100,9 +99,11 @@ async def _edit_people_view(
         await message.edit_text(rich_message=_rich(text_value, urls), reply_markup=keyboard)
     except Exception:
         logging.exception("Rich portrait view edit failed; falling back to standard text edit")
-        await message.edit_text(
-            text=split_text(text_value, STANDARD_MESSAGE_LIMIT, locale=locale)[0],
+        await edit_standard_text(
+            message,
+            text_value,
             reply_markup=keyboard,
+            locale=locale,
         )
 
 
