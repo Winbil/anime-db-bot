@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 
 from core.people_loading import PeopleBatch
+from core.settings import AppSettings
 from sources.shikimori_people import (
     _cache_ttl_seconds,
     _character_ids_from_roles,
@@ -19,11 +19,10 @@ _ROLE_INDEX_CACHE: dict[str, tuple[float, list[str]]] = {}
 
 
 def _character_chunk_size() -> int:
-    raw = os.getenv("SHIKIMORI_PEOPLE_CHARACTER_BATCH_SIZE", "8").strip()
-    try:
-        return max(1, min(int(raw), 25))
-    except ValueError:
-        return 8
+    return max(
+        1,
+        min(AppSettings.from_env().sources.shikimori_people_character_batch_size, 25),
+    )
 
 
 async def _character_ids_for_anime(anime_id: str) -> list[str]:
