@@ -43,7 +43,10 @@ class AppContext:
     def create(cls, settings: AppSettings | None = None) -> "AppContext":
         settings = settings or get_settings()
         http = HttpClientPool()
-        source_health = SourceHealthRegistry()
+        source_health = SourceHealthRegistry(
+            failure_threshold=settings.source_health.failure_threshold,
+            cooldown_seconds=settings.source_health.cooldown_seconds,
+        )
         search_providers = get_search_providers(settings.sources)
         sources = get_sources(source_health, settings.sources)
         aggregator = AnimeAggregator(sources)

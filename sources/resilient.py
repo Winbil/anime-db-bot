@@ -63,20 +63,24 @@ async def _retry_call(
     health_key: str | None = None,
 ) -> T:
     key = health_key or source_name
-    if health is not None:
-        health.before_call(key, operation)
+    is_probe = health.before_call(key, operation) if health is not None else False
+    attempts = 1 if is_probe else _RETRY_ATTEMPTS
 
     last_error: BaseException | None = None
-    for attempt in range(1, _RETRY_ATTEMPTS + 1):
+    for attempt in range(1, attempts + 1):
         try:
             result = await call()
             if health is not None:
                 health.record_success(key)
             return result
+        except asyncio.CancelledError:
+            if health is not None and is_probe:
+                health.release_probe(key)
+            raise
         except Exception as exc:
             last_error = exc
             transient = _is_transient(exc)
-            if not transient or attempt >= _RETRY_ATTEMPTS:
+            if not transient or attempt >= attempts:
                 error = _typed_error(exc, source_name, operation)
                 if health is not None:
                     health.record_failure(key, error)
@@ -100,7 +104,7 @@ async def _retry_call(
                 type(exc).__name__,
                 exc,
                 attempt + 1,
-                _RETRY_ATTEMPTS,
+                attempts,
                 delay,
             )
             await asyncio.sleep(delay)
