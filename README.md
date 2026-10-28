@@ -64,6 +64,8 @@ Cross-ID enrichment построен консервативно:
 
 Mappings DB строится потоково из нескольких datasets и остаётся на диске — полный граф не копируется в RAM. Directional manual overrides поддерживают `accept` и `reject`, сохраняют `author`/timestamp и append-only audit history; overrides и история сохраняются при atomic rebuild.
 
+Telegram admin mutation workflow двухэтапный: `/mapping_set` и `/mapping_delete` сначала создают только временное подтверждение, а изменение БД выполняется лишь после `/mapping_confirm <token>`. Token живёт 5 минут, привязан к создавшему его администратору, а audit author записывается как `telegram:<admin_id>`. `/mapping_cancel <token>` отменяет pending-изменение.
+
 ## Metadata sources
 
 Основные sources:
@@ -143,11 +145,15 @@ Runtime-модули не должны самостоятельно разбир
 
 Telegram runtime создаёт context при старте, активирует его на время dispatch и закрывает owned resources при shutdown. Импорт UI-модулей сам по себе не должен создавать runtime services.
 
+Для небольших standalone/test-вызовов некоторые repository/rate-limit/HTTP accessors сохраняют compatibility fallback вне активного `AppContext`; production Telegram runtime использует явно собранный context.
+
 ## Shared HTTP, errors и source health
 
 Outbound source HTTP проходит через общий transport boundary в `core/http_client.py`. Он переиспользует `httpx.AsyncClient` внутри application lifecycle и нормализует сетевые/HTTP ошибки в typed source errors из `core/source_errors.py`.
 
-Resilience layer различает transient и non-transient failures. `SourceHealthRegistry` отслеживает последовательные transient failures и открывает circuit breaker после порога; успешный запрос сбрасывает failure state.
+Resilience layer различает transient и non-transient failures. Один `SourceHealthRegistry` из `AppContext` применяется к metadata/people, text search, trailers и episodes: transient failures проходят через общий retry policy и circuit breaker с half-open recovery probe.
+
+Identity-source health и backend health разделены там, где это необходимо. Например, Jikan trailer/episode failures учитываются под ключом `jikan`, поэтому локальный supplement outage не открывает circuit официального MAL search/metadata.
 
 Provider-specific safety semantics сохраняются поверх общего transport: например, AniDB serialization/min interval и Shikimori people Retry-After handling.
 
@@ -172,7 +178,7 @@ Search/card callback sessions остаются bounded in-memory state со slid
 
 Domain model locale-neutral: source adapters сохраняют canonical status/kind/season/genre/role values, а перевод выполняется только в renderer/localization layer. Свободные descriptions машинно не переводятся.
 
-Пользовательский locale и registry известных Telegram users хранятся в SQLite. Баны также persistent и platform-scoped.
+Пользовательские settings и registry известных users хранятся в SQLite и scoped по `(platform, user_id)`. Legacy `user_settings` без platform автоматически мигрируют как Telegram-записи. Баны также persistent и platform-scoped.
 
 ## Команды
 
@@ -194,6 +200,10 @@ Domain model locale-neutral: source adapters сохраняют canonical status
 /unban <user_id>
 /mapping_overrides
 /mapping_history [limit]
+/mapping_set <accept|reject> <source_provider> <source_id> <target_provider> <target_id> <reason>
+/mapping_delete <source_provider> <source_id> <target_provider> <target_id> <reason>
+/mapping_confirm <token>
+/mapping_cancel <token>
 ```
 
 ## Запуск
@@ -246,6 +256,8 @@ GitHub Actions проверяет Python 3.11, 3.12 и 3.13. Основная ma
 - coverage gate `>=70%`;
 - ShellCheck для `start.sh` и `scripts/*.sh`.
 
+Typed foundation scope расширяется постепенно; в quality gate дополнительно включены общие capability contracts, search service, episode service и access-control слой.
+
 ## Архитектура
 
 ```text
@@ -294,10 +306,9 @@ anime-db-bot/
 
 Domain-модели anime/episode/broadcast теперь хранят календарные и временные значения типизированно (`PartialDate`, `datetime`, `time`); строковый parsing остаётся только на adapter/compatibility границах.
 
-После текущего refactor foundation основные долги уже не относятся к primary-ID или transport wiring. Наиболее заметные следующие шаги:
+После текущего refactor foundation основные долги уже не относятся к primary-ID, transport wiring, platform scoping settings или capability-wide resilience. Наиболее заметные следующие шаги:
 
 - расширение persistent user/account/preferences/watch-state слоя поверх существующего repository boundary;
-- дальнейшее повышение общего coverage и постепенное расширение mypy/formatter scope на legacy modules;
-- безопасный admin mutation workflow для mapping overrides с явным подтверждением; read-only просмотр уже доступен через `/mapping_overrides` и `/mapping_history`.
+- дальнейшее повышение общего coverage и постепенное расширение mypy/formatter scope на legacy modules.
 
 Эти ограничения не меняют текущие non-regression contracts: source-independent identity, direct-only mapping safety, lazy sections, explicit provenance и scoped rate/session state.
