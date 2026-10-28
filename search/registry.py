@@ -1,19 +1,29 @@
 from __future__ import annotations
 
+from core.capabilities import SourceCapability, source_keys_with
 from core.contracts import AnimeSearchProvider
+from core.source_keys import SourceKey
 from search.providers.anilist import AniListSearchProvider
 from search.providers.mal import MALSearchProvider
 from search.providers.shikimori import ShikimoriSearchProvider
 
-DEFAULT_SEARCH_PROVIDER_KEYS = ("shikimori", "mal", "anilist")
+DEFAULT_SEARCH_PROVIDER_KEYS: tuple[SourceKey, ...] = source_keys_with(
+    SourceCapability.SEARCH
+)
+
+_SEARCH_FACTORIES = {
+    SourceKey.SHIKIMORI: ShikimoriSearchProvider,
+    SourceKey.MAL: MALSearchProvider,
+    SourceKey.ANILIST: AniListSearchProvider,
+}
 
 
-def get_search_provider_map() -> dict[str, AnimeSearchProvider]:
-    """Return every text-search backend available for /anime selection."""
+def get_search_provider_map() -> dict[SourceKey, AnimeSearchProvider]:
+    """Return every text-search backend declared by the capability catalog."""
     return {
-        "shikimori": ShikimoriSearchProvider(),
-        "mal": MALSearchProvider(),
-        "anilist": AniListSearchProvider(),
+        key: _SEARCH_FACTORIES[key]()
+        for key in DEFAULT_SEARCH_PROVIDER_KEYS
+        if key in _SEARCH_FACTORIES
     }
 
 
@@ -26,7 +36,7 @@ def get_search_providers() -> tuple[AnimeSearchProvider, ...]:
     language differences between providers.
     """
     providers = get_search_provider_map()
-    return tuple(providers[key] for key in DEFAULT_SEARCH_PROVIDER_KEYS)
+    return tuple(providers[key] for key in DEFAULT_SEARCH_PROVIDER_KEYS if key in providers)
 
 
 def get_search_provider() -> tuple[AnimeSearchProvider, ...]:
