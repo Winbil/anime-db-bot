@@ -3,7 +3,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from sources.anilist import AniListSource, DETAIL_QUERY
+from core.identity import AnimeIdentity
+from sources.anilist import AniListSource, BY_ID_QUERY, DETAIL_QUERY
 
 
 class AniListLazyPeopleTests(unittest.IsolatedAsyncioTestCase):
@@ -40,8 +41,10 @@ class AniListLazyPeopleTests(unittest.IsolatedAsyncioTestCase):
             }
         }
 
-        with patch("sources.anilist._graphql", new=AsyncMock(return_value=payload)) as graphql:
-            record = await AniListSource().get_details("37430", {"mal": "37430"})
+        with patch(
+            "sources.anilist.graphql_request", new=AsyncMock(return_value=payload)
+        ) as graphql:
+            record = await AniListSource().get_details(AnimeIdentity({"mal": "37430"}))
 
         self.assertIsNotNone(record)
         assert record is not None
@@ -49,6 +52,48 @@ class AniListLazyPeopleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record.voices, [])
         self.assertEqual(record.external_ids["anilist"], "101280")
         graphql.assert_awaited_once()
+
+    async def test_direct_anilist_identity_uses_anilist_id_query(self) -> None:
+        payload = {
+            "Media": {
+                "id": 101280,
+                "idMal": 37430,
+                "title": {"romaji": "Slime", "english": None, "native": None},
+                "synonyms": [],
+                "format": "TV",
+                "status": "FINISHED",
+                "description": "",
+                "startDate": {},
+                "endDate": {},
+                "season": None,
+                "seasonYear": None,
+                "episodes": 24,
+                "duration": 23,
+                "averageScore": 80,
+                "genres": [],
+                "isAdult": False,
+                "coverImage": {},
+                "siteUrl": "https://anilist.co/anime/101280",
+                "nextAiringEpisode": None,
+                "studios": {"nodes": []},
+            }
+        }
+        with patch(
+            "sources.anilist.graphql_request", new=AsyncMock(return_value=payload)
+        ) as graphql:
+            record = await AniListSource().get_details(
+                AnimeIdentity({"anilist": "101280"})
+            )
+
+        self.assertIsNotNone(record)
+        assert record is not None
+        self.assertEqual(record.source_id, "101280")
+        self.assertEqual(record.external_ids["mal"], "37430")
+        graphql.assert_awaited_once_with(
+            BY_ID_QUERY,
+            {"id": 101280},
+            unittest.mock.ANY,
+        )
 
 
 if __name__ == "__main__":
