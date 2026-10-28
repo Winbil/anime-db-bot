@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent if (Path(__file__).resolve().parent / "core").is_dir() else Path.cwd()
+ROOT = Path.cwd()
 
 
 def write(path: str, text: str) -> None:
@@ -12,131 +11,532 @@ def write(path: str, text: str) -> None:
     target.write_text(text, encoding="utf-8")
 
 
-def insert_after_future(text: str, import_line: str) -> str:
-    if import_line in text:
-        return text
-    marker = "from __future__ import annotations\n"
-    if marker not in text:
-        raise RuntimeError("missing future import")
-    return text.replace(marker, marker + "\n" + import_line + "\n", 1)
+def replace(path: str, old: str, new: str, count: int = 1) -> None:
+    target = ROOT / path
+    text = target.read_text(encoding="utf-8")
+    actual = text.count(old)
+    if actual != count:
+        raise RuntimeError(
+            f"{path}: expected {count} occurrence(s), got {actual}: {old[:80]!r}"
+        )
+    target.write_text(text.replace(old, new, count), encoding="utf-8")
 
+
+write(
+    "core/character_identity.py",
+    '''from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Mapping
+
+
+def _clean_provider(value: object) -> str:
+    return str(value or "").strip().casefold()
+
+
+def _clean_id(value: object) -> str:
+    return str(value or "").strip()
+
+
+@dataclass(slots=True)
+class CharacterIdentity:
+    """Conflict-safe source-local identity for one character.
+
+    Character IDs belong to their own namespace and are never mixed with anime
+    or person IDs. A shared provider ID confirms a match; different IDs from the
+    same provider are a hard conflict. Name equality is only a presentation
+    fallback and never canonical identity evidence.
+    """
+
+    external_ids: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.external_ids = self._normalize(self.external_ids)
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, object] | None) -> "CharacterIdentity":
+        return cls(dict(values or {}))
+
+    @staticmethod
+    def _normalize(values: Mapping[str, object]) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for raw_provider, raw_id in values.items():
+            provider = _clean_provider(raw_provider)
+            external_id = _clean_id(raw_id)
+            if provider and external_id:
+                result[provider] = external_id
+        return result
+
+    def conflicts_with(self, other: "CharacterIdentity") -> bool:
+        shared = set(self.external_ids) & set(other.external_ids)
+        return any(self.external_ids[key] != other.external_ids[key] for key in shared)
+
+    def matches(self, other: "CharacterIdentity") -> bool:
+        shared = set(self.external_ids) & set(other.external_ids)
+        return bool(shared) and not self.conflicts_with(other)
+
+    def merge_missing(self, values: "CharacterIdentity | Mapping[str, object]") -> None:
+        incoming = (
+            values.external_ids
+            if isinstance(values, CharacterIdentity)
+            else self._normalize(values)
+        )
+        for provider, external_id in incoming.items():
+            existing = self.external_ids.get(provider)
+            if existing is None:
+                self.external_ids[provider] = external_id
+            elif existing != external_id:
+                continue
+''',
+)
 
 write(
     "core/score_summary.py",
-    '''from __future__ import annotations\n\nimport math\nfrom statistics import fmean\nfrom typing import Iterable\n\n\ndef valid_scores(values: Iterable[object]) -> list[float]:\n    result: list[float] = []\n    for raw in values:\n        try:\n            score = float(raw)\n        except (TypeError, ValueError):\n            continue\n        if math.isfinite(score) and 0.0 <= score <= 10.0:\n            result.append(score)\n    return result\n\n\ndef consensus_score(values: Iterable[object]) -> float | None:\n    """Equal-source arithmetic mean on the common 0..10 score scale.\n\n    Source audience sizes are deliberately not used as weights because the\n    provider user populations overlap and are not independent samples.\n    """\n    scores = valid_scores(values)\n    return round(fmean(scores), 2) if scores else None\n''',
+    '''from __future__ import annotations
+
+import math
+from statistics import fmean
+from typing import Iterable, Mapping
+
+
+def normalize_source_scores(values: Mapping[str, object]) -> dict[str, float]:
+    """Keep only finite source scores on the shared 0..10 scale."""
+    result: dict[str, float] = {}
+    for raw_source, raw_score in values.items():
+        source = str(raw_source or "").strip()
+        if not source:
+            continue
+        try:
+            score = float(raw_score)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(score) and 0.0 <= score <= 10.0:
+            result[source] = score
+    return result
+
+
+def consensus_score(values: Iterable[object]) -> float | None:
+    """Return an equal-source arithmetic mean on the common 0..10 scale.
+
+    Audience sizes are deliberately not used as weights: MAL, AniList,
+    Shikimori and AniDB user populations overlap and are not independent samples.
+    """
+    scores: list[float] = []
+    for raw_score in values:
+        try:
+            score = float(raw_score)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(score) and 0.0 <= score <= 10.0:
+            scores.append(score)
+    return round(fmean(scores), 2) if scores else None
+''',
 )
 
-score_hits: list[Path] = []
-for path in (ROOT / "services").glob("*.py"):
-    text = path.read_text(encoding="utf-8")
-    if "score_average" not in text:
-        continue
-    tree = ast.parse(text)
-    lines = text.splitlines(keepends=True)
-    changed = False
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
-            continue
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-        if not any(
-            (isinstance(target, ast.Name) and target.id == "score_average")
-            or (isinstance(target, ast.Attribute) and target.attr == "score_average")
-            for target in targets
-        ):
-            continue
-        names = {child.id for child in ast.walk(node.value) if isinstance(child, ast.Name)}
-        candidate = "score_values" if "score_values" in names else ("scores" if "scores" in names else None)
-        if candidate is None:
-            raise RuntimeError(f"unrecognized score_average expression in {path}")
-        start, end = node.lineno - 1, node.end_lineno
-        indent = lines[start][: len(lines[start]) - len(lines[start].lstrip())]
-        target_text = ast.unparse(targets[0])
-        lines[start:end] = [f"{indent}{target_text} = consensus_score({candidate})\n"]
-        changed = True
-        break
-    if changed:
-        updated = insert_after_future("".join(lines), "from core.score_summary import consensus_score")
-        path.write_text(updated, encoding="utf-8")
-        score_hits.append(path)
-if len(score_hits) != 1:
-    raise RuntimeError(f"expected exactly one score-average assignment, got {score_hits}")
-
-write(
-    "bots/telegram/editing.py",
-    '''from __future__ import annotations\n\nfrom typing import Any\n\nfrom bots.telegram.card.constants import STANDARD_MESSAGE_LIMIT\nfrom bots.telegram.card.renderer import split_text\n\n\nasync def edit_text_chunks(\n    message: Any,\n    text_value: str,\n    *,\n    reply_markup: Any = None,\n    locale: str = "ru",\n) -> None:\n    """Edit the original message and preserve every overflow chunk.\n\n    The keyboard stays attached to the original edited message; continuation\n    chunks are plain follow-up messages so callback ownership remains stable.\n    """\n    chunks = split_text(text_value, STANDARD_MESSAGE_LIMIT, locale=locale)\n    if not chunks:\n        chunks = [text_value]\n    await message.edit_text(text=chunks[0], reply_markup=reply_markup)\n    for chunk in chunks[1:]:\n        await message.answer(chunk)\n''',
+replace(
+    "core/models.py",
+    "from core.identity import AnimeIdentity\n",
+    "from core.character_identity import CharacterIdentity\nfrom core.identity import AnimeIdentity\n",
+)
+replace(
+    "core/models.py",
+    "    portraits: dict[str, list[str]] = field(default_factory=dict)\n\n\n@dataclass(slots=True)\nclass AnimeRecord:",
+    "    portraits: dict[str, list[str]] = field(default_factory=dict)\n\n    @property\n    def identity(self) -> CharacterIdentity:\n        return CharacterIdentity.from_mapping(self.external_ids)\n\n\n@dataclass(slots=True)\nclass AnimeRecord:",
 )
 
-fallback_hits: list[Path] = []
-for path in (ROOT / "bots" / "telegram").rglob("*.py"):
-    if path.name == "editing.py":
-        continue
-    text = path.read_text(encoding="utf-8")
-    if "split_text" not in text or "[0]" not in text:
-        continue
-    tree = ast.parse(text)
-    lines = text.splitlines(keepends=True)
-    replacements: list[tuple[int, int, str]] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Expr) or not isinstance(node.value, ast.Await):
-            continue
-        call = node.value.value
-        if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Attribute) or call.func.attr != "edit_text":
-            continue
-        text_kw = next((kw for kw in call.keywords if kw.arg == "text"), None)
-        if text_kw is None or not isinstance(text_kw.value, ast.Subscript):
-            continue
-        sub = text_kw.value
-        if not isinstance(sub.value, ast.Call) or not isinstance(sub.value.func, ast.Name) or sub.value.func.id != "split_text":
-            continue
-        slice_value = sub.slice.value if isinstance(sub.slice, ast.Constant) else None
-        if slice_value != 0 or not sub.value.args:
-            continue
-        message_expr = ast.unparse(call.func.value)
-        text_expr = ast.unparse(sub.value.args[0])
-        locale_kw = next((kw for kw in sub.value.keywords if kw.arg == "locale"), None)
-        locale_expr = ast.unparse(locale_kw.value) if locale_kw else '"ru"'
-        markup_kw = next((kw for kw in call.keywords if kw.arg == "reply_markup"), None)
-        markup_expr = ast.unparse(markup_kw.value) if markup_kw else "None"
-        indent = lines[node.lineno - 1][: len(lines[node.lineno - 1]) - len(lines[node.lineno - 1].lstrip())]
-        replacement = (
-            f"{indent}await edit_text_chunks(\n"
-            f"{indent}    {message_expr},\n"
-            f"{indent}    {text_expr},\n"
-            f"{indent}    reply_markup={markup_expr},\n"
-            f"{indent}    locale={locale_expr},\n"
-            f"{indent})\n"
-        )
-        replacements.append((node.lineno - 1, node.end_lineno, replacement))
-    if replacements:
-        for start, end, replacement in sorted(replacements, reverse=True):
-            lines[start:end] = [replacement]
-        updated = insert_after_future("".join(lines), "from bots.telegram.editing import edit_text_chunks")
-        path.write_text(updated, encoding="utf-8")
-        fallback_hits.append(path)
-if not fallback_hits:
-    raise RuntimeError("no truncating split_text(...)[0] fallback was found")
+replace(
+    "services/identity_aggregator.py",
+    "from core.models import AggregatedAnime, AnimeRecord, PersonCredit, PopularityStats, SearchCandidate\n",
+    "from core.models import AggregatedAnime, AnimeRecord, PersonCredit, PopularityStats, SearchCandidate\nfrom core.score_summary import consensus_score, normalize_source_scores\n",
+)
+replace("services/identity_aggregator.py", "    _average_score,\n", "")
+replace(
+    "services/identity_aggregator.py",
+    "        return AggregatedAnime(\n",
+    "        scores = normalize_source_scores(scores)\n\n        return AggregatedAnime(\n",
+)
+replace(
+    "services/identity_aggregator.py",
+    "            score_average=_average_score(scores),\n",
+    "            score_average=consensus_score(scores.values()),\n",
+)
+replace(
+    "services/aggregation_merge.py",
+    '''def _average_score(scores: dict[str, float]) -> float | None:
+    values = [value for value in scores.values() if isinstance(value, (int, float))]
+    if not values:
+        return None
+    return round(sum(float(value) for value in values) / len(values), 2)
+
+
+''',
+    "",
+)
+replace("services/aggregator.py", "    _average_score,\n", "")
+
+characters = ROOT / "bots/telegram/card/characters.py"
+text = characters.read_text(encoding="utf-8")
+start = text.index("def _merge_characters(")
+end = text.index("\n\ndef _source_names", start)
+new_merge = '''def _merge_characters(groups: list[list[CharacterRecord]]) -> list[CharacterRecord]:
+    merged: list[CharacterRecord] = []
+    name_keys_by_index: list[set[str]] = []
+    for group in groups:
+        for character in group:
+            names = _dedupe([character.name, *character.aliases])
+            name_keys = person_identity_keys(names)
+            identity = character.identity
+
+            match_index = next(
+                (
+                    index
+                    for index, existing in enumerate(merged)
+                    if existing.identity.matches(identity)
+                ),
+                None,
+            )
+            matched_by_id = match_index is not None
+            if match_index is None:
+                match_index = next(
+                    (
+                        index
+                        for index, existing in enumerate(merged)
+                        if name_keys_by_index[index] & name_keys
+                        and not existing.identity.conflicts_with(identity)
+                    ),
+                    None,
+                )
+
+            if match_index is None:
+                merged.append(CharacterRecord(
+                    name=character.name,
+                    role=character.role,
+                    aliases=list(character.aliases),
+                    external_ids=dict(character.external_ids),
+                    portraits={source: list(urls) for source, urls in character.portraits.items()},
+                ))
+                name_keys_by_index.append(name_keys)
+                continue
+
+            existing = merged[match_index]
+            all_names = _dedupe([
+                existing.name,
+                *existing.aliases,
+                character.name,
+                *character.aliases,
+            ])
+            existing.aliases = [
+                value
+                for value in all_names
+                if value.casefold() != existing.name.casefold()
+            ]
+            name_keys_by_index[match_index].update(name_keys)
+            if _role_priority(character.role) > _role_priority(existing.role):
+                existing.role = character.role
+            if matched_by_id:
+                merged_identity = existing.identity
+                merged_identity.merge_missing(identity)
+                existing.external_ids = dict(merged_identity.external_ids)
+            elif not existing.external_ids and character.external_ids:
+                # A name-only presentation merge may carry one source-local ID,
+                # but it must not infer a new cross-provider mapping.
+                existing.external_ids = dict(character.external_ids)
+            for source_name, urls in character.portraits.items():
+                existing.portraits[source_name] = _dedupe([
+                    *existing.portraits.get(source_name, []),
+                    *urls,
+                ])
+    return merged
+'''
+characters.write_text(text[:start] + new_merge + text[end:], encoding="utf-8")
+
+renderer = ROOT / "bots/telegram/card/renderer.py"
+text = renderer.read_text(encoding="utf-8")
+marker = '''async def send_standard_text(
+    message: Message,
+    text_value: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    *,
+    locale: str = "ru",
+) -> None:
+'''
+index = text.index(marker)
+helper = '''async def edit_standard_text(
+    message: Message,
+    text_value: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    *,
+    locale: str = "ru",
+    limit: int = STANDARD_MESSAGE_LIMIT,
+) -> None:
+    """Edit the callback message without discarding overflow text.
+
+    The keyboard remains on the edited message so subsequent callbacks keep
+    targeting one stable message. Overflow chunks are emitted as plain follow-up
+    messages instead of being silently truncated.
+    """
+    chunks = split_text(text_value, limit, locale=locale)
+    await message.edit_text(text=chunks[0], reply_markup=reply_markup)
+    for chunk in chunks[1:]:
+        await message.answer(chunk)
+
+
+'''
+renderer.write_text(text[:index] + helper + text[index:], encoding="utf-8")
+
+replace(
+    "bots/telegram/card/renderer.py",
+    '''        await message.edit_text(
+            text=split_text(text_value, STANDARD_MESSAGE_LIMIT, locale=locale)[0],
+            reply_markup=fallback,
+        )''',
+    '''        await edit_standard_text(
+            message,
+            text_value,
+            reply_markup=fallback,
+            locale=locale,
+        )''',
+)
+replace(
+    "bots/telegram/card/renderer.py",
+    '''        await message.edit_text(
+            text=split_text(pages[page], STANDARD_MESSAGE_LIMIT, locale=locale)[0],
+            reply_markup=keyboard,
+        )''',
+    '''        await edit_standard_text(
+            message,
+            pages[page],
+            reply_markup=keyboard,
+            locale=locale,
+        )''',
+    count=2,
+)
+
+for path in (
+    "bots/telegram/card/characters.py",
+    "bots/telegram/card/trailers.py",
+    "bots/telegram/card/episodes.py",
+    "bots/telegram/people_portraits.py",
+):
+    target = ROOT / path
+    value = target.read_text(encoding="utf-8")
+    value = value.replace(
+        "from bots.telegram.card.renderer import plain_text_to_rich_html, split_text\n",
+        "from bots.telegram.card.renderer import edit_standard_text, plain_text_to_rich_html\n",
+    )
+    value = value.replace(
+        "from bots.telegram.card.renderer import split_text\n",
+        "from bots.telegram.card.renderer import edit_standard_text\n",
+    )
+    target.write_text(value, encoding="utf-8")
+
+replace("bots/telegram/card/characters.py", "from bots.telegram.card.constants import STANDARD_MESSAGE_LIMIT\n", "")
+replace(
+    "bots/telegram/card/characters.py",
+    '''    await message.edit_text(
+        text=split_text(content, STANDARD_MESSAGE_LIMIT, locale=locale)[0],
+        reply_markup=keyboard,
+    )''',
+    '''    await edit_standard_text(
+        message,
+        content,
+        reply_markup=keyboard,
+        locale=locale,
+    )''',
+)
+replace(
+    "bots/telegram/card/trailers.py",
+    '''        await message.edit_text(
+            text=split_text(content, 3900, locale=locale)[0],
+            reply_markup=keyboard,
+        )''',
+    '''        await edit_standard_text(
+            message,
+            content,
+            reply_markup=keyboard,
+            locale=locale,
+            limit=3900,
+        )''',
+)
+replace(
+    "bots/telegram/card/episodes.py",
+    '''        await message.edit_text(
+            text=split_text(content, 3900, locale=locale)[0],
+            reply_markup=keyboard,
+        )''',
+    '''        await edit_standard_text(
+            message,
+            content,
+            reply_markup=keyboard,
+            locale=locale,
+            limit=3900,
+        )''',
+    count=2,
+)
+replace("bots/telegram/people_portraits.py", "from bots.telegram.card.constants import STANDARD_MESSAGE_LIMIT\n", "")
+replace(
+    "bots/telegram/people_portraits.py",
+    '''        await message.edit_text(
+            text=split_text(text_value, STANDARD_MESSAGE_LIMIT, locale=locale)[0],
+            reply_markup=keyboard,
+        )''',
+    '''        await edit_standard_text(
+            message,
+            text_value,
+            reply_markup=keyboard,
+            locale=locale,
+        )''',
+)
 
 write(
     "tests/test_score_summary.py",
-    '''from __future__ import annotations\n\nimport math\nimport unittest\n\nfrom core.score_summary import consensus_score, valid_scores\n\n\nclass ScoreSummaryTests(unittest.TestCase):\n    def test_equal_source_mean_keeps_sources_neutral(self) -> None:\n        self.assertEqual(consensus_score([8.0, 9.0, 7.0]), 8.0)\n\n    def test_invalid_values_are_excluded(self) -> None:\n        values = [8.0, None, math.nan, math.inf, -1, 11, "9"]\n        self.assertEqual(valid_scores(values), [8.0, 9.0])\n        self.assertEqual(consensus_score(values), 8.5)\n\n    def test_no_valid_scores_returns_none(self) -> None:\n        self.assertIsNone(consensus_score([None, "bad", math.nan, 99]))\n''',
+    '''from __future__ import annotations
+
+import math
+import unittest
+
+from core.score_summary import consensus_score, normalize_source_scores
+
+
+class ScoreSummaryTests(unittest.TestCase):
+    def test_equal_source_mean_keeps_sources_neutral(self) -> None:
+        self.assertEqual(consensus_score([8.0, 9.0, 7.0]), 8.0)
+
+    def test_invalid_scores_are_removed_from_map_and_count(self) -> None:
+        scores = normalize_source_scores({
+            "MAL": 8.0,
+            "AniList": "9",
+            "broken": math.nan,
+            "too-high": 11,
+            "empty": None,
+        })
+        self.assertEqual(scores, {"MAL": 8.0, "AniList": 9.0})
+        self.assertEqual(consensus_score(scores.values()), 8.5)
+
+    def test_no_valid_scores_returns_none(self) -> None:
+        self.assertIsNone(consensus_score([None, "bad", math.inf, -1, 99]))
+''',
+)
+write(
+    "tests/test_edit_standard_text.py",
+    '''from __future__ import annotations
+
+import unittest
+from unittest.mock import AsyncMock, patch
+
+from bots.telegram.card.renderer import edit_standard_text
+
+
+class EditStandardTextTests(unittest.IsolatedAsyncioTestCase):
+    async def test_overflow_chunks_are_not_discarded(self) -> None:
+        message = AsyncMock()
+        keyboard = object()
+        with patch(
+            "bots.telegram.card.renderer.split_text",
+            return_value=["first", "second", "third"],
+        ):
+            await edit_standard_text(
+                message,
+                "full",
+                reply_markup=keyboard,
+                locale="ru",
+            )
+        message.edit_text.assert_awaited_once_with(
+            text="first",
+            reply_markup=keyboard,
+        )
+        self.assertEqual(
+            [call.args[0] for call in message.answer.await_args_list],
+            ["second", "third"],
+        )
+''',
 )
 
-write(
-    "tests/test_editing.py",
-    '''from __future__ import annotations\n\nimport unittest\nfrom unittest.mock import AsyncMock, patch\n\nfrom bots.telegram.editing import edit_text_chunks\n\n\nclass EditingFallbackTests(unittest.IsolatedAsyncioTestCase):\n    async def test_every_fallback_chunk_is_preserved(self) -> None:\n        message = AsyncMock()\n        keyboard = object()\n        with patch("bots.telegram.editing.split_text", return_value=["first", "second", "third"]):\n            await edit_text_chunks(message, "full", reply_markup=keyboard, locale="ru")\n        message.edit_text.assert_awaited_once_with(text="first", reply_markup=keyboard)\n        self.assertEqual([call.args[0] for call in message.answer.await_args_list], ["second", "third"])\n''',
+tests = ROOT / "tests/test_characters.py"
+text = tests.read_text(encoding="utf-8")
+text = text.replace(
+    "from core.identity import AnimeIdentity\n",
+    "from core.character_identity import CharacterIdentity\nfrom core.identity import AnimeIdentity\n",
+    1,
 )
+identity_tests = '''
+
+class CharacterIdentityTests(unittest.TestCase):
+    def test_shared_provider_id_confirms_match(self) -> None:
+        left = CharacterIdentity({"anilist": "1"})
+        right = CharacterIdentity({"anilist": "1", "shikimori": "2"})
+        self.assertTrue(left.matches(right))
+        left.merge_missing(right)
+        self.assertEqual(left.external_ids, {"anilist": "1", "shikimori": "2"})
+
+    def test_same_provider_different_id_is_conflict(self) -> None:
+        left = CharacterIdentity({"anilist": "1"})
+        right = CharacterIdentity({"anilist": "9"})
+        self.assertTrue(left.conflicts_with(right))
+        self.assertFalse(left.matches(right))
+'''
+text = text.replace(
+    "\n\nclass CharacterUiTests(unittest.TestCase):",
+    identity_tests + "\n\nclass CharacterUiTests(unittest.TestCase):",
+    1,
+)
+ui_tests = '''    def test_same_name_with_conflicting_source_ids_does_not_merge(self) -> None:
+        values = _merge_characters([[
+            CharacterRecord(name="Cid Kagenou", external_ids={"anilist": "1"}),
+            CharacterRecord(name="Cid Kagenou", external_ids={"anilist": "2"}),
+        ]])
+        self.assertEqual(len(values), 2)
+
+    def test_name_fallback_does_not_infer_cross_provider_ids(self) -> None:
+        values = _merge_characters([
+            [CharacterRecord(name="Cid Kagenou", external_ids={"anilist": "1"})],
+            [CharacterRecord(name="Cid Kagenou", external_ids={"shikimori": "2"})],
+        ])
+        self.assertEqual(len(values), 1)
+        self.assertEqual(values[0].external_ids, {"anilist": "1"})
+
+    def test_shared_character_id_merges_even_when_names_differ(self) -> None:
+        values = _merge_characters([
+            [CharacterRecord(name="Kagenou, Cid", external_ids={"anilist": "1"})],
+            [CharacterRecord(name="Cid Kagenou", external_ids={"anilist": "1"})],
+        ])
+        self.assertEqual(len(values), 1)
+        self.assertEqual(values[0].external_ids["anilist"], "1")
+
+'''
+text = text.replace(
+    "    def test_character_view_has_same_source_and_portrait_navigation_shape(self) -> None:\n",
+    ui_tests + "    def test_character_view_has_same_source_and_portrait_navigation_shape(self) -> None:\n",
+    1,
+)
+tests.write_text(text, encoding="utf-8")
 
 readme = ROOT / "README.md"
 text = readme.read_text(encoding="utf-8")
 text = text.replace(
-    "shared HTTP/typed error/source-health foundation уже есть, но часть крупных legacy source modules ещё постепенно переводится на этот общий transport слой;",
-    "все активные HTTP source/search adapters используют общий connection pool и typed source errors; source-health/circuit breaker работает поверх resilience layer;",
+    "Mappings DB строится потоково из нескольких datasets и остаётся на диске — полный граф не копируется в RAM. Directional manual overrides поддерживают `accept` и `reject`; overrides сохраняются при atomic rebuild.",
+    "Mappings DB строится потоково из нескольких datasets и остаётся на диске — полный граф не копируется в RAM. Directional manual overrides поддерживают `accept` и `reject`, сохраняют `author`/timestamp и append-only audit history; overrides и история сохраняются при atomic rebuild.",
 )
 text = text.replace(
-    "character cross-source merge пока остаётся presentation/name-based и не является полноценной `CharacterIdentity`;",
-    "`CharacterIdentity` отделён от anime/person identity; name-based merge остаётся только presentation fallback, когда source-ID не конфликтуют;",
+    "`PersonCredit` и `CharacterRecord` — разные domain models. Portraits хранят provenance по source, а не одним плоским URL.",
+    "`PersonCredit` и `CharacterRecord` — разные domain models. `CharacterIdentity` хранит только source-local ID персонажа и никогда не смешивается с anime/person identity. Portraits хранят provenance по source, а не одним плоским URL.",
+)
+text = text.replace(
+    "- полноценный `CharacterIdentity`: текущий cross-source character display merge всё ещё использует нормализованные варианты имени и не считается canonical identity;\n",
+    "",
+)
+text = text.replace(
+    "- richer audit metadata/history для manual mapping overrides.\n",
+    "- admin UI/операционные инструменты для просмотра и управления mapping override history.\n",
 )
 readme.write_text(text, encoding="utf-8")
 
-print("score:", [str(path.relative_to(ROOT)) for path in score_hits])
-print("fallbacks:", [str(path.relative_to(ROOT)) for path in fallback_hits])
+# The workflow executing this helper can continue after its own file is deleted.
+for path in (
+    ".github/workflows/refactor-once.yml",
+    ".github/workflows/cleanup-once.yml",
+    "scripts/finalize_refactor.py",
+):
+    target = ROOT / path
+    if target.exists():
+        target.unlink()
