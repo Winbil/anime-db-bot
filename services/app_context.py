@@ -42,7 +42,7 @@ class AppContext:
         settings = settings or get_settings()
         http = HttpClientPool()
         source_health = SourceHealthRegistry()
-        search_providers = get_search_providers()
+        search_providers = get_search_providers(settings.sources)
         sources = get_sources(source_health)
         return cls(
             settings=settings,

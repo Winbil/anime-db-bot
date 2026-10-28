@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-import os
 import time
 from typing import Any
 
-import httpx
-
 from core.canonicalization import canonical_role_token, voice_role_token
+from core.http_client import http_request
 from core.identity import AnimeIdentity
 from core.models import CharacterRecord, EpisodePage, EpisodeRecord, PersonCredit, TrailerRecord
 from core.people_loading import PeopleBatch
+from core.settings import AppSettings
+from core.source_errors import SourceInvalidResponse
+from core.source_keys import SourceKey
 from core.source_names import MAL_SOURCE_NAME
 from services.rate_limits import wait_for_upstream
 
@@ -17,27 +18,25 @@ DEFAULT_JIKAN_API_URL = "http://127.0.0.1:8091"
 JIKAN_DISPLAY_NAME = MAL_SOURCE_NAME
 
 
+def _settings():
+    return AppSettings.from_env().sources
+
+
 def api_url() -> str:
-    return (
-        os.getenv("JIKAN_API_URL", DEFAULT_JIKAN_API_URL).strip().rstrip("/")
-        or DEFAULT_JIKAN_API_URL
-    )
+    return _settings().jikan_api_url
 
 
 def _timeout() -> float:
-    raw = os.getenv("JIKAN_REQUEST_TIMEOUT_SECONDS", "45").strip()
-    try:
-        return max(5.0, float(raw))
-    except ValueError:
-        return 45.0
+    return _settings().jikan_request_timeout_seconds
 
 
 def _cache_ttl(name: str, default: int = 21600) -> float:
-    raw = os.getenv(name, str(default)).strip()
-    try:
-        return max(0.0, float(raw))
-    except ValueError:
-        return float(default)
+    settings = _settings()
+    if name == "JIKAN_PEOPLE_CACHE_TTL_SECONDS":
+        return settings.jikan_people_cache_ttl_seconds
+    if name == "JIKAN_SUPPLEMENT_CACHE_TTL_SECONDS":
+        return settings.jikan_supplement_cache_ttl_seconds
+    return float(default)
 
 
 def _clean(value: Any) -> str:
@@ -74,7 +73,6 @@ def _episode(raw: dict[str, Any]) -> EpisodeRecord:
     number = _int(raw.get("number"))
     if number is None or number <= 0:
         raise ValueError("Jikan episode payload does not contain a positive episode number")
-
     titles = {
         key: value
         for key, raw_value in {
@@ -92,7 +90,6 @@ def _episode(raw: dict[str, Any]) -> EpisodeRecord:
         }.items()
         if (value := _clean(raw_value))
     }
-
     return EpisodeRecord(
         number=number,
         source="mal",
@@ -147,34 +144,38 @@ async def _get(
     operation: str = "episodes",
 ) -> dict[str, Any]:
     await wait_for_upstream("jikan", operation)
-    async with httpx.AsyncClient(timeout=_timeout(), follow_redirects=True) as client:
-        response = await client.get(f"{api_url()}{path}", params=params)
-
-    if response.is_error:
-        preview = response.text.replace("\n", " ")[:800]
-        raise RuntimeError(
-            f"Jikan supplement HTTP {response.status_code} from {response.url}: {preview}"
-        )
+    response = await http_request(
+        "jikan",
+        "GET",
+        f"{api_url()}{path}",
+        operation=operation,
+        timeout=_timeout(),
+        params=params,
+    )
     try:
         body = response.json()
     except ValueError as exc:
         preview = response.text.replace("\n", " ")[:800]
-        raise RuntimeError(f"Jikan supplement returned non-JSON response: {preview}") from exc
+        raise SourceInvalidResponse(
+            f"Jikan supplement returned non-JSON response: {preview}",
+            source="jikan",
+            operation=operation,
+        ) from exc
     if not isinstance(body, dict):
-        raise RuntimeError("Jikan supplement returned an unexpected JSON payload")
+        raise SourceInvalidResponse(
+            "Jikan supplement returned an unexpected JSON payload",
+            source="jikan",
+            operation=operation,
+        )
     return body
 
 
 class JikanSource:
-    """MAL web supplement backed by the local on-demand Jikan parser service.
-
-    Jikan is a separate backend/capability source but deliberately reuses the
-    confirmed MAL identity edge instead of introducing a synthetic Jikan ID.
-    """
+    """MAL web supplement backed by the local on-demand Jikan parser service."""
 
     name = "Jikan"
     display_name = JIKAN_DISPLAY_NAME
-    source_key = "mal"
+    source_key = SourceKey.MAL
     backend_key = "jikan"
 
     def __init__(self) -> None:
@@ -218,19 +219,14 @@ class JikanSource:
             operation="metadata",
             ttl_env="JIKAN_SUPPLEMENT_CACHE_TTL_SECONDS",
         )
-        licensors = _dedupe([
-            value for value in raw.get("licensors") or [] if isinstance(value, str)
-        ])
+        licensors = _dedupe([value for value in raw.get("licensors") or [] if isinstance(value, str)])
         distribution: dict[int, int] = {}
         for raw_score, raw_votes in (raw.get("score_distribution") or {}).items():
             score = _int(raw_score)
             votes = _int(raw_votes)
             if score is not None and 1 <= score <= 10 and votes is not None and votes >= 0:
                 distribution[score] = votes
-        return {
-            "licensors": licensors,
-            "score_distribution": distribution,
-        }
+        return {"licensors": licensors, "score_distribution": distribution}
 
     async def _load_people_payload(self, identity: AnimeIdentity) -> dict[str, Any]:
         mal_id = self._mal_id(identity)
@@ -295,25 +291,13 @@ class JikanSource:
                 people.append(person)
         return _dedupe_people(people)
 
-    async def load_staff_batch(
-        self,
-        identity: AnimeIdentity,
-        *,
-        cursor: str | None = None,
-        portrait_limit: int = 50,
-    ) -> PeopleBatch:
+    async def load_staff_batch(self, identity: AnimeIdentity, *, cursor: str | None = None, portrait_limit: int = 50) -> PeopleBatch:
         if cursor is not None:
             return PeopleBatch(complete=True)
         people = await self.load_staff(identity)
         return PeopleBatch(people=people, complete=True, total_count=len(people))
 
-    async def load_voices_batch(
-        self,
-        identity: AnimeIdentity,
-        *,
-        cursor: str | None = None,
-        portrait_limit: int = 50,
-    ) -> PeopleBatch:
+    async def load_voices_batch(self, identity: AnimeIdentity, *, cursor: str | None = None, portrait_limit: int = 50) -> PeopleBatch:
         if cursor is not None:
             return PeopleBatch(complete=True)
         people = await self.load_voices(identity)
@@ -323,7 +307,6 @@ class JikanSource:
         mal_id = self._mal_id(identity)
         if not mal_id:
             return []
-
         body = await _get(f"/anime/{mal_id}/trailers", operation="trailers")
         result: list[TrailerRecord] = []
         seen: set[str] = set()
@@ -347,23 +330,13 @@ class JikanSource:
             ))
         return result
 
-    async def load_episode_page(
-        self,
-        identity: AnimeIdentity,
-        *,
-        page: int = 1,
-    ) -> EpisodePage:
+    async def load_episode_page(self, identity: AnimeIdentity, *, page: int = 1) -> EpisodePage:
         mal_id = self._mal_id(identity)
         if not mal_id:
             return EpisodePage(items=[], page=max(1, int(page)), has_next=False)
-
         page = max(1, int(page))
         body = await _get(f"/anime/{mal_id}/episodes", params={"page": page})
-        items = [
-            _episode(item)
-            for item in body.get("data") or []
-            if isinstance(item, dict)
-        ]
+        items = [_episode(item) for item in body.get("data") or [] if isinstance(item, dict)]
         return EpisodePage(
             items=items,
             page=page,
@@ -371,16 +344,11 @@ class JikanSource:
             has_next=bool(body.get("has_next_page")),
         )
 
-    async def load_episode(
-        self,
-        identity: AnimeIdentity,
-        episode_number: int,
-    ) -> EpisodeRecord | None:
+    async def load_episode(self, identity: AnimeIdentity, episode_number: int) -> EpisodeRecord | None:
         mal_id = self._mal_id(identity)
         episode_number = int(episode_number)
         if not mal_id or episode_number <= 0:
             return None
-
         body = await _get(f"/anime/{mal_id}/episodes/{episode_number}")
         raw = body.get("data")
         if not isinstance(raw, dict):
