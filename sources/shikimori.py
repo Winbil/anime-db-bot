@@ -21,6 +21,7 @@ from core.settings import SourceSettings, get_settings
 from core.temporal import PartialDate, parse_datetime, parse_partial_date
 from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
+from sources.shikimori_people_runtime import ShikimoriPeopleRuntime
 from localization import source_value_key
 
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
@@ -450,10 +451,15 @@ class ShikimoriSource:
 
     def __init__(self, settings: SourceSettings | None = None) -> None:
         self._settings = _settings(settings)
+        self._people_runtime = ShikimoriPeopleRuntime()
 
     @property
     def settings(self) -> SourceSettings:
         return self._settings
+
+    @property
+    def people_runtime(self) -> ShikimoriPeopleRuntime:
+        return self._people_runtime
 
     @staticmethod
     def _anime_id(identity: AnimeIdentity) -> str:
@@ -496,7 +502,9 @@ class ShikimoriSource:
             return []
         from sources.shikimori_people import _load_shikimori_voices
 
-        return await _load_shikimori_voices(anime_id, self._settings)
+        return await _load_shikimori_voices(
+            anime_id, self._settings, self._people_runtime
+        )
 
     async def load_staff_batch(
         self,
@@ -531,4 +539,5 @@ class ShikimoriSource:
             cursor=cursor,
             portrait_limit=portrait_limit,
             settings=self._settings,
+            runtime=self._people_runtime,
         )

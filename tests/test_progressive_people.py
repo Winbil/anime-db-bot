@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, patch
 
 from bots.telegram.people_portraits import _keyboard
 from core.models import AggregatedAnime
-from sources.shikimori_people_batches import load_shikimori_voices_batch
+from sources.shikimori_people_batches import _character_ids_for_anime, load_shikimori_voices_batch
+from sources.shikimori_people_runtime import ShikimoriPeopleRuntime
 
 
 class ProgressiveShikimoriPeopleTests(unittest.IsolatedAsyncioTestCase):
@@ -28,7 +29,7 @@ class ProgressiveShikimoriPeopleTests(unittest.IsolatedAsyncioTestCase):
     async def test_portraitless_people_do_not_consume_batch_budget(self) -> None:
         character_ids = [str(index) for index in range(1, 8)]
 
-        async def load_characters(ids: list[str]) -> list[dict]:
+        async def load_characters(ids: list[str], *_args) -> list[dict]:
             return [
                 self._character(
                     character_id,
@@ -74,7 +75,7 @@ class ProgressiveShikimoriPeopleTests(unittest.IsolatedAsyncioTestCase):
     async def test_cursor_continues_after_portrait_budget_boundary(self) -> None:
         character_ids = [str(index) for index in range(1, 8)]
 
-        async def load_characters(ids: list[str]) -> list[dict]:
+        async def load_characters(ids: list[str], *_args) -> list[dict]:
             return [self._character(character_id, portrait=True) for character_id in ids]
 
         with (
@@ -108,6 +109,23 @@ class ProgressiveShikimoriPeopleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([person.external_ids["shikimori"] for person in second.people], ["p3", "p4"])
         self.assertFalse(second.complete)
         self.assertEqual(second.next_cursor, "4")
+
+
+class ShikimoriRoleIndexCacheTests(unittest.IsolatedAsyncioTestCase):
+    async def test_role_index_cache_is_scoped_to_people_runtime(self) -> None:
+        roles = [{"character": {"id": "1"}}]
+        first = ShikimoriPeopleRuntime()
+        second = ShikimoriPeopleRuntime()
+
+        with patch(
+            "sources.shikimori_people_batches._rest_anime_roles",
+            new=AsyncMock(return_value=roles),
+        ) as load_roles:
+            self.assertEqual(await _character_ids_for_anime("37430", runtime=first), ["1"])
+            self.assertEqual(await _character_ids_for_anime("37430", runtime=first), ["1"])
+            self.assertEqual(await _character_ids_for_anime("37430", runtime=second), ["1"])
+
+        self.assertEqual(load_roles.await_count, 2)
 
 
 class ProgressivePeopleKeyboardTests(unittest.TestCase):
