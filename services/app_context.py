@@ -74,7 +74,7 @@ class AppContext:
         ban_store = SQLiteBanStore(settings.storage.bans_db_path)
         personal_rate_limiter = PersonalRateLimiter(settings.rate_limits)
         upstream_rate_limiter = UpstreamRateLimiter(settings.rate_limits)
-        search_provider_map = get_search_provider_map(settings.sources)
+        search_provider_map = get_search_provider_map(settings.sources, source_health)
         search_providers = tuple(search_provider_map.values())
         sources = get_sources(source_health, settings.sources)
         identity_resolver = IdentityResolver(
@@ -97,8 +97,12 @@ class AppContext:
             search_service=SearchService(search_providers, settings=settings.search),
             aggregator=aggregator,
             character_service=CharacterService(sources),
-            episode_service=EpisodeService(get_episode_sources(settings.sources)),
-            trailer_service=TrailerService(get_trailer_sources(settings.sources)),
+            episode_service=EpisodeService(
+                get_episode_sources(settings.sources, source_health)
+            ),
+            trailer_service=TrailerService(
+                get_trailer_sources(settings.sources, source_health)
+            ),
             people_progress_service=PeopleProgressService(
                 sources,
                 aggregator,
