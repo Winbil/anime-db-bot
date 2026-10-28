@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from core.identity import AnimeIdentity
+from core.sqlite import managed_sqlite_connection
 from mappings.config import mappings_db_path
 
 
@@ -65,9 +66,13 @@ def _ensure_override_audit_schema(conn: sqlite3.Connection) -> None:
     if not columns:
         raise sqlite3.OperationalError("mapping_overrides table is missing")
     if "author" not in columns:
-        conn.execute("ALTER TABLE mapping_overrides ADD COLUMN author TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            "ALTER TABLE mapping_overrides ADD COLUMN author TEXT NOT NULL DEFAULT ''"
+        )
     if "updated_at" not in columns:
-        conn.execute("ALTER TABLE mapping_overrides ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            "ALTER TABLE mapping_overrides ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"
+        )
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS mapping_override_history (
@@ -129,7 +134,9 @@ def list_mapping_overrides(path: Path | None = None) -> list[MappingOverride]:
         return []
     uri = f"file:{db_path.resolve().as_posix()}?mode=ro"
     try:
-        with sqlite3.connect(uri, uri=True, timeout=5.0) as conn:
+        with managed_sqlite_connection(
+            sqlite3.connect(uri, uri=True, timeout=5.0)
+        ) as conn:
             columns = _table_columns(conn, "mapping_overrides")
             if not columns:
                 return []
@@ -148,13 +155,17 @@ def list_mapping_overrides(path: Path | None = None) -> list[MappingOverride]:
     return [MappingOverride(*map(str, row)) for row in rows]
 
 
-def list_mapping_override_history(path: Path | None = None) -> list[MappingOverrideHistory]:
+def list_mapping_override_history(
+    path: Path | None = None,
+) -> list[MappingOverrideHistory]:
     db_path = _database_path(path)
     if not db_path.is_file():
         return []
     uri = f"file:{db_path.resolve().as_posix()}?mode=ro"
     try:
-        with sqlite3.connect(uri, uri=True, timeout=5.0) as conn:
+        with managed_sqlite_connection(
+            sqlite3.connect(uri, uri=True, timeout=5.0)
+        ) as conn:
             if not _table_columns(conn, "mapping_override_history"):
                 return []
             rows = conn.execute(
@@ -194,7 +205,7 @@ def set_mapping_override(
     db_path = _database_path(path)
     if not db_path.is_file():
         raise FileNotFoundError(f"mapping database does not exist: {db_path}")
-    with sqlite3.connect(db_path, timeout=5.0) as conn:
+    with managed_sqlite_connection(sqlite3.connect(db_path, timeout=5.0)) as conn:
         _ensure_override_audit_schema(conn)
         conn.execute(
             """
@@ -262,7 +273,7 @@ def delete_mapping_override(
     db_path = _database_path(path)
     if not db_path.is_file():
         return False
-    with sqlite3.connect(db_path, timeout=5.0) as conn:
+    with managed_sqlite_connection(sqlite3.connect(db_path, timeout=5.0)) as conn:
         _ensure_override_audit_schema(conn)
         existing = conn.execute(
             """
@@ -306,7 +317,9 @@ def copy_mapping_overrides(source_path: Path, destination: sqlite3.Connection) -
     _ensure_override_audit_schema(destination)
     uri = f"file:{source_path.resolve().as_posix()}?mode=ro"
     try:
-        with sqlite3.connect(uri, uri=True, timeout=5.0) as source:
+        with managed_sqlite_connection(
+            sqlite3.connect(uri, uri=True, timeout=5.0)
+        ) as source:
             columns = _table_columns(source, "mapping_overrides")
             if not columns:
                 return 0
@@ -455,7 +468,7 @@ class MappingResolver:
         accepts: dict[tuple[str, str, str], set[str]] = defaultdict(set)
         rejects: dict[tuple[str, str, str], set[str]] = defaultdict(set)
         try:
-            with self._connect() as conn:
+            with managed_sqlite_connection(self._connect()) as conn:
                 for seed_provider, seed_id, target_provider, target_id in conn.execute(
                     edge_query,
                     params,

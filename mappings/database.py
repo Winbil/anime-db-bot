@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from core.sqlite import managed_sqlite_connection
 from mappings.config import MappingSourceSpec, mappings_db_path
 
 SCHEMA_VERSION = 2
@@ -450,7 +451,7 @@ class MappingDatabase:
     def metadata(self) -> dict[str, str]:
         if not self.available:
             return {}
-        with self._connect() as conn:
+        with managed_sqlite_connection(self._connect()) as conn:
             return {
                 str(key): str(value)
                 for key, value in conn.execute(
