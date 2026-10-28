@@ -16,15 +16,26 @@ from bots.telegram.callbacks import (
 )
 from bots.telegram.card.renderer import edit_standard_text
 from bots.telegram.card.selectors import source_options
-from bots.telegram.card.state import ANIME_SESSIONS
+from bots.telegram.card.state import TelegramCardState
 from bots.telegram.people_loading import (
-    PEOPLE_LOADS as _PEOPLE_LOADS,
     PeopleLoadProgress as _PeopleLoadProgress,
+)
+from bots.telegram.people_loading import (
     SourceLoadProgress as _SourceLoadProgress,
+)
+from bots.telegram.people_loading import (
     ensure_lazy_people as _ensure_lazy_people,
+)
+from bots.telegram.people_loading import (
     progress_key as _progress_key,
+)
+from bots.telegram.people_loading import (
     scope_has_more as _scope_has_more,
+)
+from bots.telegram.people_loading import (
     scope_total_hint as _scope_total_hint,
+)
+from bots.telegram.people_loading import (
     source_names as _source_names,
 )
 from bots.telegram.people_views import (
@@ -42,6 +53,7 @@ from services.user_settings import get_user_locale
 
 
 async def _edit_people_view(
+    state: TelegramCardState,
     message: Message,
     token: str,
     anime: AggregatedAnime,
@@ -52,7 +64,7 @@ async def _edit_people_view(
     locale: str,
 ) -> None:
     key = _progress_key(token, section)
-    existing_progress = _PEOPLE_LOADS.get(key)
+    existing_progress = state.people_loads.get(key)
     existing_sources = _source_names(anime, section, existing_progress)
 
     source: str | None = None
@@ -65,6 +77,7 @@ async def _edit_people_view(
         source_key = resolved_key
 
     progress = await _ensure_lazy_people(
+        state,
         token,
         anime,
         message,
@@ -136,7 +149,9 @@ def _parse_people_callback(raw: str) -> tuple[str, str, str | None, int] | None:
     return None
 
 
-async def handle_people_callback(callback: CallbackQuery) -> bool:
+async def handle_people_callback(
+    callback: CallbackQuery, state: TelegramCardState
+) -> bool:
     """Handle staff/voice callback namespaces before core card handlers."""
     parsed = _parse_people_callback(callback.data or "")
     if parsed is None:
@@ -144,7 +159,7 @@ async def handle_people_callback(callback: CallbackQuery) -> bool:
     token, section, source_key, page = parsed
 
     locale = get_user_locale(callback.from_user.id)
-    session = ANIME_SESSIONS.get(token)
+    session = state.anime_sessions.get(token)
     if session is None:
         await callback.answer(text("card", "expired", locale=locale), show_alert=True)
         return True
@@ -158,6 +173,7 @@ async def handle_people_callback(callback: CallbackQuery) -> bool:
     await callback.answer()
     try:
         await _edit_people_view(
+            state,
             callback.message,
             token,
             session.anime,
@@ -190,7 +206,6 @@ async def handle_people_callback(callback: CallbackQuery) -> bool:
 __all__ = [
     "_PeopleLoadProgress",
     "_SourceLoadProgress",
-    "_PEOPLE_LOADS",
     "_edit_people_view",
     "_ensure_lazy_people",
     "_first_people_page",

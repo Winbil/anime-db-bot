@@ -9,6 +9,7 @@ from aiogram.types import CallbackQuery, Message
 from bots.telegram.admin import TelegramModerationMiddleware, register_admin_handlers
 from bots.telegram.card.handlers import build_dispatcher
 from bots.telegram.card.service import aggregate_and_send
+from bots.telegram.card.state import TelegramCardState
 from bots.telegram.people_portraits import handle_people_callback
 from bots.telegram.rate_limit import TelegramRateLimitMiddleware
 from bots.telegram.search_ui import register_search_handlers
@@ -17,7 +18,7 @@ from bots.telegram.transports.official import OfficialTelegramTransport
 from bots.telegram.transports.tgapi import LocalTelegramTransport
 from core.logging_config import configure_logging
 from core.models import SearchCandidate
-from core.settings import AppSettings, TelegramSettings, get_settings
+from core.settings import TelegramSettings, get_settings
 from localization import text
 from mappings.runtime import periodic_mapping_updates
 from services.access_control import telegram_admin_ids
@@ -37,6 +38,7 @@ async def _aggregate_and_cleanup_search(
     message: Message,
     candidate: SearchCandidate,
     owner_user_id: int,
+    card_state: TelegramCardState,
 ) -> None:
     """Replace/remove a bot-authored search preview around card aggregation."""
     locale = get_user_locale(owner_user_id)
@@ -54,7 +56,7 @@ async def _aggregate_and_cleanup_search(
                 exc_info=True,
             )
 
-    await aggregate_and_send(message, candidate, owner_user_id)
+    await aggregate_and_send(message, candidate, owner_user_id, card_state)
 
     if not is_bot_search_message:
         return
@@ -80,10 +82,14 @@ async def _aggregate_and_cleanup_search(
 class _CallbackRoutingMiddleware(BaseMiddleware):
     """Route callback extensions that sit outside the core card handlers."""
 
+    def __init__(self, card_state: TelegramCardState) -> None:
+        self._card_state = card_state
+
     async def __call__(self, handler, event, data):
-        if isinstance(event, CallbackQuery):
-            if await handle_people_callback(event):
-                return None
+        if isinstance(event, CallbackQuery) and await handle_people_callback(
+            event, self._card_state
+        ):
+            return None
         return await handler(event, data)
 
 
@@ -124,6 +130,7 @@ async def run_bot(
     )
 
     bot = transport.create_bot()
+    card_state = TelegramCardState.create(settings.telegram.session_ttl_seconds)
     mapping_task = asyncio.create_task(periodic_mapping_updates())
     try:
         with activate_app_context(context):
@@ -138,19 +145,32 @@ async def run_bot(
                     "Telegram transport health: degraded — %s", health.detail
                 )
 
-            dp = build_dispatcher(mode_name=transport.mode_name)
+            dp = build_dispatcher(mode_name=transport.mode_name, state=card_state)
             moderation = TelegramModerationMiddleware()
             rate_limit = TelegramRateLimitMiddleware(context.personal_rate_limiter)
             dp.message.outer_middleware(moderation)
             dp.message.outer_middleware(rate_limit)
             dp.callback_query.outer_middleware(moderation)
             dp.callback_query.outer_middleware(rate_limit)
-            dp.callback_query.outer_middleware(_CallbackRoutingMiddleware())
+            dp.callback_query.outer_middleware(_CallbackRoutingMiddleware(card_state))
 
             register_admin_handlers(dp)
+
+            async def aggregate_search_result(
+                message: Message,
+                candidate: SearchCandidate,
+                owner_user_id: int,
+            ) -> None:
+                await _aggregate_and_cleanup_search(
+                    message,
+                    candidate,
+                    owner_user_id,
+                    card_state,
+                )
+
             register_search_handlers(
                 dp,
-                aggregate_callback=_aggregate_and_cleanup_search,
+                aggregate_callback=aggregate_search_result,
                 default_service=context.search_service,
                 direct_lookup=context.direct_lookup,
                 provider_map=context.search_provider_map,

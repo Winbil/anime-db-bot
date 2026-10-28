@@ -4,17 +4,12 @@ import logging
 
 from aiogram.types import Message
 
-from bots.session_store import ExpiringSessionStore
+from bots.telegram.card.state import TelegramCardState
 from core.models import AggregatedAnime
 from core.people import all_people
 from localization import text
 from services.app_context import get_app_context
 from services.people_progress import PeopleLoadProgress, SourceLoadProgress
-
-
-PEOPLE_LOADS: ExpiringSessionStore[PeopleLoadProgress] = ExpiringSessionStore(
-    max_entries=400
-)
 
 
 def progress_key(token: str, section: str) -> str:
@@ -51,6 +46,7 @@ def scope_total_hint(
 
 
 async def ensure_lazy_people(
+    state: TelegramCardState,
     token: str,
     anime: AggregatedAnime,
     message: Message,
@@ -61,12 +57,12 @@ async def ensure_lazy_people(
     requested_page: int = 0,
 ) -> PeopleLoadProgress:
     key = progress_key(token, section)
-    progress = PEOPLE_LOADS.get(key)
+    progress = state.people_loads.get(key)
     created = progress is None
     service = _service()
     if progress is None:
         progress = service.build_progress(anime, section)
-        PEOPLE_LOADS[key] = progress
+        state.people_loads[key] = progress
     if not progress.sources:
         return progress
 
@@ -95,7 +91,6 @@ async def ensure_lazy_people(
 
 
 __all__ = [
-    "PEOPLE_LOADS",
     "PeopleLoadProgress",
     "SourceLoadProgress",
     "build_progress",

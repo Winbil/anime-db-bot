@@ -7,8 +7,11 @@ from aiogram.types import InputRichMessage
 
 from bots.telegram.bot import _CallbackRoutingMiddleware, select_transport
 from bots.telegram.card import handlers as card_handlers
+from bots.telegram.card import state as card_state_module
 from bots.telegram.card.constants import SOURCE_SELECTABLE_SECTIONS
+from bots.telegram.card.state import TelegramCardState
 from bots.telegram.card.selectors import source_section_sources
+from bots.telegram import people_loading as people_loading_module
 from bots.telegram.people_portraits import (
     _sources_with_portraits,
     handle_people_callback,
@@ -39,6 +42,7 @@ from search.providers.mal import MALSearchProvider
 from search.providers.shikimori import ShikimoriSearchProvider
 from search.registry import get_search_provider_map, get_search_providers
 from services.aggregator import AnimeAggregator, _merge_people
+from services.people_progress import PeopleLoadProgress
 from services.search import SearchService
 from sources.anilist import AniListSource
 from sources.mal import MALSource
@@ -59,7 +63,8 @@ class StartupWiringTests(unittest.TestCase):
         self.assertTrue(USER_AGENT.startswith("anime-db-bot/"))
         self.assertTrue(callable(handle_people_callback))
         self.assertTrue(callable(register_search_handlers))
-        self.assertIsNotNone(_CallbackRoutingMiddleware())
+        card_state = TelegramCardState.create(300)
+        self.assertIsNotNone(_CallbackRoutingMiddleware(card_state))
 
         search_service = SearchService(providers)
         aggregator = AnimeAggregator(sources)
@@ -83,6 +88,23 @@ class StartupWiringTests(unittest.TestCase):
             ShikimoriSource,
         ):
             self.assertIsNotNone(imported)
+
+    def test_card_runtime_state_is_per_bot_run(self) -> None:
+        first = TelegramCardState.create(300)
+        second = TelegramCardState.create(300)
+        anime = AggregatedAnime(title="Runtime state")
+
+        token = first.remember_anime(anime, owner_user_id=42)
+        first.people_loads["token:staff"] = PeopleLoadProgress()
+        dispatcher = card_handlers.build_dispatcher("test", first)
+
+        self.assertIsNotNone(dispatcher)
+        self.assertIsNotNone(first.anime_sessions.get(token))
+        self.assertIsNone(second.anime_sessions.get(token))
+        self.assertIsNotNone(first.people_loads.get("token:staff"))
+        self.assertIsNone(second.people_loads.get("token:staff"))
+        self.assertFalse(hasattr(card_state_module, "ANIME_SESSIONS"))
+        self.assertFalse(hasattr(people_loading_module, "PEOPLE_LOADS"))
 
     def test_callback_handlers_use_real_message_attribute(self) -> None:
         self.assertNotIn(".messae", inspect.getsource(card_handlers))
