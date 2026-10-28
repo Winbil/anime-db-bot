@@ -28,22 +28,26 @@ from localization import (
 
 class LocalizationCatalogTests(unittest.TestCase):
     def test_locales_are_data_driven(self) -> None:
-        self.assertEqual(set(available_locales()), {"ru", "en"})
+        self.assertEqual(set(available_locales()), {"ru", "en", "ja"})
         self.assertEqual(locale_name("ru", display_locale="ru"), "Русский")
         self.assertEqual(locale_name("en", display_locale="en"), "English")
+        self.assertEqual(locale_name("ja", display_locale="ja"), "日本語")
         self.assertEqual(text("genres", "fantasy", locale="ru"), "Фэнтези")
         self.assertEqual(text("genres", "fantasy", locale="en"), "Fantasy")
+        self.assertEqual(text("genres", "fantasy", locale="ja"), "ファンタジー")
 
     def test_genre_aliases_resolve_to_canonical_keys(self) -> None:
         self.assertEqual(canonical_genre_key("Action"), "action")
         self.assertEqual(canonical_genre_key("боевик"), "action")
         self.assertEqual(canonical_genre("Action"), "Экшен")
         self.assertEqual(canonical_genre("Action", locale="en"), "Action")
+        self.assertEqual(canonical_genre("Action", locale="ja"), "アクション")
 
     def test_role_aliases_resolve_to_canonical_keys(self) -> None:
         self.assertEqual(canonical_role_key("Director"), "director")
         self.assertEqual(canonical_role("Director"), "Режиссёр")
         self.assertEqual(canonical_role("Director", locale="en"), "Director")
+        self.assertEqual(canonical_role("Director", locale="ja"), "監督")
         self.assertEqual(canonical_role("Director (Series)"), "Режиссёр (Series)")
         self.assertTrue(is_primary_voice_role("Сэйю"))
         self.assertFalse(is_primary_voice_role("Сэйю (EN)"))
@@ -53,6 +57,7 @@ class LocalizationCatalogTests(unittest.TestCase):
         self.assertEqual(token, "voice_of::Rimuru Tempest")
         self.assertEqual(localize_role_token(token, locale="ru"), "Озвучка: Rimuru Tempest")
         self.assertEqual(localize_role_token(token, locale="en"), "Voice: Rimuru Tempest")
+        self.assertEqual(localize_role_token(token, locale="ja"), "声: Rimuru Tempest")
 
     def test_source_enum_mapping_is_separate_from_translation(self) -> None:
         self.assertEqual(
@@ -71,20 +76,28 @@ class LocalizationCatalogTests(unittest.TestCase):
             localize_source_value("mal", "status", "currently_airing", locale="en"),
             "Airing",
         )
+        self.assertEqual(
+            localize_source_value("mal", "status", "currently_airing", locale="ja"),
+            "放送中",
+        )
 
     def test_localized_domain_values_can_be_normalized_back_to_keys(self) -> None:
         self.assertEqual(canonicalize_domain_value("anime_status", "выходит"), "airing")
         self.assertEqual(canonicalize_domain_value("anime_status", "Airing"), "airing")
+        self.assertEqual(canonicalize_domain_value("anime_status", "放送中"), "airing")
         self.assertEqual(canonicalize_domain_value("season", "Весна"), "spring")
         self.assertEqual(canonicalize_domain_value("season", "Spring"), "spring")
+        self.assertEqual(canonicalize_domain_value("season", "春"), "spring")
 
     def test_people_display_is_computed_per_locale_without_nesting(self) -> None:
         name = "Jun Fukuyama"
         aliases = ["Дзюн Фукуяма", "福山 潤"]
         ru = display_person_name(name, aliases, locale="ru")
         en = display_person_name(name, aliases, locale="en")
+        ja = display_person_name(name, aliases, locale="ja")
         self.assertEqual(ru, "Дзюн Фукуяма (Jun Fukuyama, 福山 潤)")
         self.assertEqual(en, "Jun Fukuyama (福山 潤)")
+        self.assertEqual(ja, "福山 潤 (Jun Fukuyama)")
         self.assertNotIn("Дзюн Фукуяма (Jun Fukuyama, Дзюн", ru)
 
     def test_source_adapters_no_longer_own_display_enum_maps(self) -> None:
@@ -115,6 +128,10 @@ class LocalizationCatalogTests(unittest.TestCase):
         self.assertEqual(
             text("common", "voice_of", locale="en", name="Rimuru"),
             "Voice: Rimuru",
+        )
+        self.assertEqual(
+            text("common", "voice_of", locale="ja", name="リムル"),
+            "声: リムル",
         )
 
 
