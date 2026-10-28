@@ -6,8 +6,9 @@ from aiogram.types import CallbackQuery, Message
 
 from bots.telegram.callbacks import (
     EpisodeDetailCallback,
-    IndexedCallback,
+    KeyedPageCallback,
     SectionSourceCallback,
+    resolve_key_or_legacy_index,
     ViewCallback,
 )
 from bots.telegram.card.constants import SECTION_LABELS, SOURCE_SELECTABLE_SECTIONS
@@ -19,7 +20,10 @@ from bots.telegram.card.renderer import (
     edit_description_view,
     edit_source_section_view,
 )
-from bots.telegram.card.selectors import description_sources, source_section_sources
+from bots.telegram.card.selectors import (
+    description_source_options,
+    source_section_options,
+)
 from bots.telegram.card.service import SEARCH_SERVICE, SOURCES
 from bots.telegram.card.state import ANIME_SESSIONS, AnimeCardSession
 from bots.telegram.settings import register_settings_handlers
@@ -80,7 +84,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
     @dp.callback_query(F.data.startswith("ad:"))
     async def description_source_callback_handler(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        data = IndexedCallback.parse(callback.data, prefix="ad")
+        data = KeyedPageCallback.parse(callback.data, prefix="ad")
         if data is None:
             await callback.answer(
                 text("card", "invalid_description", locale=locale), show_alert=True
@@ -104,8 +108,12 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             await callback.answer()
             return
 
-        source_index = data.index
-        if source_index >= len(description_sources(anime)):
+        options = description_source_options(anime)
+        try:
+            source_key = resolve_key_or_legacy_index(
+                data.key, [key for key, _ in options]
+            )
+        except ValueError:
             await callback.answer(
                 text("card", "description_source_unavailable", locale=locale),
                 show_alert=True,
@@ -117,7 +125,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             callback.message,
             token,
             anime,
-            source_index=source_index,
+            source_key=source_key,
             page=data.page,
             locale=locale,
         )
@@ -150,9 +158,12 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             await callback.answer()
             return
 
-        sources = source_section_sources(anime, section)
-        source_index = data.source_index
-        if source_index >= len(sources):
+        options = source_section_options(anime, section)
+        try:
+            source_key = resolve_key_or_legacy_index(
+                data.source_key, [key for key, _ in options]
+            )
+        except ValueError:
             await callback.answer(
                 text("card", "source_unavailable", locale=locale), show_alert=True
             )
@@ -164,7 +175,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             token,
             anime,
             section,
-            source_index,
+            source_key,
             data.page,
             locale=locale,
         )
@@ -172,7 +183,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
     @dp.callback_query(F.data.startswith("ap:"))
     async def episode_source_callback_handler(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        data = IndexedCallback.parse(callback.data, prefix="ap")
+        data = KeyedPageCallback.parse(callback.data, prefix="ap")
         if data is None:
             await callback.answer(
                 text("card", "invalid_source", locale=locale), show_alert=True
@@ -195,7 +206,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 token,
                 session,
                 view_page=data.page,
-                backend_index=data.index,
+                backend=data.key,
                 locale=locale,
             )
         except ValueError:
@@ -204,7 +215,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 token,
                 session,
                 view_page=0,
-                backend_index=None,
+                backend=None,
                 locale=locale,
             )
 
@@ -236,14 +247,14 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             session,
             episode_number=data.episode_number,
             return_page=data.return_page,
-            backend_index=data.backend_index,
+            backend=data.backend,
             locale=locale,
         )
 
     @dp.callback_query(F.data.startswith("ac:"))
     async def character_source_callback_handler(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        data = IndexedCallback.parse(callback.data, prefix="ac")
+        data = KeyedPageCallback.parse(callback.data, prefix="ac")
         if data is None:
             await callback.answer(
                 text("card", "invalid_source", locale=locale), show_alert=True
@@ -267,7 +278,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 callback.message,
                 token,
                 session,
-                source_index=data.index,
+                source_key=data.key,
                 page=data.page,
                 locale=locale,
             )
@@ -276,7 +287,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 callback.message,
                 token,
                 session,
-                source_index=None,
+                source_key=None,
                 page=0,
                 locale=locale,
             )
@@ -284,7 +295,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
     @dp.callback_query(F.data.startswith("at:"))
     async def trailer_source_callback_handler(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        data = IndexedCallback.parse(callback.data, prefix="at")
+        data = KeyedPageCallback.parse(callback.data, prefix="at")
         if data is None:
             await callback.answer(
                 text("card", "invalid_source", locale=locale), show_alert=True
@@ -308,7 +319,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 callback.message,
                 token,
                 session,
-                source_index=data.index,
+                source_key=data.key,
                 page=data.page,
                 locale=locale,
             )
@@ -317,7 +328,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 callback.message,
                 token,
                 session,
-                source_index=None,
+                source_key=None,
                 page=0,
                 locale=locale,
             )
@@ -362,7 +373,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 token,
                 raw_session,
                 view_page=data.page,
-                backend_index=None,
+                backend=None,
                 locale=locale,
             )
             return
@@ -371,7 +382,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 callback.message,
                 token,
                 raw_session,
-                source_index=None,
+                source_key=None,
                 page=data.page,
                 locale=locale,
             )
@@ -381,7 +392,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 callback.message,
                 token,
                 raw_session,
-                source_index=None,
+                source_key=None,
                 page=0,
                 locale=locale,
             )

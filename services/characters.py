@@ -11,6 +11,7 @@ from core.models import CharacterRecord
 @dataclass(slots=True)
 class CharacterLoadResult:
     by_source: dict[str, list[CharacterRecord]] = field(default_factory=dict)
+    key_by_source: dict[str, str] = field(default_factory=dict)
     errors: dict[str, str] = field(default_factory=dict)
 
 
@@ -29,17 +30,21 @@ class CharacterService:
                 capable.append(source)
 
         async def run(source: Any):
+            source_key = str(getattr(source, "source_key", "") or "").strip().casefold()
             try:
                 values = await source.load_characters(identity.copy())
-                return source.name, list(values or []), None
+                return source.name, source_key, list(values or []), None
             except Exception as exc:
-                return source.name, [], f"{type(exc).__name__}: {exc}"
+                return source.name, source_key, [], f"{type(exc).__name__}: {exc}"
 
         result = CharacterLoadResult()
         if not capable:
             return result
 
-        for source_name, characters, error in await asyncio.gather(*(run(source) for source in capable)):
+        for source_name, source_key, characters, error in await asyncio.gather(
+            *(run(source) for source in capable)
+        ):
+            result.key_by_source[source_name] = source_key
             if error:
                 result.errors[source_name] = error
             elif characters:

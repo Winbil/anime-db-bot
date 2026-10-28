@@ -2,20 +2,27 @@ from __future__ import annotations
 
 import unittest
 
-from bots.telegram.card.trailers import _source_keyboard, _trailer_text
+from bots.telegram.card.state import AnimeCardSession
+from bots.telegram.card.trailers import (
+    _source_keyboard,
+    _source_name_for_selector,
+    _trailer_text,
+)
 from core.identity import AnimeIdentity
-from core.models import TrailerRecord
+from core.models import AggregatedAnime, TrailerRecord
 from services.trailers import TrailerService
 from sources.trailers import _anilist_trailers, _shikimori_trailers
 
 
 class TrailerParsingTests(unittest.TestCase):
     def test_anilist_youtube_trailer_is_normalized(self) -> None:
-        items = _anilist_trailers({
-            "id": "abc123",
-            "site": "youtube",
-            "thumbnail": "http://img.example/trailer.jpg",
-        })
+        items = _anilist_trailers(
+            {
+                "id": "abc123",
+                "site": "youtube",
+                "thumbnail": "http://img.example/trailer.jpg",
+            }
+        )
 
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0].source, "anilist")
@@ -25,34 +32,36 @@ class TrailerParsingTests(unittest.TestCase):
         self.assertEqual(items[0].thumbnail, "https://img.example/trailer.jpg")
 
     def test_shikimori_keeps_only_promotional_video_kinds(self) -> None:
-        items = _shikimori_trailers([
-            {
-                "url": "https://youtu.be/pv",
-                "image_url": "http://img.youtube.com/vi/pv/hqdefault.jpg",
-                "player_url": "http://youtube.com/embed/pv",
-                "name": "PV1",
-                "kind": "pv",
-                "hosting": "youtube",
-            },
-            {
-                "url": "https://youtu.be/cm",
-                "name": "CM1",
-                "kind": "cm",
-                "hosting": "youtube",
-            },
-            {
-                "url": "https://youtu.be/op",
-                "name": "Opening",
-                "kind": "op",
-                "hosting": "youtube",
-            },
-            {
-                "url": "https://youtu.be/preview",
-                "name": "Episode 1 preview",
-                "kind": "episode_preview",
-                "hosting": "youtube",
-            },
-        ])
+        items = _shikimori_trailers(
+            [
+                {
+                    "url": "https://youtu.be/pv",
+                    "image_url": "http://img.youtube.com/vi/pv/hqdefault.jpg",
+                    "player_url": "http://youtube.com/embed/pv",
+                    "name": "PV1",
+                    "kind": "pv",
+                    "hosting": "youtube",
+                },
+                {
+                    "url": "https://youtu.be/cm",
+                    "name": "CM1",
+                    "kind": "cm",
+                    "hosting": "youtube",
+                },
+                {
+                    "url": "https://youtu.be/op",
+                    "name": "Opening",
+                    "kind": "op",
+                    "hosting": "youtube",
+                },
+                {
+                    "url": "https://youtu.be/preview",
+                    "name": "Episode 1 preview",
+                    "kind": "episode_preview",
+                    "hosting": "youtube",
+                },
+            ]
+        )
 
         self.assertEqual([item.title for item in items], ["PV1", "CM1"])
         self.assertEqual([item.kind for item in items], ["trailer", "commercial"])
@@ -60,14 +69,18 @@ class TrailerParsingTests(unittest.TestCase):
         self.assertTrue(items[0].thumbnail.startswith("https://"))
 
     def test_shikimori_repairs_duplicated_scheme_in_real_world_video_url(self) -> None:
-        items = _shikimori_trailers([{
-            "url": "https:// https://youtu.be/aJHwReyz-os",
-            "image_url": "http://img.youtube.com/vi/aJHwReyz-os/hqdefault.jpg",
-            "player_url": "http://youtube.com/embed/aJHwReyz-os",
-            "name": "Дельта, Эпсилон, Дзета, Эта",
-            "kind": "character_trailer",
-            "hosting": "youtube",
-        }])
+        items = _shikimori_trailers(
+            [
+                {
+                    "url": "https:// https://youtu.be/aJHwReyz-os",
+                    "image_url": "http://img.youtube.com/vi/aJHwReyz-os/hqdefault.jpg",
+                    "player_url": "http://youtube.com/embed/aJHwReyz-os",
+                    "name": "Дельта, Эпсилон, Дзета, Эта",
+                    "kind": "character_trailer",
+                    "hosting": "youtube",
+                }
+            ]
+        )
 
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0].url, "https://youtu.be/aJHwReyz-os")
@@ -106,8 +119,8 @@ class TrailerUiTests(unittest.TestCase):
         )
         keyboard = _source_keyboard(
             "token",
-            ["MAL (MyAnimeList) / Jikan"],
-            0,
+            [("jikan", "MAL (MyAnimeList) / Jikan")],
+            "jikan",
             items,
             offset=0,
             page=0,
@@ -134,8 +147,12 @@ class TrailerUiTests(unittest.TestCase):
         ]
         keyboard = _source_keyboard(
             "token",
-            ["Shikimori", "AniList", "MAL (MyAnimeList) / Jikan"],
-            0,
+            [
+                ("shikimori", "Shikimori"),
+                ("anilist", "AniList"),
+                ("jikan", "MAL (MyAnimeList) / Jikan"),
+            ],
+            "shikimori",
             items,
             offset=5,
             page=1,
@@ -144,11 +161,35 @@ class TrailerUiTests(unittest.TestCase):
         )
 
         nav = keyboard.inline_keyboard[len(items)]
-        self.assertEqual(nav[0].callback_data, "at:token:0:0")
+        self.assertEqual(nav[0].callback_data, "at:token:shikimori:0")
         self.assertEqual(nav[1].callback_data, "noop")
         self.assertEqual(nav[1].text, "2/2")
-        for row in keyboard.inline_keyboard[:len(items)]:
+        for row in keyboard.inline_keyboard[: len(items)]:
             self.assertTrue((row[0].url or "").startswith("https://"))
+
+
+class TrailerSourceSelectorTests(unittest.TestCase):
+    def test_stable_and_legacy_source_selectors_resolve_to_same_source(self) -> None:
+        item = TrailerRecord(
+            source="shikimori",
+            backend="shikimori",
+            url="https://example.invalid/pv",
+        )
+        session = AnimeCardSession(
+            anime=AggregatedAnime(title="Example"),
+            owner_user_id=1,
+            trailers_loaded=True,
+            trailers_by_source={"Shikimori": [item]},
+            trailer_key_by_source={"Shikimori": "shikimori"},
+        )
+        self.assertEqual(
+            _source_name_for_selector(session, "shikimori"),
+            ("shikimori", "Shikimori"),
+        )
+        self.assertEqual(
+            _source_name_for_selector(session, "0"),
+            ("shikimori", "Shikimori"),
+        )
 
 
 class _FakeTrailerSource:
@@ -180,11 +221,13 @@ class TrailerServiceTests(unittest.IsolatedAsyncioTestCase):
         anilist = _FakeTrailerSource(
             "anilist",
             "AniList",
-            items=[TrailerRecord(
-                source="anilist",
-                backend="anilist",
-                url="https://example.invalid/trailer",
-            )],
+            items=[
+                TrailerRecord(
+                    source="anilist",
+                    backend="anilist",
+                    url="https://example.invalid/trailer",
+                )
+            ],
         )
         shikimori = _FakeTrailerSource("shikimori", "Shikimori")
         service = TrailerService((anilist, shikimori))
@@ -194,16 +237,19 @@ class TrailerServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(anilist.calls, 1)
         self.assertEqual(shikimori.calls, 0)
         self.assertIn("AniList", result.by_source)
+        self.assertEqual(result.key_by_source, {"AniList": "anilist"})
 
     async def test_one_failed_source_does_not_hide_other_trailers(self) -> None:
         good = _FakeTrailerSource(
             "anilist",
             "AniList",
-            items=[TrailerRecord(
-                source="anilist",
-                backend="anilist",
-                url="https://example.invalid/trailer",
-            )],
+            items=[
+                TrailerRecord(
+                    source="anilist",
+                    backend="anilist",
+                    url="https://example.invalid/trailer",
+                )
+            ],
         )
         bad = _FakeTrailerSource(
             "mal",
@@ -216,6 +262,11 @@ class TrailerServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("AniList", result.by_source)
         self.assertIn("MAL (MyAnimeList) / Jikan", result.errors)
+        self.assertEqual(result.key_by_source["AniList"], "anilist")
+        self.assertEqual(
+            result.key_by_source["MAL (MyAnimeList) / Jikan"],
+            "mal",
+        )
 
 
 if __name__ == "__main__":

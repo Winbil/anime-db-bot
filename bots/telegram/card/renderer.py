@@ -5,6 +5,7 @@ import logging
 
 from aiogram.types import InlineKeyboardMarkup, InputRichMessage, Message
 
+from bots.telegram.callbacks import resolve_key_or_legacy_index
 from bots.telegram.card.constants import RICH_MESSAGE_LIMIT, STANDARD_MESSAGE_LIMIT
 from bots.telegram.card.keyboards import (
     description_keyboard,
@@ -13,9 +14,9 @@ from bots.telegram.card.keyboards import (
     source_section_keyboard,
 )
 from bots.telegram.card.selectors import (
-    description_sources,
+    description_source_options,
     ordered_mapping_items,
-    source_section_sources,
+    source_section_options,
 )
 from core.canonicalization import display_person_name, localize_role_token
 from core.models import AggregatedAnime, BroadcastSlot, PopularityStats
@@ -59,10 +60,7 @@ def poster_html(anime: AggregatedAnime) -> str:
     urls = anime.posters[:50]
     if not urls:
         return ""
-    images = "".join(
-        f'<img src="{html.escape(url, quote=True)}"/>'
-        for url in urls
-    )
+    images = "".join(f'<img src="{html.escape(url, quote=True)}"/>' for url in urls)
     return images if len(urls) == 1 else f"<tg-slideshow>{images}</tg-slideshow>"
 
 
@@ -116,18 +114,14 @@ def _table_html(caption: str, lines: list[str]) -> str:
             )
         else:
             rows.append(
-                "<tr>"
-                f'<td colspan="2" align="left">{html.escape(rendered)}</td>'
-                "</tr>"
+                f'<tr><td colspan="2" align="left">{html.escape(rendered)}</td></tr>'
             )
 
     if not rows:
         return ""
     return (
         "<table bordered striped compact>"
-        f"<caption><b>{html.escape(caption)}</b></caption>"
-        + "".join(rows)
-        + "</table>"
+        f"<caption><b>{html.escape(caption)}</b></caption>" + "".join(rows) + "</table>"
     )
 
 
@@ -137,12 +131,12 @@ def _quick_actions_html(token: str, *, locale: str) -> str:
     def button(label_key: str, section: str) -> str:
         return (
             f'<tg-button type="callback_data" data="av:{token_value}:{section}:0">'
-            f'{html.escape(text("card", label_key, locale=locale))}'
+            f"{html.escape(text('card', label_key, locale=locale))}"
             "</tg-button>"
         )
 
     return (
-        f'<h3>{html.escape(text("card", "details", locale=locale))}</h3>'
+        f"<h3>{html.escape(text('card', 'details', locale=locale))}</h3>"
         '<tg-button-row align="left">'
         + button("description_button", "description")
         + button("popularity_button", "popularity")
@@ -177,7 +171,9 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
         basic.append(text("card", "status", locale=locale, value=status))
     basic.append(text("card", "episodes", locale=locale, value=episodes))
     if anime.duration_minutes:
-        basic.append(text("card", "duration", locale=locale, minutes=anime.duration_minutes))
+        basic.append(
+            text("card", "duration", locale=locale, minutes=anime.duration_minutes)
+        )
     if rating:
         basic.append(text("card", "rating", locale=locale, value=rating))
 
@@ -209,7 +205,9 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
             value for item in anime.broadcasts if (value := _broadcast(item, locale))
         )
         if broadcast_text:
-            release.append(text("card", "broadcast", locale=locale, value=broadcast_text))
+            release.append(
+                text("card", "broadcast", locale=locale, value=broadcast_text)
+            )
 
     production: list[str] = []
     if anime.source_materials:
@@ -225,11 +223,17 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
         )
         production.append(text("card", "genres", locale=locale, value=values))
     if anime.studios:
-        production.append(text("card", "studios", locale=locale, value=", ".join(anime.studios)))
+        production.append(
+            text("card", "studios", locale=locale, value=", ".join(anime.studios))
+        )
     if anime.licensors:
-        production.append(text("card", "licensors", locale=locale, value=", ".join(anime.licensors)))
+        production.append(
+            text("card", "licensors", locale=locale, value=", ".join(anime.licensors))
+        )
     if anime.franchise:
-        production.append(text("card", "franchise", locale=locale, value=anime.franchise))
+        production.append(
+            text("card", "franchise", locale=locale, value=anime.franchise)
+        )
 
     score_lines: list[str] = []
     if anime.score_average is not None:
@@ -247,14 +251,18 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
 
     source_lines: list[str] = []
     if anime.sources:
-        source_lines.append(text("card", "databases", locale=locale, value=", ".join(anime.sources)))
+        source_lines.append(
+            text("card", "databases", locale=locale, value=", ".join(anime.sources))
+        )
     if anime.external_ids:
         ids = " | ".join(
             f"{name.upper()}: {value}" for name, value in anime.external_ids.items()
         )
         source_lines.append(text("card", "ids", locale=locale, value=ids))
     if anime.errors:
-        source_lines.append(text("card", "unavailable", locale=locale, value=", ".join(anime.errors)))
+        source_lines.append(
+            text("card", "unavailable", locale=locale, value=", ".join(anime.errors))
+        )
 
     return [
         (text("card", "block_main", locale=locale), basic),
@@ -475,9 +483,7 @@ def _popularity_tables_html(
     *,
     locale: str,
 ) -> str:
-    title_html = (
-        f"<h2>{html.escape(text('card', 'popularity_title', locale=locale, source=source))}</h2>"
-    )
+    title_html = f"<h2>{html.escape(text('card', 'popularity_title', locale=locale, source=source))}</h2>"
     tables = "".join(
         _table_html(caption, rows)
         for caption, rows in (
@@ -501,7 +507,10 @@ def _popularity_tables_html(
         if rows
     )
     if not tables:
-        return title_html + f"<p>{html.escape(text('common', 'no_data', locale=locale))}</p>"
+        return (
+            title_html
+            + f"<p>{html.escape(text('common', 'no_data', locale=locale))}</p>"
+        )
     return title_html + tables
 
 
@@ -664,8 +673,12 @@ def anime_sections(anime: AggregatedAnime, *, locale: str = "ru") -> dict[str, s
         "description": description_text,
         "popularity": popularity_text,
         "links": links_text,
-        "staff": format_people(text("card", "staff", locale=locale), anime.staff, locale=locale),
-        "voices": format_people(text("card", "voices", locale=locale), anime.voices, locale=locale),
+        "staff": format_people(
+            text("card", "staff", locale=locale), anime.staff, locale=locale
+        ),
+        "voices": format_people(
+            text("card", "voices", locale=locale), anime.voices, locale=locale
+        ),
     }
 
 
@@ -719,9 +732,17 @@ async def send_anime_view(
             reply_markup=keyboard,
         )
     except Exception:
-        logging.exception("sendRichMessage failed; falling back to standard sendMessage")
-        fallback = fallback_main_keyboard(token, locale=locale) if section == "main" else keyboard
-        await send_standard_text(message, text_value, reply_markup=fallback, locale=locale)
+        logging.exception(
+            "sendRichMessage failed; falling back to standard sendMessage"
+        )
+        fallback = (
+            fallback_main_keyboard(token, locale=locale)
+            if section == "main"
+            else keyboard
+        )
+        await send_standard_text(
+            message, text_value, reply_markup=fallback, locale=locale
+        )
 
 
 async def edit_anime_view(
@@ -746,8 +767,14 @@ async def edit_anime_view(
             reply_markup=keyboard,
         )
     except Exception:
-        logging.exception("Rich message edit failed; falling back to standard text edit")
-        fallback = fallback_main_keyboard(token, locale=locale) if section == "main" else keyboard
+        logging.exception(
+            "Rich message edit failed; falling back to standard text edit"
+        )
+        fallback = (
+            fallback_main_keyboard(token, locale=locale)
+            if section == "main"
+            else keyboard
+        )
         await edit_standard_text(
             message,
             text_value,
@@ -760,16 +787,15 @@ async def edit_description_view(
     message: Message,
     token: str,
     anime: AggregatedAnime,
-    source_index: int,
+    source_key: str,
     page: int,
     *,
     locale: str,
 ) -> None:
-    sources = description_sources(anime)
-    if source_index < 0 or source_index >= len(sources):
-        raise ValueError("Description source index is out of range")
-
-    source = sources[source_index]
+    options = description_source_options(anime)
+    keys = [key for key, _ in options]
+    source_key = resolve_key_or_legacy_index(source_key, keys)
+    source = dict(options)[source_key]
     description = anime.descriptions[source]
     text_value = (
         text("card", "description_title", locale=locale, source=source)
@@ -782,9 +808,7 @@ async def edit_description_view(
 
     pages = split_text(text_value, RICH_MESSAGE_LIMIT, locale=locale)
     page = max(0, min(page, len(pages) - 1))
-    keyboard = description_keyboard(
-        token, source_index, page, len(pages), locale=locale
-    )
+    keyboard = description_keyboard(token, source_key, page, len(pages), locale=locale)
 
     try:
         await message.edit_text(
@@ -792,7 +816,9 @@ async def edit_description_view(
             reply_markup=keyboard,
         )
     except Exception:
-        logging.exception("Rich description edit failed; falling back to standard text edit")
+        logging.exception(
+            "Rich description edit failed; falling back to standard text edit"
+        )
         await edit_standard_text(
             message,
             pages[page],
@@ -806,16 +832,15 @@ async def edit_source_section_view(
     token: str,
     anime: AggregatedAnime,
     section: str,
-    source_index: int,
+    source_key: str,
     page: int,
     *,
     locale: str,
 ) -> None:
-    sources = source_section_sources(anime, section)
-    if source_index < 0 or source_index >= len(sources):
-        raise ValueError("Source section index is out of range")
-
-    source = sources[source_index]
+    options = source_section_options(anime, section)
+    keys = [key for key, _ in options]
+    source_key = resolve_key_or_legacy_index(source_key, keys)
+    source = dict(options)[source_key]
     section_text = source_section_text(anime, section, source, locale=locale)
     pages = split_text(
         section_text,
@@ -827,7 +852,7 @@ async def edit_source_section_view(
         token,
         anime,
         section,
-        source_index,
+        source_key,
         page,
         len(pages),
         locale=locale,
@@ -860,7 +885,9 @@ async def edit_source_section_view(
             reply_markup=keyboard,
         )
     except Exception:
-        logging.exception("Rich source section edit failed; falling back to standard text edit")
+        logging.exception(
+            "Rich source section edit failed; falling back to standard text edit"
+        )
         await edit_standard_text(
             message,
             pages[page],

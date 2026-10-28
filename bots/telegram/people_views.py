@@ -7,6 +7,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputRichM
 from bots.telegram.callbacks import SectionSourceCallback, ViewCallback
 from bots.telegram.card.constants import ALL_SOURCE_LABELS
 from bots.telegram.card.renderer import plain_text_to_rich_html
+from bots.telegram.card.selectors import source_options
 from core.canonicalization import display_person_name, localize_role_token
 from core.models import AggregatedAnime, PersonCredit
 from core.people import (
@@ -101,41 +102,42 @@ def _rich(text_value: str, urls: list[str]) -> InputRichMessage:
     )
 
 
-def _page_callback(
-    token: str, section: str, source_index: int | None, page: int
-) -> str:
-    if source_index is None:
+def _page_callback(token: str, section: str, source_key: str | None, page: int) -> str:
+    if source_key is None:
         return ViewCallback(token, section, page).encode()
-    return SectionSourceCallback(token, section, source_index, page).encode()
+    return SectionSourceCallback(token, section, source_key, page).encode()
 
 
 def _source_rows(
     token: str,
     anime: AggregatedAnime,
     section: str,
-    selected_source_index: int | None,
+    selected_source_key: str | None,
     *,
     locale: str,
     source_names: list[str] | None = None,
 ) -> list[list[InlineKeyboardButton]]:
-    sources = list(source_names or _sources_with_portraits(anime, section))
+    names = list(source_names or _sources_with_portraits(anime, section))
+    sources = source_options(names)
     if not sources:
         return []
     all_label = text("card", ALL_SOURCE_LABELS[section], locale=locale)
     rows: list[list[InlineKeyboardButton]] = [
         [
             InlineKeyboardButton(
-                text=("✓ " + all_label) if selected_source_index is None else all_label,
+                text=("✓ " + all_label) if selected_source_key is None else all_label,
                 callback_data=ViewCallback(token, section, 0).encode(),
             )
         ]
     ]
     buttons = [
         InlineKeyboardButton(
-            text=("✓ " + source) if selected_source_index == index else source,
-            callback_data=SectionSourceCallback(token, section, index, 0).encode(),
+            text=("✓ " + source_name)
+            if selected_source_key == source_key
+            else source_name,
+            callback_data=SectionSourceCallback(token, section, source_key, 0).encode(),
         )
-        for index, source in enumerate(sources)
+        for source_key, source_name in sources
     ]
     rows.extend(buttons[index : index + 2] for index in range(0, len(buttons), 2))
     return rows
@@ -145,7 +147,7 @@ def _keyboard(
     token: str,
     anime: AggregatedAnime,
     section: str,
-    source_index: int | None,
+    source_key: str | None,
     page: int,
     shown: int,
     total: int,
@@ -161,7 +163,7 @@ def _keyboard(
         nav.append(
             InlineKeyboardButton(
                 text="◀️",
-                callback_data=_page_callback(token, section, source_index, page - 1),
+                callback_data=_page_callback(token, section, source_key, page - 1),
             )
         )
     nav.append(
@@ -174,7 +176,7 @@ def _keyboard(
         nav.append(
             InlineKeyboardButton(
                 text="▶️",
-                callback_data=_page_callback(token, section, source_index, page + 1),
+                callback_data=_page_callback(token, section, source_key, page + 1),
             )
         )
     rows: list[list[InlineKeyboardButton]] = [nav]
@@ -183,7 +185,7 @@ def _keyboard(
             token,
             anime,
             section,
-            source_index,
+            source_key,
             locale=locale,
             source_names=source_names,
         )

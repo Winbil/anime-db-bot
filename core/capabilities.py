@@ -31,46 +31,54 @@ SOURCE_CATALOG: tuple[SourceDescriptor, ...] = (
     SourceDescriptor(
         SourceKey.SHIKIMORI,
         "Shikimori",
-        frozenset({
-            SourceCapability.SEARCH,
-            SourceCapability.METADATA,
-            SourceCapability.PEOPLE,
-            SourceCapability.CHARACTERS,
-            SourceCapability.TRAILERS,
-        }),
+        frozenset(
+            {
+                SourceCapability.SEARCH,
+                SourceCapability.METADATA,
+                SourceCapability.PEOPLE,
+                SourceCapability.CHARACTERS,
+                SourceCapability.TRAILERS,
+            }
+        ),
     ),
     SourceDescriptor(
         SourceKey.MAL,
         MAL_SOURCE_NAME,
-        frozenset({
-            SourceCapability.SEARCH,
-            SourceCapability.METADATA,
-            SourceCapability.PEOPLE,
-            SourceCapability.CHARACTERS,
-            SourceCapability.TRAILERS,
-            SourceCapability.EPISODES,
-        }),
+        frozenset(
+            {
+                SourceCapability.SEARCH,
+                SourceCapability.METADATA,
+                SourceCapability.PEOPLE,
+                SourceCapability.CHARACTERS,
+                SourceCapability.TRAILERS,
+                SourceCapability.EPISODES,
+            }
+        ),
     ),
     SourceDescriptor(
         SourceKey.ANILIST,
         "AniList",
-        frozenset({
-            SourceCapability.SEARCH,
-            SourceCapability.METADATA,
-            SourceCapability.PEOPLE,
-            SourceCapability.CHARACTERS,
-            SourceCapability.TRAILERS,
-        }),
+        frozenset(
+            {
+                SourceCapability.SEARCH,
+                SourceCapability.METADATA,
+                SourceCapability.PEOPLE,
+                SourceCapability.CHARACTERS,
+                SourceCapability.TRAILERS,
+            }
+        ),
     ),
     SourceDescriptor(
         SourceKey.ANIDB,
         "AniDB",
-        frozenset({
-            SourceCapability.METADATA,
-            SourceCapability.PEOPLE,
-            SourceCapability.CHARACTERS,
-            SourceCapability.EPISODES,
-        }),
+        frozenset(
+            {
+                SourceCapability.METADATA,
+                SourceCapability.PEOPLE,
+                SourceCapability.CHARACTERS,
+                SourceCapability.EPISODES,
+            }
+        ),
         optional=True,
     ),
 )
@@ -94,3 +102,11 @@ def source_keys_with(capability: SourceCapability) -> tuple[SourceKey, ...]:
         for descriptor in SOURCE_CATALOG
         if descriptor.supports(capability)
     )
+
+
+def source_key_for_display_name(display_name: str) -> SourceKey | None:
+    normalized = " ".join((display_name or "").split()).strip().casefold()
+    for descriptor in SOURCE_CATALOG:
+        if descriptor.display_name.casefold() == normalized:
+            return descriptor.key
+    return None

@@ -16,8 +16,10 @@ class AnimeCardSession:
     episode_details: dict[tuple[str, int], EpisodeRecord] = field(default_factory=dict)
     trailers_loaded: bool = False
     trailers_by_source: dict[str, list[TrailerRecord]] = field(default_factory=dict)
+    trailer_key_by_source: dict[str, str] = field(default_factory=dict)
     trailer_errors: dict[str, str] = field(default_factory=dict)
     characters_loaded: bool = False
+    character_key_by_source: dict[str, str] = field(default_factory=dict)
     character_errors: dict[str, str] = field(default_factory=dict)
 
 

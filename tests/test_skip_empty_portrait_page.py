@@ -51,7 +51,10 @@ class EmptyPortraitPageRoutingTests(unittest.TestCase):
                             source_names=["AniList"],
                             first_page=1,
                         )
-                        nav_callbacks = [button.callback_data for button in keyboard.inline_keyboard[0]]
+                        nav_callbacks = [
+                            button.callback_data
+                            for button in keyboard.inline_keyboard[0]
+                        ]
                         self.assertNotIn(f"av:token:{section}:0", nav_callbacks)
 
     def test_people_keep_zero_page_when_portraitless_entries_exist(self) -> None:
@@ -111,7 +114,7 @@ class EmptyPortraitPageRoutingTests(unittest.TestCase):
 
                 keyboard = character_keyboard(
                     "token",
-                    ["AniList"],
+                    [("anilist", "AniList")],
                     None,
                     page,
                     shown,
@@ -120,7 +123,9 @@ class EmptyPortraitPageRoutingTests(unittest.TestCase):
                     locale="ru",
                     first_page=1,
                 )
-                nav_callbacks = [button.callback_data for button in keyboard.inline_keyboard[0]]
+                nav_callbacks = [
+                    button.callback_data for button in keyboard.inline_keyboard[0]
+                ]
                 self.assertNotIn("av:token:characters:0", nav_callbacks)
 
     def test_characters_keep_zero_page_when_portraitless_entries_exist(self) -> None:

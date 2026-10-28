@@ -2,8 +2,18 @@ from __future__ import annotations
 
 import logging
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputRichMessage, Message
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InputRichMessage,
+    Message,
+)
 
+from bots.telegram.callbacks import (
+    EpisodeDetailCallback,
+    KeyedPageCallback,
+    resolve_key_or_legacy_index,
+)
 from bots.telegram.card.renderer import edit_standard_text, plain_text_to_rich_html
 from bots.telegram.card.service import EPISODE_SERVICE
 from bots.telegram.card.state import AnimeCardSession
@@ -23,10 +33,14 @@ def _view_slice(view_page: int) -> tuple[int, int]:
 
 
 def _episode_title(episode: EpisodeRecord, locale: str) -> str:
-    order = ("english", "romaji", "japanese") if locale == "en" else (
-        "romaji",
-        "english",
-        "japanese",
+    order = (
+        ("english", "romaji", "japanese")
+        if locale == "en"
+        else (
+            "romaji",
+            "english",
+            "japanese",
+        )
     )
     for key in order:
         value = (episode.titles.get(key) or "").strip()
@@ -83,12 +97,17 @@ def _episodes_text(
     return "\n".join(lines)
 
 
+def resolve_backend_selector(selector: str | None, backends: list[str]) -> str:
+    """Resolve an episode backend while preserving legacy numeric callbacks."""
+    return resolve_key_or_legacy_index(selector, backends)
+
+
 def _episode_keyboard(
     token: str,
     items: list[EpisodeRecord],
     *,
     backends: list[str],
-    backend_index: int,
+    backend: str,
     view_page: int,
     has_prev: bool,
     has_next: bool,
@@ -98,18 +117,22 @@ def _episode_keyboard(
     buttons = [
         InlineKeyboardButton(
             text=str(episode.number),
-            callback_data=f"ae:{token}:{backend_index}:{episode.number}:{view_page}",
+            callback_data=EpisodeDetailCallback(
+                token, backend, episode.number, view_page
+            ).encode(),
         )
         for episode in items
     ]
-    rows.extend(buttons[index:index + 5] for index in range(0, len(buttons), 5))
+    rows.extend(buttons[index : index + 5] for index in range(0, len(buttons), 5))
 
     nav: list[InlineKeyboardButton] = []
     if has_prev:
         nav.append(
             InlineKeyboardButton(
                 text="◀️",
-                callback_data=f"ap:{token}:{backend_index}:{view_page - 1}",
+                callback_data=KeyedPageCallback(
+                    "ap", token, backend, view_page - 1
+                ).encode(),
             )
         )
     nav.append(
@@ -122,25 +145,32 @@ def _episode_keyboard(
         nav.append(
             InlineKeyboardButton(
                 text="▶️",
-                callback_data=f"ap:{token}:{backend_index}:{view_page + 1}",
+                callback_data=KeyedPageCallback(
+                    "ap", token, backend, view_page + 1
+                ).encode(),
             )
         )
     rows.append(nav)
 
     source_buttons = [
         InlineKeyboardButton(
-            text=("✓ " if index == backend_index else "") + EPISODE_SERVICE.display_name(backend),
-            callback_data=f"ap:{token}:{index}:0",
+            text=("✓ " if candidate == backend else "")
+            + EPISODE_SERVICE.display_name(candidate),
+            callback_data=KeyedPageCallback("ap", token, candidate, 0).encode(),
         )
-        for index, backend in enumerate(backends)
+        for candidate in backends
     ]
-    rows.extend(source_buttons[index:index + 2] for index in range(0, len(source_buttons), 2))
-    rows.append([
-        InlineKeyboardButton(
-            text=text("common", "back", locale=locale),
-            callback_data=f"av:{token}:main:0",
-        )
-    ])
+    rows.extend(
+        source_buttons[index : index + 2] for index in range(0, len(source_buttons), 2)
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=text("common", "back", locale=locale),
+                callback_data=f"av:{token}:main:0",
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -151,27 +181,26 @@ async def edit_episodes_view(
     *,
     view_page: int,
     locale: str,
-    backend_index: int | None = None,
+    backend: str | None = None,
 ) -> None:
     backends = EPISODE_SERVICE.available_backends(session.anime.identity)
     if not backends:
         await message.edit_text(
             text=text("card", "episodes_load_failed", locale=locale),
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[
-                    InlineKeyboardButton(
-                        text=text("common", "back", locale=locale),
-                        callback_data=f"av:{token}:main:0",
-                    )
-                ]]
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text=text("common", "back", locale=locale),
+                            callback_data=f"av:{token}:main:0",
+                        )
+                    ]
+                ]
             ),
         )
         return
 
-    selected_index = 0 if backend_index is None else int(backend_index)
-    if selected_index < 0 or selected_index >= len(backends):
-        raise ValueError("Episode backend index is out of range")
-    backend = backends[selected_index]
+    backend = resolve_backend_selector(backend, backends)
     source_name = EPISODE_SERVICE.display_name(backend)
 
     view_page = max(0, int(view_page))
@@ -191,23 +220,25 @@ async def edit_episodes_view(
             await message.edit_text(
                 text=text("card", "episodes_load_failed", locale=locale),
                 reply_markup=InlineKeyboardMarkup(
-                    inline_keyboard=[[
-                        InlineKeyboardButton(
-                            text=text("common", "back", locale=locale),
-                            callback_data=f"av:{token}:main:0",
-                        )
-                    ]]
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text=text("common", "back", locale=locale),
+                                callback_data=f"av:{token}:main:0",
+                            )
+                        ]
+                    ]
                 ),
             )
             return
 
-    items = page.items[offset:offset + EPISODES_PER_VIEW]
+    items = page.items[offset : offset + EPISODES_PER_VIEW]
     if not items and view_page > 0:
         view_page -= 1
         upstream_page, offset = _view_slice(view_page)
         cache_key = (backend, upstream_page)
         page = session.episode_pages.get(cache_key) or page
-        items = page.items[offset:offset + EPISODES_PER_VIEW]
+        items = page.items[offset : offset + EPISODES_PER_VIEW]
 
     has_prev = view_page > 0
     has_next = offset + EPISODES_PER_VIEW < len(page.items) or page.has_next
@@ -216,7 +247,7 @@ async def edit_episodes_view(
         token,
         items,
         backends=backends,
-        backend_index=selected_index,
+        backend=backend,
         view_page=view_page,
         has_prev=has_prev,
         has_next=has_next,
@@ -271,20 +302,38 @@ def _episode_detail_text(
         and value != _episode_title(episode, locale)
     ]
     if other_titles:
-        lines.append(text("card", "episode_other_titles", locale=locale, value=" / ".join(other_titles)))
+        lines.append(
+            text(
+                "card",
+                "episode_other_titles",
+                locale=locale,
+                value=" / ".join(other_titles),
+            )
+        )
     if episode.aired_at:
-        lines.append(text("card", "episode_date", locale=locale, value=episode.aired_at.isoformat()))
+        lines.append(
+            text(
+                "card",
+                "episode_date",
+                locale=locale,
+                value=episode.aired_at.isoformat(),
+            )
+        )
     duration = _duration_text(episode.duration_seconds, locale)
     if duration:
         lines.append(duration)
     if episode.score is not None:
-        lines.append(text("card", "episode_score", locale=locale, value=f"{episode.score:g}"))
+        lines.append(
+            text("card", "episode_score", locale=locale, value=f"{episode.score:g}")
+        )
     if episode.filler:
         lines.append(text("card", "episode_filler", locale=locale))
     if episode.recap:
         lines.append(text("card", "episode_recap", locale=locale))
     if episode.synopsis:
-        lines.extend(["", text("card", "episode_synopsis", locale=locale), episode.synopsis])
+        lines.extend(
+            ["", text("card", "episode_synopsis", locale=locale), episode.synopsis]
+        )
     return "\n".join(lines)
 
 
@@ -296,15 +345,13 @@ async def edit_episode_detail(
     episode_number: int,
     return_page: int,
     locale: str,
-    backend_index: int = 0,
+    backend: str = "jikan",
 ) -> None:
     backends = EPISODE_SERVICE.available_backends(session.anime.identity)
-    if not backends:
-        backend_index = 0
+    if backends:
+        backend = resolve_backend_selector(backend, backends)
+    elif not backend:
         backend = "jikan"
-    else:
-        backend_index = max(0, min(int(backend_index), len(backends) - 1))
-        backend = backends[backend_index]
     source_name = EPISODE_SERVICE.display_name(backend)
 
     cache_key = (backend, int(episode_number))
@@ -332,25 +379,31 @@ async def edit_episode_detail(
     rows: list[list[InlineKeyboardButton]] = []
     mal_url = urls.get("MyAnimeList")
     if mal_url:
-        rows.append([
-            InlineKeyboardButton(
-                text=text("card", "open_mal", locale=locale),
-                url=mal_url,
-            )
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=text("card", "open_mal", locale=locale),
+                    url=mal_url,
+                )
+            ]
+        )
     anidb_url = urls.get("AniDB")
     if anidb_url:
         rows.append([InlineKeyboardButton(text="AniDB", url=anidb_url)])
-    rows.append([
-        InlineKeyboardButton(
-            text=text("card", "back_to_episodes", locale=locale),
-            callback_data=f"ap:{token}:{backend_index}:{max(0, return_page)}",
-        ),
-        InlineKeyboardButton(
-            text=text("common", "back", locale=locale),
-            callback_data=f"av:{token}:main:0",
-        ),
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=text("card", "back_to_episodes", locale=locale),
+                callback_data=KeyedPageCallback(
+                    "ap", token, backend, max(0, return_page)
+                ).encode(),
+            ),
+            InlineKeyboardButton(
+                text=text("common", "back", locale=locale),
+                callback_data=f"av:{token}:main:0",
+            ),
+        ]
+    )
     keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
 
     try:
