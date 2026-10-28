@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import inspect
 import unittest
-from unittest.mock import patch
 
 from aiogram.types import InputRichMessage
 
@@ -15,14 +14,8 @@ from bots.telegram.people_portraits import (
     handle_people_callback,
 )
 from bots.telegram.search_ui import register_search_handlers
-from bots.telegram.transports.official import (
-    OfficialTelegramTransport,
-    TRANSPORT as OFFICIAL_TRANSPORT,
-)
-from bots.telegram.transports.tgapi import (
-    LocalTelegramTransport,
-    TRANSPORT as TGAPI_TRANSPORT,
-)
+from bots.telegram.transports.official import OfficialTelegramTransport
+from bots.telegram.transports.tgapi import LocalTelegramTransport
 from core.canonicalization import (
     canonical_genre,
     canonical_role,
@@ -32,6 +25,7 @@ from core.canonicalization import (
 )
 from core.contracts import AnimeSearchProvider, AnimeSource
 from core.http_config import USER_AGENT
+from core.settings import TelegramSettings
 from core.models import (
     AggregatedAnime,
     AnimeRecord,
@@ -94,19 +88,20 @@ class StartupWiringTests(unittest.TestCase):
         self.assertNotIn(".messae", inspect.getsource(card_handlers))
 
     def test_telegram_transport_selection(self) -> None:
-        with patch.dict("os.environ", {}, clear=True):
-            transport = select_transport()
-            self.assertIs(transport, OFFICIAL_TRANSPORT)
-            self.assertIsInstance(transport, OfficialTelegramTransport)
+        base = dict(
+            bot_token="123456:TEST_TOKEN",
+            bot_api_local=False,
+            session_ttl_seconds=3600,
+            anime_input_ttl_seconds=300,
+            admin_user_ids=(),
+        )
+        official = select_transport(TelegramSettings(bot_api_url="", **base))
+        local = select_transport(
+            TelegramSettings(bot_api_url="http://127.0.0.1:8081", **base)
+        )
 
-        with patch.dict(
-            "os.environ",
-            {"TELEGRAM_BOT_API_URL": "http://127.0.0.1:8081"},
-            clear=True,
-        ):
-            transport = select_transport()
-            self.assertIs(transport, TGAPI_TRANSPORT)
-            self.assertIsInstance(transport, LocalTelegramTransport)
+        self.assertIsInstance(official, OfficialTelegramTransport)
+        self.assertIsInstance(local, LocalTelegramTransport)
 
     def test_canonicalization_contracts(self) -> None:
         self.assertEqual(canonical_genre("Fantasy"), canonical_genre("Фэнтези"))

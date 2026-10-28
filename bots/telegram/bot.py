@@ -13,11 +13,11 @@ from bots.telegram.people_portraits import handle_people_callback
 from bots.telegram.rate_limit import TelegramRateLimitMiddleware
 from bots.telegram.search_ui import register_search_handlers
 from bots.telegram.transports import TelegramTransport
-from bots.telegram.transports.official import TRANSPORT as OFFICIAL_TRANSPORT
-from bots.telegram.transports.tgapi import TRANSPORT as TGAPI_TRANSPORT
+from bots.telegram.transports.official import OfficialTelegramTransport
+from bots.telegram.transports.tgapi import LocalTelegramTransport
 from core.logging_config import configure_logging
 from core.models import SearchCandidate
-from core.settings import AppSettings, get_settings
+from core.settings import AppSettings, TelegramSettings, get_settings
 from localization import text
 from mappings.runtime import periodic_mapping_updates
 from services.access_control import telegram_admin_ids
@@ -26,12 +26,12 @@ from services.rate_limits import PERSONAL_RATE_LIMITER
 from services.user_settings import get_user_locale
 
 
-def select_transport(settings: AppSettings | None = None) -> TelegramTransport:
-    """Select official Telegram API or local tg-bot-api from configuration."""
-    settings = settings or AppSettings.from_env()
-    if settings.telegram.bot_api_url:
-        return TGAPI_TRANSPORT
-    return OFFICIAL_TRANSPORT
+def select_transport(settings: TelegramSettings | None = None) -> TelegramTransport:
+    """Select official Telegram API or local tg-bot-api from frozen configuration."""
+    settings = settings or get_settings().telegram
+    if settings.bot_api_url:
+        return LocalTelegramTransport(settings)
+    return OfficialTelegramTransport(settings)
 
 
 async def _aggregate_and_cleanup_search(
@@ -106,7 +106,7 @@ async def run_bot(
         ),
     )
     context = context or AppContext.create(settings)
-    transport = transport or select_transport(settings)
+    transport = transport or select_transport(settings.telegram)
 
     logging.info("Bot platform: Telegram")
     logging.info("Telegram transport: %s", transport.mode_name)
