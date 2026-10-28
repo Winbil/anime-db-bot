@@ -8,7 +8,7 @@ from typing import Iterable
 
 from mappings.config import MappingSourceSpec, mappings_db_path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,10 +146,30 @@ class MappingDatabaseBuilder:
                 target_id TEXT NOT NULL,
                 action TEXT NOT NULL CHECK(action IN ('accept', 'reject')),
                 reason TEXT NOT NULL DEFAULT '',
+                author TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY (
                     source_provider, source_id, target_provider, target_id
                 )
             ) WITHOUT ROWID;
+
+            CREATE TABLE mapping_override_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_provider TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                target_provider TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                event TEXT NOT NULL CHECK(event IN ('set', 'delete')),
+                override_action TEXT NOT NULL CHECK(override_action IN ('accept', 'reject')),
+                reason TEXT NOT NULL DEFAULT '',
+                author TEXT NOT NULL DEFAULT '',
+                changed_at TEXT NOT NULL
+            );
+
+            CREATE INDEX mapping_override_history_route_idx
+                ON mapping_override_history(
+                    source_provider, source_id, target_provider, target_id, changed_at
+                );
             """
         )
         self.conn.execute(
