@@ -7,12 +7,12 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-import httpx
-
 from core.canonicalization import canonical_genre_token, canonical_role_token, voice_role_token
+from core.http_client import http_request
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord, CharacterRecord, PersonCredit, PopularityRanking
 from core.settings import AppSettings, SourceSettings
+from core.source_errors import SourceInvalidResponse
 from localization import source_value_key
 
 DEFAULT_ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
@@ -292,31 +292,33 @@ async def _graphql(
     variables: dict[str, Any],
     settings: SourceSettings | None = None,
 ) -> dict[str, Any]:
-    async with httpx.AsyncClient(
+    response = await http_request(
+        "anilist",
+        "POST",
+        graphql_url(settings),
+        operation="graphql",
         timeout=20.0,
         headers=_headers(settings),
-        follow_redirects=True,
-    ) as client:
-        response = await client.post(
-            graphql_url(settings),
-            json={"query": query, "variables": variables},
-        )
-
-    if response.is_error:
-        preview = response.text.replace("\n", " ")[:800]
-        retry_after = response.headers.get("Retry-After")
-        retry_text = f"; retry after {retry_after}s" if retry_after else ""
-        raise RuntimeError(f"AniList HTTP {response.status_code}{retry_text}: {preview}")
+        json={"query": query, "variables": variables},
+    )
 
     try:
         body = response.json()
     except ValueError as exc:
         preview = response.text.replace("\n", " ")[:800]
-        raise RuntimeError(f"AniList returned non-JSON response: {preview}") from exc
+        raise SourceInvalidResponse(
+            f"AniList returned non-JSON response: {preview}",
+            source="anilist",
+            operation="graphql",
+        ) from exc
 
     if body.get("errors"):
         messages = [error.get("message", str(error)) for error in body["errors"]]
-        raise RuntimeError("AniList GraphQL error: " + "; ".join(messages))
+        raise SourceInvalidResponse(
+            "AniList GraphQL error: " + "; ".join(messages),
+            source="anilist",
+            operation="graphql",
+        )
 
     return body.get("data", {})
 
@@ -614,7 +616,7 @@ class AniListSource:
             self._settings,
         )
         raw = data.get("Media")
-        if not raw:
+        if not rak:
             return None
         if str(raw.get("idMal") or "") != mal_id:
             return None
