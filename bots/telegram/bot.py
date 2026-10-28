@@ -22,7 +22,6 @@ from localization import text
 from mappings.runtime import periodic_mapping_updates
 from services.access_control import telegram_admin_ids
 from services.app_context import AppContext, activate_app_context
-from services.rate_limits import PERSONAL_RATE_LIMITER
 from services.user_settings import get_user_locale
 
 
@@ -113,8 +112,8 @@ async def run_bot(
     logging.info("Configured Telegram administrators: %d", len(telegram_admin_ids()))
     logging.info(
         "Personal rate limit: %d/min/user, %d/hour/user (admins bypass personal limit)",
-        PERSONAL_RATE_LIMITER.per_minute,
-        PERSONAL_RATE_LIMITER.per_hour,
+        context.personal_rate_limiter.per_minute,
+        context.personal_rate_limiter.per_hour,
     )
     logging.info("Default search providers: %s", context.search_service.provider_name)
     logging.info(
@@ -141,7 +140,7 @@ async def run_bot(
 
             dp = build_dispatcher(mode_name=transport.mode_name)
             moderation = TelegramModerationMiddleware()
-            rate_limit = TelegramRateLimitMiddleware()
+            rate_limit = TelegramRateLimitMiddleware(context.personal_rate_limiter)
             dp.message.outer_middleware(moderation)
             dp.message.outer_middleware(rate_limit)
             dp.callback_query.outer_middleware(moderation)

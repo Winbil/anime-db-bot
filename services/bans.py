@@ -3,8 +3,12 @@ from __future__ import annotations
 import sqlite3
 import threading
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
+from typing import Iterator
 
 from core.settings import get_settings
 from core.sqlite import managed_sqlite_connection
@@ -180,7 +184,29 @@ class SQLiteBanStore:
             connection.execute("DELETE FROM bans")
 
 
-BANS = SQLiteBanStore(get_settings().storage.bans_db_path)
+_CURRENT_BAN_STORE: ContextVar[SQLiteBanStore | None] = ContextVar(
+    "anime_db_bot_ban_store",
+    default=None,
+)
+
+
+@lru_cache(maxsize=1)
+def _default_ban_store() -> SQLiteBanStore:
+    """Compatibility store for standalone calls outside an active AppContext."""
+    return SQLiteBanStore(get_settings().storage.bans_db_path)
+
+
+def get_ban_store() -> SQLiteBanStore:
+    return _CURRENT_BAN_STORE.get() or _default_ban_store()
+
+
+@contextmanager
+def activate_ban_store(store: SQLiteBanStore) -> Iterator[SQLiteBanStore]:
+    token: Token[SQLiteBanStore | None] = _CURRENT_BAN_STORE.set(store)
+    try:
+        yield store
+    finally:
+        _CURRENT_BAN_STORE.reset(token)
 
 
 def ban_user(
@@ -191,7 +217,7 @@ def ban_user(
     duration_seconds: int | None = None,
     reason: str | None = None,
 ) -> BanRecord:
-    return BANS.ban(
+    return get_ban_store().ban(
         platform,
         user_id,
         banned_by=banned_by,
@@ -201,8 +227,8 @@ def ban_user(
 
 
 def get_active_ban(platform: str, user_id: int) -> BanRecord | None:
-    return BANS.get_active(platform, user_id)
+    return get_ban_store().get_active(platform, user_id)
 
 
 def unban_user(platform: str, user_id: int) -> bool:
-    return BANS.unban(platform, user_id)
+    return get_ban_store().unban(platform, user_id)

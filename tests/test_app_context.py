@@ -3,8 +3,14 @@ from __future__ import annotations
 import unittest
 
 from bots.telegram.card import service as card_service
+from services import bans as bans_service
+from services import rate_limits as rate_limits_service
+from services import user_settings as user_settings_service
 from core.settings import AppSettings
 from services.app_context import AppContext, activate_app_context, get_app_context
+from services.bans import get_ban_store
+from services.rate_limits import get_personal_rate_limiter, get_upstream_rate_limiter
+from services.user_settings import get_user_settings_store
 
 
 class AppContextTests(unittest.IsolatedAsyncioTestCase):
@@ -52,6 +58,10 @@ class AppContextTests(unittest.IsolatedAsyncioTestCase):
 
         with activate_app_context(context):
             self.assertIs(get_app_context(), context)
+            self.assertIs(get_user_settings_store(), context.user_settings_store)
+            self.assertIs(get_ban_store(), context.ban_store)
+            self.assertIs(get_personal_rate_limiter(), context.personal_rate_limiter)
+            self.assertIs(get_upstream_rate_limiter(), context.upstream_rate_limiter)
             self.assertTrue(context.sources)
             self.assertTrue(context.search_service.provider_name)
 
@@ -72,6 +82,16 @@ class AppContextTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(card_service, name))
+
+    def test_runtime_state_modules_export_no_import_time_instances(self) -> None:
+        for module, names in (
+            (bans_service, ("BANS",)),
+            (user_settings_service, ("USER_SETTINGS",)),
+            (rate_limits_service, ("PERSONAL_RATE_LIMITER", "UPSTREAM_RATE_LIMITER")),
+        ):
+            for name in names:
+                with self.subTest(module=module.__name__, name=name):
+                    self.assertFalse(hasattr(module, name))
 
 
 if __name__ == "__main__":
