@@ -13,6 +13,7 @@ from services.characters import CharacterService
 from services.direct_lookup import DirectIdLookupService
 from services.episodes import EpisodeService
 from services.identity_aggregator import AnimeAggregator
+from services.people_progress import PeopleProgressService
 from services.search import SearchService
 from services.source_health import SourceHealthRegistry
 from services.trailers import TrailerService
@@ -35,6 +36,7 @@ class AppContext:
     character_service: CharacterService
     episode_service: EpisodeService
     trailer_service: TrailerService
+    people_progress_service: PeopleProgressService
     direct_lookup: DirectIdLookupService
 
     @classmethod
@@ -44,6 +46,7 @@ class AppContext:
         source_health = SourceHealthRegistry()
         search_providers = get_search_providers(settings.sources)
         sources = get_sources(source_health, settings.sources)
+        aggregator = AnimeAggregator(sources)
         return cls(
             settings=settings,
             http=http,
@@ -51,10 +54,15 @@ class AppContext:
             search_providers=search_providers,
             sources=sources,
             search_service=SearchService(search_providers, settings=settings.search),
-            aggregator=AnimeAggregator(sources),
+            aggregator=aggregator,
             character_service=CharacterService(sources),
             episode_service=EpisodeService(get_episode_sources(settings.sources)),
             trailer_service=TrailerService(get_trailer_sources(settings.sources)),
+            people_progress_service=PeopleProgressService(
+                sources,
+                aggregator,
+                portrait_batch_size=settings.sources.people_portrait_batch_size,
+            ),
             direct_lookup=DirectIdLookupService(sources),
         )
 

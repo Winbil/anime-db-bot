@@ -9,98 +9,19 @@ from bots.telegram.card.constants import ALL_SOURCE_LABELS
 from bots.telegram.card.renderer import plain_text_to_rich_html
 from core.canonicalization import display_person_name, localize_role_token
 from core.models import AggregatedAnime, PersonCredit
+from core.people import (
+    PEOPLE_SECTIONS,
+    all_people as _all_people,
+    dedupe_strings as _dedupe,
+    first_people_page as _first_people_page,
+    people_for_scope as _people_for_scope,
+    people_state as _people_state,
+    portrait_source_names as _portrait_source_names,
+    portrait_urls as _portrait_urls,
+    section_mapping as _section_mapping,
+    sources_with_portraits as _sources_with_portraits,
+)
 from localization import text
-
-PEOPLE_SECTIONS = {"staff", "voices"}
-
-
-def _dedupe(values: list[str]) -> list[str]:
-    result: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        value = " ".join((value or "").split()).strip()
-        key = value.casefold()
-        if value and key not in seen:
-            seen.add(key)
-            result.append(value)
-    return result
-
-
-def _section_mapping(anime: AggregatedAnime, section: str) -> dict[str, list[PersonCredit]]:
-    if section == "staff":
-        return anime.staff_by_source
-    if section == "voices":
-        return anime.voices_by_source
-    return {}
-
-
-def _all_people(anime: AggregatedAnime, section: str) -> list[PersonCredit]:
-    if section == "staff":
-        return anime.staff
-    if section == "voices":
-        return anime.voices
-    return []
-
-
-def _portrait_urls(
-    person: PersonCredit,
-    *,
-    source: str | None = None,
-    source_order: list[str] | None = None,
-) -> list[str]:
-    if source is not None:
-        return _dedupe(list(person.portraits.get(source, [])))
-    result: list[str] = []
-    seen_sources: set[str] = set()
-    for source_name in source_order or []:
-        seen_sources.add(source_name)
-        result.extend(person.portraits.get(source_name, []))
-    for source_name, urls in person.portraits.items():
-        if source_name not in seen_sources:
-            result.extend(urls)
-    return _dedupe(result)
-
-
-def _portrait_source_names(person: PersonCredit, source_order: list[str]) -> list[str]:
-    available = {
-        source for source, urls in person.portraits.items() if _dedupe(list(urls or []))
-    }
-    ordered = [source for source in source_order if source in available]
-    ordered.extend(sorted(available - set(ordered)))
-    return ordered
-
-
-def _sources_with_portraits(anime: AggregatedAnime, section: str) -> list[str]:
-    mapping = _section_mapping(anime, section)
-    available = {
-        source
-        for source, people in mapping.items()
-        if any(_portrait_urls(person, source=source) for person in people)
-    }
-    ordered = [source for source in anime.sources if source in available]
-    ordered.extend(sorted(available - set(ordered)))
-    return ordered
-
-
-def _people_for_scope(anime: AggregatedAnime, section: str, source: str | None) -> list[PersonCredit]:
-    return _all_people(anime, section) if source is None else _section_mapping(anime, section).get(source, [])
-
-
-def _people_state(
-    anime: AggregatedAnime,
-    section: str,
-    source: str | None,
-) -> tuple[list[PersonCredit], list[PersonCredit]]:
-    without: list[PersonCredit] = []
-    with_portraits: list[PersonCredit] = []
-    for person in _people_for_scope(anime, section, source):
-        urls = _portrait_urls(person, source=source, source_order=anime.sources)
-        (with_portraits if urls else without).append(person)
-    return without, with_portraits
-
-
-def _first_people_page(without: list[PersonCredit], with_portraits: list[PersonCredit]) -> int:
-    return 0 if without or not with_portraits else 1
 
 
 def _localized_roles(person: PersonCredit, locale: str) -> str:
@@ -135,7 +56,11 @@ def _page_text(
     if source:
         title_value += f" — {source}"
     if page == 0:
-        lines = [f"{title_value}:", "", text("people", "without_portrait", locale=locale)]
+        lines = [
+            f"{title_value}:",
+            "",
+            text("people", "without_portrait", locale=locale),
+        ]
         lines.extend(_person_line(person, locale) for person in without)
         if not without:
             lines.append(text("people", "none", locale=locale))
@@ -151,7 +76,14 @@ def _page_text(
         text("people", "roles", locale=locale, roles=_localized_roles(person, locale)),
     ]
     if portrait_sources:
-        lines.append(text("people", "portraits", locale=locale, sources=", ".join(portrait_sources)))
+        lines.append(
+            text(
+                "people",
+                "portraits",
+                locale=locale,
+                sources=", ".join(portrait_sources),
+            )
+        )
     return "\n".join(lines), urls, len(without) + page, total, page
 
 
@@ -164,10 +96,14 @@ def _portrait_html(urls: list[str]) -> str:
 
 
 def _rich(text_value: str, urls: list[str]) -> InputRichMessage:
-    return InputRichMessage(html=_portrait_html(urls) + plain_text_to_rich_html(text_value))
+    return InputRichMessage(
+        html=_portrait_html(urls) + plain_text_to_rich_html(text_value)
+    )
 
 
-def _page_callback(token: str, section: str, source_index: int | None, page: int) -> str:
+def _page_callback(
+    token: str, section: str, source_index: int | None, page: int
+) -> str:
     if source_index is None:
         return ViewCallback(token, section, page).encode()
     return SectionSourceCallback(token, section, source_index, page).encode()
@@ -186,10 +122,14 @@ def _source_rows(
     if not sources:
         return []
     all_label = text("card", ALL_SOURCE_LABELS[section], locale=locale)
-    rows: list[list[InlineKeyboardButton]] = [[InlineKeyboardButton(
-        text=("✓ " + all_label) if selected_source_index is None else all_label,
-        callback_data=ViewCallback(token, section, 0).encode(),
-    )]]
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text=("✓ " + all_label) if selected_source_index is None else all_label,
+                callback_data=ViewCallback(token, section, 0).encode(),
+            )
+        ]
+    ]
     buttons = [
         InlineKeyboardButton(
             text=("✓ " + source) if selected_source_index == index else source,
@@ -197,7 +137,7 @@ def _source_rows(
         )
         for index, source in enumerate(sources)
     ]
-    rows.extend(buttons[index:index + 2] for index in range(0, len(buttons), 2))
+    rows.extend(buttons[index : index + 2] for index in range(0, len(buttons), 2))
     return rows
 
 
@@ -218,17 +158,42 @@ def _keyboard(
 ) -> InlineKeyboardMarkup:
     nav: list[InlineKeyboardButton] = []
     if page > first_page:
-        nav.append(InlineKeyboardButton(text="◀️", callback_data=_page_callback(token, section, source_index, page - 1)))
-    nav.append(InlineKeyboardButton(
-        text=text("people", "shown", locale=locale, shown=shown, total=total),
-        callback_data="noop",
-    ))
+        nav.append(
+            InlineKeyboardButton(
+                text="◀️",
+                callback_data=_page_callback(token, section, source_index, page - 1),
+            )
+        )
+    nav.append(
+        InlineKeyboardButton(
+            text=text("people", "shown", locale=locale, shown=shown, total=total),
+            callback_data="noop",
+        )
+    )
     if page < max_page or has_more:
-        nav.append(InlineKeyboardButton(text="▶️", callback_data=_page_callback(token, section, source_index, page + 1)))
+        nav.append(
+            InlineKeyboardButton(
+                text="▶️",
+                callback_data=_page_callback(token, section, source_index, page + 1),
+            )
+        )
     rows: list[list[InlineKeyboardButton]] = [nav]
-    rows.extend(_source_rows(token, anime, section, source_index, locale=locale, source_names=source_names))
-    rows.append([InlineKeyboardButton(
-        text=text("common", "back", locale=locale),
-        callback_data=ViewCallback(token, "main", 0).encode(),
-    )])
+    rows.extend(
+        _source_rows(
+            token,
+            anime,
+            section,
+            source_index,
+            locale=locale,
+            source_names=source_names,
+        )
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=text("common", "back", locale=locale),
+                callback_data=ViewCallback(token, "main", 0).encode(),
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
