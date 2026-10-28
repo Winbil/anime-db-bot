@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+import sqlite3
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -563,7 +564,7 @@ def register_admin_handlers(dp: Dispatcher) -> None:
                     await message.answer(_t(locale, "mapping_delete_missing"))
                     return
                 response_key = "mapping_confirmed_delete"
-        except (FileNotFoundError, OSError, ValueError) as exc:
+        except (FileNotFoundError, OSError, ValueError, sqlite3.Error) as exc:
             await message.answer(
                 _t(
                     locale,
