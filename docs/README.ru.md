@@ -1,3 +1,5 @@
+> **Проект создан с помощью AI:** при разработке этого проекта использовался искусственный интеллект.
+
 <p align="center">
   <a href="../README.md">English</a> · <strong>Русский</strong> · <a href="README.ja.md">日本語</a>
 </p>
