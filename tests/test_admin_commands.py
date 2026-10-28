@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import sqlite3
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
@@ -235,6 +236,26 @@ class AdminAiogramIntegrationTests(unittest.IsolatedAsyncioTestCase):
             author="telegram:42",
         )
         self.assertIn("Mapping override применён", confirmed)
+
+    async def test_mapping_database_error_is_reported_to_admin(self) -> None:
+        with (
+            patch("bots.telegram.admin.is_telegram_admin", return_value=True),
+            patch("bots.telegram.admin.get_user_locale", return_value="ru"),
+            patch(
+                "bots.telegram.admin.set_mapping_override",
+                side_effect=sqlite3.OperationalError("database is locked"),
+            ),
+        ):
+            preview = await self._feed(
+                "/mapping_set accept mal 123 anidb 456 verified manually"
+            )
+            match = re.search(r"/mapping_confirm ([0-9a-f]{8})", preview)
+            self.assertIsNotNone(match)
+            token = match.group(1) if match is not None else ""
+            failed = await self._feed(f"/mapping_confirm {token}")
+
+        self.assertIn("Не удалось применить изменение", failed)
+        self.assertIn("database is locked", failed)
 
     async def test_mapping_confirmation_is_scoped_to_creating_admin(self) -> None:
         with (
