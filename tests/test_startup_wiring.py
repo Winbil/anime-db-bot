@@ -8,7 +8,6 @@ from aiogram.types import InputRichMessage
 from bots.telegram.bot import _CallbackRoutingMiddleware, select_transport
 from bots.telegram.card.constants import SOURCE_SELECTABLE_SECTIONS
 from bots.telegram.card.selectors import source_section_sources
-from bots.telegram.card.service import SEARCH_SERVICE, SOURCES
 from bots.telegram.people_portraits import _sources_with_portraits, handle_people_callback
 from bots.telegram.search_ui import register_search_handlers
 from bots.telegram.transports.official import (
@@ -51,15 +50,15 @@ class StartupWiringTests(unittest.TestCase):
         self.assertTrue(providers)
         self.assertTrue(provider_map)
         self.assertTrue(sources)
-        self.assertTrue(SEARCH_SERVICE.provider_name)
-        self.assertTrue(SOURCES)
         self.assertTrue(USER_AGENT.startswith("anime-db-bot/"))
         self.assertTrue(callable(handle_people_callback))
         self.assertTrue(callable(register_search_handlers))
         self.assertIsNotNone(_CallbackRoutingMiddleware())
 
-        SearchService(providers)
-        AnimeAggregator(sources)
+        search_service = SearchService(providers)
+        aggregator = AnimeAggregator(sources)
+        self.assertTrue(search_service.provider_name)
+        self.assertIsNotNone(aggregator)
 
         for imported in (
             InputRichMessage,

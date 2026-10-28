@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
+from typing import Any
 
 from aiogram.types import Message
 
@@ -8,24 +10,45 @@ from bots.telegram.card.renderer import send_anime_view
 from bots.telegram.card.state import remember_anime
 from core.models import SearchCandidate
 from localization import text
-from search.registry import get_search_providers
-from services.characters import CharacterService
-from services.episodes import EpisodeService
-from services.identity_aggregator import AnimeAggregator
-from services.search import SearchService
-from services.trailers import TrailerService
+from services.app_context import get_app_context
 from services.user_settings import get_user_locale
-from sources.episode_registry import get_episode_sources
-from sources.registry import get_sources
-from sources.trailer_registry import get_trailer_sources
 
-SEARCH_PROVIDERS = get_search_providers()
-SOURCES = get_sources()
-SEARCH_SERVICE = SearchService(SEARCH_PROVIDERS)
-AGGREGATOR = AnimeAggregator(SOURCES)
-CHARACTER_SERVICE = CharacterService(SOURCES)
-EPISODE_SERVICE = EpisodeService(get_episode_sources())
-TRAILER_SERVICE = TrailerService(get_trailer_sources())
+
+class _ContextAttributeProxy:
+    """Compatibility view over one AppContext attribute.
+
+    It never constructs services at import time. Legacy UI modules can migrate to
+    explicit context access incrementally without restoring module-global service
+    ownership.
+    """
+
+    def __init__(self, attribute: str) -> None:
+        self._attribute = attribute
+
+    def _value(self) -> Any:
+        return getattr(get_app_context(), self._attribute)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._value(), name)
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter(self._value())
+
+    def __len__(self) -> int:
+        return len(self._value())
+
+    def __bool__(self) -> bool:
+        return bool(self._value())
+
+
+# Temporary compatibility surfaces for UI modules. These are lazy views, not
+# service singletons; AppContext remains the sole owner of the actual objects.
+SEARCH_SERVICE = _ContextAttributeProxy("search_service")
+SOURCES = _ContextAttributeProxy("sources")
+AGGREGATOR = _ContextAttributeProxy("aggregator")
+CHARACTER_SERVICE = _ContextAttributeProxy("character_service")
+EPISODE_SERVICE = _ContextAttributeProxy("episode_service")
+TRAILER_SERVICE = _ContextAttributeProxy("trailer_service")
 
 
 async def aggregate_and_send(
@@ -40,7 +63,7 @@ async def aggregate_and_send(
         return
 
     try:
-        anime = await AGGREGATOR.aggregate(candidate)
+        anime = await get_app_context().aggregator.aggregate(candidate)
     except Exception as exc:
         logging.error(
             "Anime aggregation failed for %s: %s: %s",
