@@ -8,7 +8,15 @@ from typing import Any, Awaitable, Callable, TypeVar
 import httpx
 
 from core.identity import AnimeIdentity
-from core.models import AnimeRecord, CharacterRecord, PersonCredit
+from core.models import (
+    AnimeRecord,
+    CharacterRecord,
+    EpisodePage,
+    EpisodeRecord,
+    PersonCredit,
+    SearchPage,
+    TrailerRecord,
+)
 from core.people_loading import PeopleBatch
 from core.source_errors import SourceError, SourceUnavailable, normalize_source_error
 from services.source_health import SourceHealthRegistry
@@ -202,6 +210,118 @@ class PeopleRetryingSourceProxy(RetryingSourceProxy):
         )
 
 
+class RetryingSearchProviderProxy:
+    """Apply the shared retry/circuit policy to text-search providers."""
+
+    def __init__(
+        self,
+        provider: Any,
+        health: SourceHealthRegistry | None = None,
+        *,
+        health_key: str | None = None,
+    ) -> None:
+        self._provider = provider
+        self._health = health
+        self.name = provider.name
+        self.source_key = health_key or getattr(provider, "source_key", "")
+
+    @property
+    def _health_key(self) -> str:
+        return str(self.source_key or self.name).strip().casefold()
+
+    async def search(
+        self,
+        query: str,
+        *,
+        page: int,
+        limit: int,
+    ) -> SearchPage:
+        return await _retry_call(
+            self.name,
+            "search",
+            lambda: self._provider.search(query, page=page, limit=limit),
+            health=self._health,
+            health_key=self._health_key,
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._provider, name)
+
+
+class RetryingTrailerSourceProxy:
+    """Apply the shared retry/circuit policy to lazy trailer backends."""
+
+    def __init__(self, source: Any, health: SourceHealthRegistry | None = None) -> None:
+        self._source = source
+        self._health = health
+        self.name = source.name
+        self.display_name = source.display_name
+        self.source_key = source.source_key
+        self.backend_key = source.backend_key
+
+    @property
+    def _health_key(self) -> str:
+        return str(self.backend_key or self.source_key or self.name).strip().casefold()
+
+    async def load_trailers(self, identity: AnimeIdentity) -> list[TrailerRecord]:
+        return await _retry_call(
+            self.name,
+            "trailers",
+            lambda: self._source.load_trailers(identity),
+            health=self._health,
+            health_key=self._health_key,
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._source, name)
+
+
+class RetryingEpisodeSourceProxy:
+    """Apply the shared retry/circuit policy to lazy episode backends."""
+
+    def __init__(self, source: Any, health: SourceHealthRegistry | None = None) -> None:
+        self._source = source
+        self._health = health
+        self.name = source.name
+        self.display_name = source.display_name
+        self.source_key = source.source_key
+        self.backend_key = source.backend_key
+
+    @property
+    def _health_key(self) -> str:
+        return str(self.backend_key or self.source_key or self.name).strip().casefold()
+
+    async def load_episode_page(
+        self,
+        identity: AnimeIdentity,
+        *,
+        page: int = 1,
+    ) -> EpisodePage:
+        return await _retry_call(
+            self.name,
+            "episodes",
+            lambda: self._source.load_episode_page(identity, page=page),
+            health=self._health,
+            health_key=self._health_key,
+        )
+
+    async def load_episode(
+        self,
+        identity: AnimeIdentity,
+        episode_number: int,
+    ) -> EpisodeRecord | None:
+        return await _retry_call(
+            self.name,
+            "episode",
+            lambda: self._source.load_episode(identity, episode_number),
+            health=self._health,
+            health_key=self._health_key,
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._source, name)
+
+
 def resilient_source(
     source: Any,
     health: SourceHealthRegistry | None = None,
@@ -213,3 +333,26 @@ def resilient_source(
     ):
         return PeopleRetryingSourceProxy(source, health)
     return RetryingSourceProxy(source, health)
+
+
+def resilient_search_provider(
+    provider: Any,
+    health: SourceHealthRegistry | None = None,
+    *,
+    health_key: str | None = None,
+) -> RetryingSearchProviderProxy:
+    return RetryingSearchProviderProxy(provider, health, health_key=health_key)
+
+
+def resilient_trailer_source(
+    source: Any,
+    health: SourceHealthRegistry | None = None,
+) -> RetryingTrailerSourceProxy:
+    return RetryingTrailerSourceProxy(source, health)
+
+
+def resilient_episode_source(
+    source: Any,
+    health: SourceHealthRegistry | None = None,
+) -> RetryingEpisodeSourceProxy:
+    return RetryingEpisodeSourceProxy(source, health)
