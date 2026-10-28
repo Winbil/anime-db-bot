@@ -5,17 +5,17 @@ import re
 from datetime import datetime
 from typing import Any
 
-import httpx
-
 from core.canonicalization import (
     canonical_genre_token,
     canonical_role_key,
     canonical_role_token,
     is_primary_voice_role,
 )
+from core.http_client import http_request
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord, PersonCredit
 from core.settings import AppSettings, SourceSettings
+from core.source_errors import SourceInvalidResponse
 from localization import source_value_key
 
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
@@ -278,22 +278,46 @@ def _is_any_voice_role(value: str) -> bool:
     return canonical_role_key(value) == "voice_actor"
 
 
-async def _graphql(query: str, variables: dict[str, Any], settings: SourceSettings | None = None) -> dict[str, Any]:
-    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-    async with httpx.AsyncClient(timeout=15.0, headers=headers, follow_redirects=True) as client:
-        response = await client.post(graphql_url(settings), json={"query": query, "variables": variables})
-    if response.is_error:
-        preview = response.text.replace("\n", " ")[:800]
-        raise RuntimeError(f"Shikimori HTTP {response.status_code} from {response.url}: {preview}")
+async def _graphql(
+    query: str,
+    variables: dict[str, Any],
+    settings: SourceSettings | None = None,
+    *,
+    operation: str = "metadata",
+) -> dict[str, Any]:
+    response = await http_request(
+        "shikimori",
+        "POST",
+        graphql_url(settings),
+        operation=operation,
+        timeout=15.0,
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        json={"query": query, "variables": variables},
+    )
     try:
         body = response.json()
     except ValueError as exc:
         preview = response.text.replace("\n", " ")[:800]
-        raise RuntimeError(f"Shikimori returned non-JSON response from {response.url}: {preview}") from exc
+        raise SourceInvalidResponse(
+            f"Shikimori returned non-JSON response from {response.url}: {preview}",
+            source="shikimori",
+            operation=operation,
+        ) from exc
     if body.get("errors"):
         messages = [error.get("message", str(error)) for error in body["errors"]]
-        raise RuntimeError("Shikimori GraphQL error: " + "; ".join(messages))
-    return body.get("data", {})
+        raise SourceInvalidResponse(
+            "Shikimori GraphQL error: " + "; ".join(messages),
+            source="shikimori",
+            operation=operation,
+        )
+    data = body.get("data", {})
+    if not isinstance(data, dict):
+        raise SourceInvalidResponse(
+            "Shikimori GraphQL returned an unexpected data payload",
+            source="shikimori",
+            operation=operation,
+        )
+    return data
 
 
 async def _get_raw(anime_id: str, settings: SourceSettings | None = None) -> dict[str, Any] | None:
@@ -303,7 +327,7 @@ async def _get_raw(anime_id: str, settings: SourceSettings | None = None) -> dic
 
 
 async def _get_staff_raw(anime_id: str, settings: SourceSettings | None = None) -> dict[str, Any] | None:
-    data = await _graphql(STAFF_QUERY, {"ids": anime_id}, settings)
+    data = await _graphql(STAFF_QUERY, {"ids": anime_id}, settings, operation="people")
     animes = data.get("animes", [])
     return animes[0] if animes else None
 

@@ -291,17 +291,18 @@ async def _graphql(
     query: str,
     variables: dict[str, Any],
     settings: SourceSettings | None = None,
+    *,
+    operation: str = "metadata",
 ) -> dict[str, Any]:
     response = await http_request(
         "anilist",
         "POST",
         graphql_url(settings),
-        operation="graphql",
+        operation=operation,
         timeout=20.0,
         headers=_headers(settings),
         json={"query": query, "variables": variables},
     )
-
     try:
         body = response.json()
     except ValueError as exc:
@@ -309,7 +310,7 @@ async def _graphql(
         raise SourceInvalidResponse(
             f"AniList returned non-JSON response: {preview}",
             source="anilist",
-            operation="graphql",
+            operation=operation,
         ) from exc
 
     if body.get("errors"):
@@ -317,10 +318,17 @@ async def _graphql(
         raise SourceInvalidResponse(
             "AniList GraphQL error: " + "; ".join(messages),
             source="anilist",
-            operation="graphql",
+            operation=operation,
         )
 
-    return body.get("data", {})
+    data = body.get("data", {})
+    if not isinstance(data, dict):
+        raise SourceInvalidResponse(
+            "AniList GraphQL returned an unexpected data payload",
+            source="anilist",
+            operation=operation,
+        )
+    return data
 
 
 def _staff_from_connection(connection: dict[str, Any] | None) -> list[PersonCredit]:
@@ -384,6 +392,7 @@ async def _all_characters(
             CHARACTERS_PAGE_QUERY,
             {"id": media_id, "page": page},
             settings,
+            operation="people",
         )
         connection = ((data.get("Media") or {}).get("characters") or {})
         result.extend(_characters_from_connection(connection))
@@ -416,6 +425,7 @@ async def _all_staff(
             STAFF_PAGE_QUERY,
             {"id": media_id, "page": page},
             settings,
+            operation="people",
         )
         connection = ((data.get("Media") or {}).get("staff") or {})
         result.extend(_staff_from_connection(connection))
@@ -436,6 +446,7 @@ async def _all_voices(
             CHARACTERS_PAGE_QUERY,
             {"id": media_id, "page": page},
             settings,
+            operation="people",
         )
         connection = ((data.get("Media") or {}).get("characters") or {})
         result.extend(_voices_from_connection(connection))
@@ -616,7 +627,7 @@ class AniListSource:
             self._settings,
         )
         raw = data.get("Media")
-        if not rak:
+        if not raw:
             return None
         if str(raw.get("idMal") or "") != mal_id:
             return None

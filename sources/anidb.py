@@ -7,14 +7,14 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 from core.canonicalization import canonical_role_token, voice_role_token
+from core.http_client import http_request
 from core.http_config import USER_AGENT
 from core.identity import AnimeIdentity
 from core.models import AnimeRecord, CharacterRecord, EpisodePage, EpisodeRecord, PersonCredit
 from core.people_loading import PeopleBatch
 from core.settings import AppSettings, SourceSettings
+from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
 from services.rate_limits import wait_for_upstream
 
@@ -310,24 +310,38 @@ async def _network_xml(aid: str, settings: SourceSettings | None = None) -> byte
             "protover": 1,
         }
         try:
-            async with httpx.AsyncClient(
+            response = await http_request(
+                "anidb",
+                "GET",
+                _api_url(settings),
+                operation="metadata",
                 timeout=_timeout(settings),
-                follow_redirects=True,
                 headers={"User-Agent": USER_AGENT},
-            ) as client:
-                response = await client.get(_api_url(settings), params=params)
+                params=params,
+            )
         finally:
             _LAST_NETWORK_REQUEST_AT = time.monotonic()
-        response.raise_for_status()
         data = response.content
         if not data.strip():
-            raise RuntimeError("AniDB returned an empty response")
+            raise SourceInvalidResponse(
+                "AniDB returned an empty response",
+                source="anidb",
+                operation="metadata",
+            )
         try:
             root = ET.fromstring(data)
         except ET.ParseError as exc:
-            raise RuntimeError("AniDB returned invalid XML") from exc
+            raise SourceInvalidResponse(
+                "AniDB returned invalid XML",
+                source="anidb",
+                operation="metadata",
+            ) from exc
         if root.tag.rsplit("}", 1)[-1] == "error":
-            raise RuntimeError(f"AniDB API error: {_text(root)}")
+            raise SourceInvalidResponse(
+                f"AniDB API error: {_text(root)}",
+                source="anidb",
+                operation="metadata",
+            )
         return data
 
 
