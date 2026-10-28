@@ -40,9 +40,15 @@ class _ContextAttributeProxy:
     def __bool__(self) -> bool:
         return bool(self._value())
 
+    # Keep common service methods visible on the proxy class itself so unittest
+    # patching can replace them without activating an AppContext first.
+    def display_name(self, *args: Any, **kwargs: Any) -> Any:
+        return self._value().display_name(*args, **kwargs)
+
 
 # Temporary compatibility surfaces for UI modules. These are lazy views, not
 # service singletons; AppContext remains the sole owner of the actual objects.
+SEARCH_PROVIDERS = _ContextAttributeProxy("search_providers")
 SEARCH_SERVICE = _ContextAttributeProxy("search_service")
 SOURCES = _ContextAttributeProxy("sources")
 AGGREGATOR = _ContextAttributeProxy("aggregator")

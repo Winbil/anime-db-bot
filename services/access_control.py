@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 
-from core.settings import get_settings, reload_settings
+from core.settings import get_settings
 
 
 class UserRole(StrEnum):
@@ -36,6 +36,6 @@ def is_telegram_admin(user_id: int | None) -> bool:
 
 
 def reset_access_control_cache() -> None:
-    """Clear cached configuration; intended for tests/config reload tooling."""
+    """Clear cached configuration without eagerly validating it."""
     telegram_admin_ids.cache_clear()
-    reload_settings()
+    get_settings.cache_clear()
