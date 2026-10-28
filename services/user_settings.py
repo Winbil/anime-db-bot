@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from contextlib import contextmanager
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
+from typing import Iterator
 
 from core.settings import get_settings
 from core.sqlite import managed_sqlite_connection
@@ -138,20 +142,46 @@ class SQLiteUserSettingsStore:
             connection.execute("DELETE FROM known_users")
 
 
-USER_SETTINGS = SQLiteUserSettingsStore(get_settings().storage.user_settings_db_path)
+_CURRENT_USER_SETTINGS_STORE: ContextVar[SQLiteUserSettingsStore | None] = ContextVar(
+    "anime_db_bot_user_settings_store",
+    default=None,
+)
+
+
+@lru_cache(maxsize=1)
+def _default_user_settings_store() -> SQLiteUserSettingsStore:
+    """Compatibility store for standalone calls outside an active AppContext."""
+    return SQLiteUserSettingsStore(get_settings().storage.user_settings_db_path)
+
+
+def get_user_settings_store() -> SQLiteUserSettingsStore:
+    return _CURRENT_USER_SETTINGS_STORE.get() or _default_user_settings_store()
+
+
+@contextmanager
+def activate_user_settings_store(
+    store: SQLiteUserSettingsStore,
+) -> Iterator[SQLiteUserSettingsStore]:
+    token: Token[SQLiteUserSettingsStore | None] = _CURRENT_USER_SETTINGS_STORE.set(
+        store
+    )
+    try:
+        yield store
+    finally:
+        _CURRENT_USER_SETTINGS_STORE.reset(token)
 
 
 def get_user_locale(user_id: int | None) -> str:
-    return USER_SETTINGS.get(user_id).locale
+    return get_user_settings_store().get(user_id).locale
 
 
 def set_user_locale(user_id: int, locale: str) -> str:
-    return USER_SETTINGS.set_locale(user_id, locale).locale
+    return get_user_settings_store().set_locale(user_id, locale).locale
 
 
 def touch_platform_user(platform: str, user_id: int) -> None:
-    USER_SETTINGS.touch_user(platform, user_id)
+    get_user_settings_store().touch_user(platform, user_id)
 
 
 def list_platform_user_ids(platform: str) -> list[int]:
-    return USER_SETTINGS.list_user_ids(platform)
+    return get_user_settings_store().list_user_ids(platform)

@@ -5,7 +5,11 @@ import math
 import threading
 import time
 from collections import defaultdict, deque
+from contextlib import contextmanager
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
+from functools import lru_cache
+from typing import Iterator
 
 from core.settings import RateLimitSettings, get_settings
 
@@ -82,7 +86,6 @@ class PersonalRateLimiter:
             self._events.clear()
 
 
-
 class UpstreamRateLimiter:
     """Async source-global + optional endpoint sliding-window safety limiter."""
 
@@ -133,16 +136,56 @@ class UpstreamRateLimiter:
             self._events.clear()
 
 
-# Compatibility globals use the same frozen startup settings as AppContext. New
-# composition code can instantiate limiters with an explicit Settings object.
-PERSONAL_RATE_LIMITER = PersonalRateLimiter(get_settings().rate_limits)
-UPSTREAM_RATE_LIMITER = UpstreamRateLimiter(get_settings().rate_limits)
+_CURRENT_PERSONAL_RATE_LIMITER: ContextVar[PersonalRateLimiter | None] = ContextVar(
+    "anime_db_bot_personal_rate_limiter",
+    default=None,
+)
+_CURRENT_UPSTREAM_RATE_LIMITER: ContextVar[UpstreamRateLimiter | None] = ContextVar(
+    "anime_db_bot_upstream_rate_limiter",
+    default=None,
+)
+
+
+@lru_cache(maxsize=1)
+def _default_personal_rate_limiter() -> PersonalRateLimiter:
+    return PersonalRateLimiter(get_settings().rate_limits)
+
+
+@lru_cache(maxsize=1)
+def _default_upstream_rate_limiter() -> UpstreamRateLimiter:
+    return UpstreamRateLimiter(get_settings().rate_limits)
+
+
+def get_personal_rate_limiter() -> PersonalRateLimiter:
+    return _CURRENT_PERSONAL_RATE_LIMITER.get() or _default_personal_rate_limiter()
+
+
+def get_upstream_rate_limiter() -> UpstreamRateLimiter:
+    return _CURRENT_UPSTREAM_RATE_LIMITER.get() or _default_upstream_rate_limiter()
+
+
+@contextmanager
+def activate_rate_limiters(
+    personal: PersonalRateLimiter,
+    upstream: UpstreamRateLimiter,
+) -> Iterator[tuple[PersonalRateLimiter, UpstreamRateLimiter]]:
+    personal_token: Token[PersonalRateLimiter | None] = (
+        _CURRENT_PERSONAL_RATE_LIMITER.set(personal)
+    )
+    upstream_token: Token[UpstreamRateLimiter | None] = (
+        _CURRENT_UPSTREAM_RATE_LIMITER.set(upstream)
+    )
+    try:
+        yield personal, upstream
+    finally:
+        _CURRENT_UPSTREAM_RATE_LIMITER.reset(upstream_token)
+        _CURRENT_PERSONAL_RATE_LIMITER.reset(personal_token)
 
 
 async def wait_for_upstream(source: str, operation: str = "default") -> None:
-    await UPSTREAM_RATE_LIMITER.acquire(source, operation)
+    await get_upstream_rate_limiter().acquire(source, operation)
 
 
 def reset_rate_limits() -> None:
-    PERSONAL_RATE_LIMITER.reset()
-    UPSTREAM_RATE_LIMITER.reset()
+    get_personal_rate_limiter().reset()
+    get_upstream_rate_limiter().reset()

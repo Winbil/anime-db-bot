@@ -7,42 +7,36 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from bots.telegram.rate_limit import TelegramRateLimitMiddleware
 from core.identity import AnimeIdentity
 from core.people_loading import PeopleBatch
-from services.rate_limits import RateLimitDecision
+from services.rate_limits import PersonalRateLimiter, RateLimitDecision
 from sources.rate_limited import PeopleRateLimitedSourceProxy, RateLimitedSourceProxy
 
 
 class TelegramRateLimitMiddlewareTests(unittest.IsolatedAsyncioTestCase):
     async def test_admin_bypasses_only_personal_limiter(self) -> None:
-        middleware = TelegramRateLimitMiddleware()
+        limiter = MagicMock(spec=PersonalRateLimiter)
+        middleware = TelegramRateLimitMiddleware(limiter)
         handler = AsyncMock(return_value="ok")
         event = SimpleNamespace(from_user=SimpleNamespace(id=123))
 
-        with (
-            patch("bots.telegram.rate_limit.is_telegram_admin", return_value=True),
-            patch("bots.telegram.rate_limit.PERSONAL_RATE_LIMITER.check") as check,
-        ):
+        with patch("bots.telegram.rate_limit.is_telegram_admin", return_value=True):
             result = await middleware(handler, event, {})
 
         self.assertEqual(result, "ok")
-        check.assert_not_called()
+        limiter.check.assert_not_called()
         handler.assert_awaited_once_with(event, {})
 
     async def test_regular_user_uses_platform_scoped_personal_bucket(self) -> None:
-        middleware = TelegramRateLimitMiddleware()
+        limiter = MagicMock(spec=PersonalRateLimiter)
+        limiter.check.return_value = RateLimitDecision(True)
+        middleware = TelegramRateLimitMiddleware(limiter)
         handler = AsyncMock(return_value="ok")
         event = SimpleNamespace(from_user=SimpleNamespace(id=456))
 
-        with (
-            patch("bots.telegram.rate_limit.is_telegram_admin", return_value=False),
-            patch(
-                "bots.telegram.rate_limit.PERSONAL_RATE_LIMITER.check",
-                return_value=RateLimitDecision(True),
-            ) as check,
-        ):
+        with patch("bots.telegram.rate_limit.is_telegram_admin", return_value=False):
             result = await middleware(handler, event, {})
 
         self.assertEqual(result, "ok")
-        check.assert_called_once_with("telegram", 456)
+        limiter.check.assert_called_once_with("telegram", 456)
         handler.assert_awaited_once_with(event, {})
 
 

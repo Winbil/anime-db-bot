@@ -7,7 +7,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message, TelegramObject
 
 from services.access_control import is_telegram_admin
-from services.rate_limits import PERSONAL_RATE_LIMITER
+from services.rate_limits import PersonalRateLimiter, get_personal_rate_limiter
 from services.user_settings import get_user_locale
 
 
@@ -17,8 +17,7 @@ _TEXT = {
         "Слишком много запросов. Повторите через {seconds} секунд."
     ),
     "en": (
-        "Error: Too Many Requests\n"
-        "Too many requests. Try again in {seconds} seconds."
+        "Error: Too Many Requests\nToo many requests. Try again in {seconds} seconds."
     ),
 }
 
@@ -34,6 +33,13 @@ class TelegramRateLimitMiddleware(BaseMiddleware):
     Administrators bypass only this personal limit. Outbound source limiters live
     below the platform layer and therefore still apply to administrators.
     """
+
+    def __init__(self, limiter: PersonalRateLimiter | None = None) -> None:
+        self._limiter = limiter
+
+    @property
+    def limiter(self) -> PersonalRateLimiter:
+        return self._limiter or get_personal_rate_limiter()
 
     async def __call__(
         self,
@@ -52,7 +58,7 @@ class TelegramRateLimitMiddleware(BaseMiddleware):
         if isinstance(event, CallbackQuery) and (event.data or "") == "noop":
             return await handler(event, data)
 
-        decision = PERSONAL_RATE_LIMITER.check("telegram", user_id)
+        decision = self.limiter.check("telegram", user_id)
         if decision.allowed:
             return await handler(event, data)
 
