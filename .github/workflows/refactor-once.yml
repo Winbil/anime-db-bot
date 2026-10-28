@@ -1,4 +1,4 @@
-name: One-shot remaining refactor
+name: Apply validated final refactor
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   apply:
-    if: github.event.head_commit.message == 'Add one-shot remaining refactor'
+    if: github.event.head_commit.message == 'Run validated final refactor'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -32,17 +32,26 @@ jobs:
       - name: Apply validated refactor
         run: python scripts/finalize_refactor.py
 
-      - name: Compile
-        run: python -m compileall -q bots core localization mappings search services sources tests
+      - name: Verify final tree
+        run: |
+          test -f core/character_identity.py
+          test -f core/score_summary.py
+          test ! -f scripts/finalize_refactor.py
+          test ! -f .github/workflows/refactor-once.yml
+          test ! -f .github/workflows/cleanup-once.yml
+          ! grep -RIn --include='*.py' 'split_text(.*\[0\]' bots
+          ! grep -RIn --include='*.py' '_average_score' core services tests
 
-      - name: Test
-        run: python -m unittest discover -s tests -v
+      - name: Compile and test
+        run: |
+          python -m compileall -q bots core localization mappings search services sources tests
+          python -m unittest discover -s tests -v
 
-      - name: Commit refactor
+      - name: Commit final tree
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git diff --cached --quiet && exit 0
-          git commit -m "Finish score and message fallback refactors"
+          git commit -m "Finish character score and fallback refactors"
           git push origin HEAD:main
