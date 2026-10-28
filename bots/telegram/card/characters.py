@@ -14,7 +14,7 @@ from bots.telegram.callbacks import KeyedPageCallback, resolve_key_or_legacy_ind
 from bots.telegram.card.renderer import edit_standard_text, plain_text_to_rich_html
 from bots.telegram.card.state import AnimeCardSession
 from core.canonicalization import display_person_name, person_identity_keys
-from core.capabilities import source_key_for_display_name
+from sources.catalog import source_key_for_display_name
 from core.models import CharacterRecord
 from localization import text
 from services.app_context import get_app_context

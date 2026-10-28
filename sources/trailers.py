@@ -193,15 +193,3 @@ class ShikimoriTrailerSource:
         if not isinstance(body, list):
             return []
         return _shikimori_trailers(body)
-
-
-def get_builtin_trailer_sources(
-    settings: SourceSettings | None = None,
-):
-    """Return trailer backends in the same logical order used by metadata cards."""
-    settings = settings or get_settings().sources
-    return (
-        ShikimoriTrailerSource(settings),
-        AniListTrailerSource(settings),
-        JikanSource(settings),
-    )
