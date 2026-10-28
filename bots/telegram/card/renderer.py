@@ -20,6 +20,8 @@ from bots.telegram.card.selectors import (
 )
 from core.canonicalization import display_person_name, localize_role_token
 from core.models import AggregatedAnime, BroadcastSlot, PopularityStats
+from core.source_keys import SourceKey
+from core.source_names import MAL_SOURCE_NAME
 from core.temporal import format_time
 from localization import text
 
@@ -157,6 +159,38 @@ def _quick_actions_html(token: str, *, locale: str) -> str:
     )
 
 
+def _source_identity_key(source_name: str) -> str | None:
+    normalized = " ".join((source_name or "").split()).strip().casefold()
+    if normalized in {MAL_SOURCE_NAME.casefold(), "myanimelist"}:
+        return SourceKey.MAL.value
+    try:
+        return SourceKey(normalized).value
+    except ValueError:
+        return None
+
+
+def _card_source_ids(anime: AggregatedAnime) -> list[tuple[str, str]]:
+    """Return IDs only for metadata sources that actually contributed a record.
+
+    ``anime.external_ids`` intentionally keeps the full resolved identity graph so
+    mapping-only IDs remain available to second-pass and lazy capabilities. The
+    main card should not present those resolver edges as if their databases had
+    actually supplied metadata, so rendering is scoped to ``anime.sources``.
+    """
+    result: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for source_name in anime.sources:
+        source_key = _source_identity_key(source_name)
+        if source_key is None or source_key in seen:
+            continue
+        external_id = anime.external_ids.get(source_key)
+        if not external_id:
+            continue
+        seen.add(source_key)
+        result.append((source_key, external_id))
+    return result
+
+
 def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list[str]]]:
     total = anime.episodes_total or 0
     aired = anime.episodes_aired or 0
@@ -255,9 +289,10 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
         source_lines.append(
             text("card", "databases", locale=locale, value=", ".join(anime.sources))
         )
-    if anime.external_ids:
+    card_source_ids = _card_source_ids(anime)
+    if card_source_ids:
         ids = " | ".join(
-            f"{name.upper()}: {value}" for name, value in anime.external_ids.items()
+            f"{name.upper()}: {value}" for name, value in card_source_ids
         )
         source_lines.append(text("card", "ids", locale=locale, value=ids))
     if anime.errors:
