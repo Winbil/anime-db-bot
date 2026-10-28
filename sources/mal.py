@@ -1,65 +1,41 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
-import httpx
-
-from core.http_config import USER_AGENT
+from core.http_client import http_request
 from core.identity import AnimeIdentity
-from core.models import AnimeRecord, BroadcastSlot, PersonCredit
+from core.models import AnimeRecord, BroadcastSlot, CharacterRecord, PersonCredit
 from core.people_loading import PeopleBatch
+from core.settings import AppSettings, SourceSettings
+from core.source_errors import SourceInvalidResponse
+from core.source_keys import SourceKey
 from localization import source_value_key
 from sources.jikan import JIKAN_DISPLAY_NAME, JikanSource
 
-DEFAULT_MAL_API_URL = "https://api.myanimelist.net/v2"
-
 DETAIL_FIELDS = ",".join(
     (
-        "id",
-        "title",
-        "main_picture",
-        "alternative_titles",
-        "start_date",
-        "end_date",
-        "synopsis",
-        "mean",
-        "rank",
-        "popularity",
-        "num_list_users",
-        "num_scoring_users",
-        "num_favorites",
-        "statistics",
-        "media_type",
-        "status",
-        "genres",
-        "num_episodes",
-        "start_season",
-        "broadcast",
-        "source",
-        "average_episode_duration",
-        "rating",
-        "pictures",
-        "background",
-        "studios",
+        "id", "title", "main_picture", "alternative_titles", "start_date",
+        "end_date", "synopsis", "mean", "rank", "popularity", "num_list_users",
+        "num_scoring_users", "num_favorites", "statistics", "media_type", "status",
+        "genres", "num_episodes", "start_season", "broadcast", "source",
+        "average_episode_duration", "rating", "pictures", "background", "studios",
     )
 )
 
 
+def _settings() -> SourceSettings:
+    return AppSettings.from_env().sources
+
+
 def api_url() -> str:
-    return (
-        os.getenv("MAL_API_URL", DEFAULT_MAL_API_URL).strip().rstrip("/")
-        or DEFAULT_MAL_API_URL
-    )
+    return _settings().mal_api_url
 
 
 def client_id() -> str:
-    value = os.getenv("MAL_CLIENT_ID", "").strip()
+    value = _settings().mal_client_id
     if not value:
-        raise RuntimeError(
-            "MAL_CLIENT_ID is empty. Add a MyAnimeList API Client ID to .env."
-        )
+        raise RuntimeError("MAL_CLIENT_ID is empty. Add a MyAnimeList API Client ID to .env.")
     return value
 
 
@@ -114,11 +90,8 @@ def _broadcast(value: dict[str, Any] | None) -> list[BroadcastSlot]:
 def _status_distribution(value: dict[str, Any] | None) -> dict[str, int]:
     raw = (value or {}).get("status") or {}
     aliases = {
-        "watching": "watching",
-        "completed": "completed",
-        "on_hold": "on_hold",
-        "dropped": "dropped",
-        "plan_to_watch": "planned",
+        "watching": "watching", "completed": "completed", "on_hold": "on_hold",
+        "dropped": "dropped", "plan_to_watch": "planned",
     }
     result: dict[str, int] = {}
     for raw_key, raw_count in raw.items():
@@ -145,40 +118,34 @@ def _posters(raw: dict[str, Any]) -> list[str]:
     return _dedupe(urls)
 
 
-async def _get_raw(mal_id: str) -> dict[str, Any] | None:
-    headers = {
-        "Accept": "application/json",
-        "User-Agent": USER_AGENT,
-        "X-MAL-CLIENT-ID": client_id(),
-    }
-
-    async with httpx.AsyncClient(
+async def _get_raw(mal_id: str, settings: SourceSettings | None = None) -> dict[str, Any] | None:
+    settings = settings or _settings()
+    if not settings.mal_client_id:
+        raise RuntimeError("MAL_CLIENT_ID is empty. Add a MyAnimeList API Client ID to .env.")
+    response = await http_request(
+        "mal",
+        "GET",
+        f"{settings.mal_api_url}/anime/{mal_id}",
+        operation="metadata",
         timeout=20.0,
-        headers=headers,
-        follow_redirects=True,
-    ) as client:
-        response = await client.get(
-            f"{api_url()}/anime/{mal_id}",
-            params={"fields": DETAIL_FIELDS},
-        )
-
+        allowed_statuses={404},
+        headers={
+            "Accept": "application/json",
+            "X-MAL-CLIENT-ID": settings.mal_client_id,
+        },
+        params={"fields": DETAIL_FIELDS},
+    )
     if response.status_code == 404:
         return None
-    if response.is_error:
-        preview = response.text.replace("\n", " ")[:800]
-        if response.status_code in {401, 403}:
-            raise RuntimeError(
-                f"MyAnimeList rejected MAL_CLIENT_ID (HTTP {response.status_code}): {preview}"
-            )
-        raise RuntimeError(
-            f"MyAnimeList HTTP {response.status_code} from {response.url}: {preview}"
-        )
-
     try:
         return response.json()
     except ValueError as exc:
         preview = response.text.replace("\n", " ")[:800]
-        raise RuntimeError(f"MyAnimeList returned non-JSON response: {preview}") from exc
+        raise SourceInvalidResponse(
+            f"MyAnimeList returned non-JSON response: {preview}",
+            source="mal",
+            operation="metadata",
+        ) from exc
 
 
 def _record(raw: dict[str, Any]) -> AnimeRecord:
@@ -187,65 +154,24 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
     alternative = raw.get("alternative_titles") or {}
     english = _clean(alternative.get("en"))
     japanese = _clean(alternative.get("ja"))
-
-    titles = {
-        key: value
-        for key, value in {
-            "romaji": title,
-            "english": english,
-            "japanese": japanese,
-        }.items()
-        if value
-    }
-
-    synonyms = _dedupe(
-        [
-            *[_clean(value) for value in alternative.get("synonyms") or []],
-            english,
-            japanese,
-        ]
-    )
+    titles = {key: value for key, value in {
+        "romaji": title, "english": english, "japanese": japanese,
+    }.items() if value}
+    synonyms = _dedupe([
+        *[_clean(value) for value in alternative.get("synonyms") or []], english, japanese,
+    ])
     chosen_titles = {value.casefold() for value in titles.values() if value}
     synonyms = [value for value in synonyms if value.casefold() not in chosen_titles]
 
     duration_seconds = _int(raw.get("average_episode_duration"))
-    duration_minutes = (
-        max(1, round(duration_seconds / 60))
-        if duration_seconds and duration_seconds > 0
-        else None
-    )
-
+    duration_minutes = max(1, round(duration_seconds / 60)) if duration_seconds and duration_seconds > 0 else None
     episodes_total = _int(raw.get("num_episodes"))
     status_raw = _clean(raw.get("status")).casefold()
-    episodes_aired = (
-        episodes_total
-        if status_raw == "finished_airing" and episodes_total
-        else None
-    )
-
+    episodes_aired = episodes_total if status_raw == "finished_airing" and episodes_total else None
     source_raw = _clean(raw.get("source")).casefold()
-    source_material = source_value_key(
-        "mal",
-        "source",
-        source_raw,
-        default=source_raw or None,
-    )
-
-    genres = _dedupe(
-        [
-            _clean(item.get("name"))
-            for item in raw.get("genres") or []
-            if isinstance(item, dict)
-        ]
-    )
-    studios = _dedupe(
-        [
-            _clean(item.get("name"))
-            for item in raw.get("studios") or []
-            if isinstance(item, dict)
-        ]
-    )
-
+    source_material = source_value_key("mal", "source", source_raw, default=source_raw or None)
+    genres = _dedupe([_clean(item.get("name")) for item in raw.get("genres") or [] if isinstance(item, dict)])
+    studios = _dedupe([_clean(item.get("name")) for item in raw.get("studios") or [] if isinstance(item, dict)])
     synopsis = _clean(raw.get("synopsis"))
     background = _clean(raw.get("background"))
     media_type = _clean(raw.get("media_type")).casefold()
@@ -282,41 +208,38 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         descriptions={JIKAN_DISPLAY_NAME: synopsis} if synopsis else {},
         backgrounds=[background] if background else [],
         posters=_posters(raw),
-        urls={
-            "MyAnimeList": f"https://myanimelist.net/anime/{mal_id}"
-        } if mal_id else {},
+        urls={"MyAnimeList": f"https://myanimelist.net/anime/{mal_id}"} if mal_id else {},
     )
 
 
 class MALSource:
     name = JIKAN_DISPLAY_NAME
+    source_key = SourceKey.MAL
 
-    def __init__(self) -> None:
+    def __init__(self, settings: SourceSettings | None = None) -> None:
+        self._settings = settings
         self._jikan = JikanSource()
+
+    @property
+    def settings(self) -> SourceSettings:
+        return self._settings or _settings()
 
     async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
         mal_id = str(identity.get("mal") or "").strip()
         if not mal_id.isdigit():
             return None
-
-        raw = await _get_raw(mal_id)
-        if not raw:
+        raw = await _get_raw(mal_id, self.settings)
+        if not raw or str(raw.get("id") or "") != mal_id:
             return None
-        if str(raw.get("id") or "") != mal_id:
-            return None
-
         record = _record(raw)
         try:
             supplement = await self._jikan.load_metadata_supplement(identity)
         except Exception as exc:
             logging.warning(
                 "Jikan MAL metadata supplement unavailable for %s: %s: %s",
-                mal_id,
-                type(exc).__name__,
-                exc,
+                mal_id, type(exc).__name__, exc,
             )
             return record
-
         if supplement.get("licensors"):
             record.licensors = list(supplement["licensors"])
         if supplement.get("score_distribution"):
@@ -332,28 +255,8 @@ class MALSource:
     async def load_voices(self, identity: AnimeIdentity) -> list[PersonCredit]:
         return await self._jikan.load_voices(identity)
 
-    async def load_staff_batch(
-        self,
-        identity: AnimeIdentity,
-        *,
-        cursor: str | None = None,
-        portrait_limit: int = 50,
-    ) -> PeopleBatch:
-        return await self._jikan.load_staff_batch(
-            identity,
-            cursor=cursor,
-            portrait_limit=portrait_limit,
-        )
+    async def load_staff_batch(self, identity: AnimeIdentity, *, cursor: str | None = None, portrait_limit: int = 50) -> PeopleBatch:
+        return await self._jikan.load_staff_batch(identity, cursor=cursor, portrait_limit=portrait_limit)
 
-    async def load_voices_batch(
-        self,
-        identity: AnimeIdentity,
-        *,
-        cursor: str | None = None,
-        portrait_limit: int = 50,
-    ) -> PeopleBatch:
-        return await self._jikan.load_voices_batch(
-            identity,
-            cursor=cursor,
-            portrait_limit=portrait_limit,
-        )
+    async def load_voices_batch(self, identity: AnimeIdentity, *, cursor: str | None = None, portrait_limit: int = 50) -> PeopleBatch:
+        return await self._jikan.load_voices_batch(identity, cursor=cursor, portrait_limit=portrait_limit)
