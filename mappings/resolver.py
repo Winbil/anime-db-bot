@@ -4,6 +4,7 @@ import logging
 import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from core.identity import AnimeIdentity
@@ -18,6 +19,21 @@ class MappingOverride:
     target_id: str
     action: str
     reason: str
+    author: str = ""
+    updated_at: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class MappingOverrideHistory:
+    source_provider: str
+    source_id: str
+    target_provider: str
+    target_id: str
+    event: str
+    override_action: str
+    reason: str
+    author: str
+    changed_at: str
 
 
 def _clean_provider(value: object) -> str:
@@ -28,8 +44,50 @@ def _clean_id(value: object) -> str:
     return str(value or "").strip()
 
 
+def _clean_text(value: object) -> str:
+    return " ".join(str(value or "").split()).strip()
+
+
 def _database_path(path: Path | None = None) -> Path:
     return Path(path) if path is not None else mappings_db_path()
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _ensure_override_audit_schema(conn: sqlite3.Connection) -> None:
+    columns = _table_columns(conn, "mapping_overrides")
+    if not columns:
+        raise sqlite3.OperationalError("mapping_overrides table is missing")
+    if "author" not in columns:
+        conn.execute("ALTER TABLE mapping_overrides ADD COLUMN author TEXT NOT NULL DEFAULT ''")
+    if "updated_at" not in columns:
+        conn.execute("ALTER TABLE mapping_overrides ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''")
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS mapping_override_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_provider TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            target_provider TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            event TEXT NOT NULL CHECK(event IN ('set', 'delete')),
+            override_action TEXT NOT NULL CHECK(override_action IN ('accept', 'reject')),
+            reason TEXT NOT NULL DEFAULT '',
+            author TEXT NOT NULL DEFAULT '',
+            changed_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS mapping_override_history_route_idx
+            ON mapping_override_history(
+                source_provider, source_id, target_provider, target_id, changed_at
+            );
+        """
+    )
 
 
 def _validate_override(
@@ -39,14 +97,18 @@ def _validate_override(
     target_id: object,
     action: object,
     reason: object,
+    author: object = "",
+    updated_at: object = "",
 ) -> MappingOverride:
     override = MappingOverride(
         source_provider=_clean_provider(source_provider),
         source_id=_clean_id(source_id),
         target_provider=_clean_provider(target_provider),
         target_id=_clean_id(target_id),
-        action=str(action or "").strip().casefold(),
-        reason=" ".join(str(reason or "").split()).strip(),
+        action=_clean_text(action).casefold(),
+        reason=_clean_text(reason),
+        author=_clean_text(author),
+        updated_at=_clean_text(updated_at),
     )
     if not override.source_provider or not override.source_id:
         raise ValueError("source provider and source ID are required")
@@ -68,10 +130,15 @@ def list_mapping_overrides(path: Path | None = None) -> list[MappingOverride]:
     uri = f"file:{db_path.resolve().as_posix()}?mode=ro"
     try:
         with sqlite3.connect(uri, uri=True, timeout=5.0) as conn:
+            columns = _table_columns(conn, "mapping_overrides")
+            if not columns:
+                return []
+            author_sql = "author" if "author" in columns else "''"
+            updated_sql = "updated_at" if "updated_at" in columns else "''"
             rows = conn.execute(
-                """
-                SELECT source_provider, source_id, target_provider, target_id,
-                       action, reason
+                f"""
+                SELECT source_provider, source_id, target_provider, target_id, action, reason,
+                       {author_sql}, {updated_sql}
                 FROM mapping_overrides
                 ORDER BY source_provider, source_id, target_provider, target_id
                 """
@@ -79,6 +146,27 @@ def list_mapping_overrides(path: Path | None = None) -> list[MappingOverride]:
     except sqlite3.OperationalError:
         return []
     return [MappingOverride(*map(str, row)) for row in rows]
+
+
+def list_mapping_override_history(path: Path | None = None) -> list[MappingOverrideHistory]:
+    db_path = _database_path(path)
+    if not db_path.is_file():
+        return []
+    uri = f"file:{db_path.resolve().as_posix()}?mode=ro"
+    try:
+        with sqlite3.connect(uri, uri=True, timeout=5.0) as conn:
+            if not _table_columns(conn, "mapping_override_history"):
+                return []
+            rows = conn.execute(
+                """
+                SELECT source_provider, source_id, target_provider, target_id, event,
+                       override_action, reason, author, changed_at
+                FROM mapping_override_history ORDER BY id
+                """
+            ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [MappingOverrideHistory(*map(str, row)) for row in rows]
 
 
 def set_mapping_override(
@@ -89,8 +177,10 @@ def set_mapping_override(
     *,
     action: object,
     reason: object,
+    author: object = "manual",
     path: Path | None = None,
 ) -> MappingOverride:
+    changed_at = _now()
     override = _validate_override(
         source_provider,
         source_id,
@@ -98,20 +188,25 @@ def set_mapping_override(
         target_id,
         action,
         reason,
+        author,
+        changed_at,
     )
     db_path = _database_path(path)
     if not db_path.is_file():
         raise FileNotFoundError(f"mapping database does not exist: {db_path}")
-
     with sqlite3.connect(db_path, timeout=5.0) as conn:
+        _ensure_override_audit_schema(conn)
         conn.execute(
             """
             INSERT INTO mapping_overrides(
                 source_provider, source_id, target_provider, target_id,
-                action, reason
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(source_provider, source_id, target_provider, target_id)
-            DO UPDATE SET action=excluded.action, reason=excluded.reason
+                action, reason, author, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(source_provider, source_id, target_provider, target_id) DO UPDATE SET
+                action=excluded.action,
+                reason=excluded.reason,
+                author=excluded.author,
+                updated_at=excluded.updated_at
             """,
             (
                 override.source_provider,
@@ -120,6 +215,26 @@ def set_mapping_override(
                 override.target_id,
                 override.action,
                 override.reason,
+                override.author,
+                override.updated_at,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO mapping_override_history(
+                source_provider, source_id, target_provider, target_id,
+                event, override_action, reason, author, changed_at
+            ) VALUES (?, ?, ?, ?, 'set', ?, ?, ?, ?)
+            """,
+            (
+                override.source_provider,
+                override.source_id,
+                override.target_provider,
+                override.target_id,
+                override.action,
+                override.reason,
+                override.author,
+                override.updated_at,
             ),
         )
         conn.commit()
@@ -132,6 +247,8 @@ def delete_mapping_override(
     target_provider: object,
     target_id: object,
     *,
+    reason: object = "manual override deleted",
+    author: object = "manual",
     path: Path | None = None,
 ) -> bool:
     values = (
@@ -146,47 +263,92 @@ def delete_mapping_override(
     if not db_path.is_file():
         return False
     with sqlite3.connect(db_path, timeout=5.0) as conn:
-        cursor = conn.execute(
+        _ensure_override_audit_schema(conn)
+        existing = conn.execute(
+            """
+            SELECT action, reason FROM mapping_overrides
+            WHERE source_provider=? AND source_id=? AND target_provider=? AND target_id=?
+            """,
+            values,
+        ).fetchone()
+        if existing is None:
+            return False
+        conn.execute(
             """
             DELETE FROM mapping_overrides
-            WHERE source_provider=? AND source_id=?
-              AND target_provider=? AND target_id=?
+            WHERE source_provider=? AND source_id=? AND target_provider=? AND target_id=?
             """,
             values,
         )
+        conn.execute(
+            """
+            INSERT INTO mapping_override_history(
+                source_provider, source_id, target_provider, target_id,
+                event, override_action, reason, author, changed_at
+            ) VALUES (?, ?, ?, ?, 'delete', ?, ?, ?, ?)
+            """,
+            (
+                *values,
+                str(existing[0]),
+                _clean_text(reason) or str(existing[1]),
+                _clean_text(author),
+                _now(),
+            ),
+        )
         conn.commit()
-        return cursor.rowcount > 0
+        return True
 
 
-def copy_mapping_overrides(
-    source_path: Path,
-    destination: sqlite3.Connection,
-) -> int:
+def copy_mapping_overrides(source_path: Path, destination: sqlite3.Connection) -> int:
     source_path = Path(source_path)
     if not source_path.is_file():
         return 0
+    _ensure_override_audit_schema(destination)
     uri = f"file:{source_path.resolve().as_posix()}?mode=ro"
     try:
         with sqlite3.connect(uri, uri=True, timeout=5.0) as source:
+            columns = _table_columns(source, "mapping_overrides")
+            if not columns:
+                return 0
+            author_sql = "author" if "author" in columns else "''"
+            updated_sql = "updated_at" if "updated_at" in columns else "''"
             rows = source.execute(
-                """
+                f"""
                 SELECT source_provider, source_id, target_provider, target_id,
-                       action, reason
+                       action, reason, {author_sql}, {updated_sql}
                 FROM mapping_overrides
                 """
             ).fetchall()
+            history = []
+            if _table_columns(source, "mapping_override_history"):
+                history = source.execute(
+                    """
+                    SELECT source_provider, source_id, target_provider, target_id,
+                           event, override_action, reason, author, changed_at
+                    FROM mapping_override_history ORDER BY id
+                    """
+                ).fetchall()
     except sqlite3.OperationalError:
         return 0
-
     destination.executemany(
         """
         INSERT OR REPLACE INTO mapping_overrides(
             source_provider, source_id, target_provider, target_id,
-            action, reason
-        ) VALUES (?, ?, ?, ?, ?, ?)
+            action, reason, author, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
     )
+    if history:
+        destination.executemany(
+            """
+            INSERT INTO mapping_override_history(
+                source_provider, source_id, target_provider, target_id,
+                event, override_action, reason, author, changed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            history,
+        )
     destination.commit()
     return len(rows)
 
