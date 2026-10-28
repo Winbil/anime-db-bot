@@ -8,7 +8,7 @@ from aiogram import Dispatcher
 
 from bots.telegram import search_ui
 from core.models import SearchCandidate
-from search.registry import get_search_providers
+from search.registry import get_search_provider_map, get_search_providers
 from services.direct_lookup import DirectIdLookupService
 from services.search import SearchService
 
@@ -51,6 +51,8 @@ class UnifiedSearchUiTests(unittest.TestCase):
         service = search_ui._service_for(
             search_ui.DEFAULT_SEARCH_PROVIDER_KEYS,
             default_service,
+            {str(key): provider for key, provider in get_search_provider_map().items()},
+            {},
         )
 
         self.assertIs(service, default_service)
@@ -166,6 +168,10 @@ class UnifiedSearchUiTests(unittest.TestCase):
             aggregate_callback=_noop_aggregate,
             default_service=SearchService(get_search_providers()),
             direct_lookup=DirectIdLookupService((DummyDirectSource(),)),
+            provider_map={
+                str(key): provider
+                for key, provider in get_search_provider_map().items()
+            },
         )
 
         self.assertEqual(
@@ -182,6 +188,8 @@ class UnifiedSearchUiTests(unittest.TestCase):
         self.assertFalse(hasattr(search_ui, "AGGREGATOR"))
         self.assertFalse(hasattr(search_ui, "build_dispatcher"))
         self.assertFalse(hasattr(search_ui, "run_bot"))
+        self.assertFalse(hasattr(search_ui, "PROVIDERS"))
+        self.assertFalse(hasattr(search_ui, "SERVICES"))
 
 
 class InitialSearchPreviewTests(unittest.IsolatedAsyncioTestCase):
