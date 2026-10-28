@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import json
-import logging
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from core.identity import AnimeIdentity
 from mappings.config import MappingSourceSpec, mappings_db_path
 
 SCHEMA_VERSION = 1
@@ -408,7 +406,12 @@ class MappingDatabaseBuilder:
 
 
 class MappingDatabase:
-    """Read-only runtime resolver backed entirely by SQLite indexes."""
+    """Read-only mappings database metadata view.
+
+    Runtime cross-ID enrichment deliberately lives in :mod:`mappings.resolver`.
+    Keeping resolution out of this low-level database wrapper prevents accidental
+    reintroduction of arbitrary recursive graph traversal.
+    """
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = Path(path) if path is not None else mappings_db_path()
@@ -434,98 +437,6 @@ class MappingDatabase:
                     "SELECT key, value FROM metadata ORDER BY key"
                 )
             }
-
-    def resolve(self, identity: AnimeIdentity) -> dict[str, str]:
-        if not self.available or identity.is_empty():
-            return {}
-
-        seeds = sorted(identity.external_ids.items())
-        seed_sql = " UNION ".join(
-            "SELECT ? AS provider, ? AS external_id" for _ in seeds
-        )
-        params: list[str] = []
-        for provider, external_id in seeds:
-            params.extend([provider, external_id])
-
-        query = f"""
-            WITH RECURSIVE reach(provider, external_id) AS (
-                {seed_sql}
-                UNION
-                SELECT
-                    CASE
-                        WHEN e.a_provider=r.provider AND e.a_id=r.external_id
-                        THEN e.b_provider ELSE e.a_provider
-                    END,
-                    CASE
-                        WHEN e.a_provider=r.provider AND e.a_id=r.external_id
-                        THEN e.b_id ELSE e.a_id
-                    END
-                FROM reach AS r
-                JOIN edges AS e
-                  ON e.status='accepted'
-                 AND (
-                    (e.a_provider=r.provider AND e.a_id=r.external_id)
-                    OR
-                    (e.b_provider=r.provider AND e.b_id=r.external_id)
-                 )
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM conflicts AS c
-                    WHERE c.source_provider=r.provider
-                      AND c.source_id=r.external_id
-                      AND c.target_provider=(
-                        CASE
-                            WHEN e.a_provider=r.provider AND e.a_id=r.external_id
-                            THEN e.b_provider ELSE e.a_provider
-                        END
-                      )
-                )
-            )
-            SELECT provider, external_id
-            FROM reach
-            ORDER BY provider, external_id
-        """
-
-        by_provider: dict[str, set[str]] = {}
-        try:
-            with self._connect() as conn:
-                for provider, external_id in conn.execute(query, params):
-                    by_provider.setdefault(str(provider), set()).add(str(external_id))
-        except (sqlite3.DatabaseError, OSError):
-            logging.exception("Could not resolve external IDs from mappings.db")
-            return {}
-
-        # If the accepted graph itself contradicts an ID already known directly
-        # from a source, reject the whole enrichment instead of hiding the conflict.
-        for provider, known_id in identity.external_ids.items():
-            reached = by_provider.get(provider, {known_id})
-            if reached != {known_id}:
-                logging.warning(
-                    "Mapping graph conflicts with confirmed %s:%s -> %s",
-                    provider,
-                    known_id,
-                    sorted(reached),
-                )
-                return {}
-
-        additions: dict[str, str] = {}
-        for provider, candidates in by_provider.items():
-            if provider in identity.external_ids:
-                continue
-            if len(candidates) == 1:
-                additions[provider] = next(iter(candidates))
-            elif candidates:
-                logging.info(
-                    "Skipping ambiguous mapped %s IDs for %s: %s",
-                    provider,
-                    identity.describe(),
-                    sorted(candidates),
-                )
-        return additions
-
-    def enrich(self, identity: AnimeIdentity) -> AnimeIdentity:
-        enriched = identity.copy()
-        enriched.merge_missing(self.resolve(enriched))
-        return enriched
 
 
 MAPPING_DATABASE = MappingDatabase()
