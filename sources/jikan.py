@@ -14,7 +14,7 @@ from core.models import (
     TrailerRecord,
 )
 from core.people_loading import PeopleBatch
-from core.settings import AppSettings, SourceSettings
+from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
 from core.source_names import MAL_SOURCE_NAME
@@ -26,7 +26,7 @@ JIKAN_DISPLAY_NAME = MAL_SOURCE_NAME
 
 
 def _settings(settings: SourceSettings | None = None) -> SourceSettings:
-    return settings or AppSettings.from_env().sources
+    return settings or get_settings().sources
 
 
 def api_url(settings: SourceSettings | None = None) -> str:

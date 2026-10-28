@@ -11,7 +11,7 @@ from core.canonicalization import contains_cyrillic, normalize_key, transliterat
 from core.contracts import AnimeSearchProvider
 from core.identity import AnimeIdentity
 from core.models import SearchCandidate, SearchPage, SearchResultSet
-from core.settings import AppSettings, SearchSettings
+from core.settings import SearchSettings, get_settings
 
 
 _LOW_SIGNAL_TOKENS = frozenset(
@@ -70,7 +70,7 @@ class SearchService:
         self._providers = tuple(providers)
         if not self._providers:
             raise ValueError("SearchService requires at least one search provider")
-        self._settings = settings or AppSettings.from_env().search
+        self._settings = settings or get_settings().search
         cache_ttl = max(0.0, float(self._settings.cache_ttl_seconds))
         cache_max = max(10, int(self._settings.cache_max_entries))
         self._cache = BoundedTTLCache[tuple[str, int, int], SearchPage](

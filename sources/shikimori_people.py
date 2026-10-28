@@ -11,7 +11,7 @@ from core.canonicalization import voice_role_token
 from core.http_client import http_request
 from core.http_config import USER_AGENT
 from core.models import CharacterRecord, PersonCredit
-from core.settings import AppSettings, SourceSettings
+from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse
 from sources.shikimori import (
     _best_poster_url,
@@ -46,7 +46,7 @@ _VOICE_CACHE = BoundedTTLCache[str, list[PersonCredit]](max_entries=1000)
 
 
 def _settings(settings: SourceSettings | None = None) -> SourceSettings:
-    return settings or AppSettings.from_env().sources
+    return settings or get_settings().sources
 
 
 def _cache_ttl_seconds(settings: SourceSettings | None = None) -> int:

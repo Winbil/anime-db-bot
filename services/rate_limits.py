@@ -7,7 +7,7 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
 
-from core.settings import AppSettings, RateLimitSettings, get_settings
+from core.settings import RateLimitSettings, get_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,7 +18,7 @@ class RateLimitDecision:
 
 
 def _runtime_rate_settings() -> RateLimitSettings:
-    return AppSettings.from_env().rate_limits
+    return get_settings().rate_limits
 
 
 class PersonalRateLimiter:
@@ -81,13 +81,6 @@ class PersonalRateLimiter:
         with self._lock:
             self._events.clear()
 
-
-def _source_limit(source: str) -> int:
-    return _runtime_rate_settings().source_limit(source)
-
-
-def _operation_limit(source: str, operation: str) -> int | None:
-    return _runtime_rate_settings().operation_limit(source, operation)
 
 
 class UpstreamRateLimiter:

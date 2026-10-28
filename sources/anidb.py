@@ -13,7 +13,7 @@ from core.http_config import USER_AGENT
 from core.identity import AnimeIdentity
 from core.models import AnimeRecord, CharacterRecord, EpisodePage, EpisodeRecord, PersonCredit
 from core.people_loading import PeopleBatch
-from core.settings import AppSettings, SourceSettings
+from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
 from core.temporal import parse_partial_date
@@ -29,7 +29,7 @@ _MIN_REQUEST_INTERVAL_SECONDS = 2.2
 
 
 def _settings(settings: SourceSettings | None = None) -> SourceSettings:
-    return settings or AppSettings.from_env().sources
+    return settings or get_settings().sources
 
 
 def enabled(settings: SourceSettings | None = None) -> bool:

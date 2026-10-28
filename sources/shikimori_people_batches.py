@@ -4,7 +4,7 @@ import logging
 
 from core.cache import BoundedTTLCache
 from core.people_loading import PeopleBatch
-from core.settings import AppSettings, SourceSettings
+from core.settings import SourceSettings, get_settings
 from sources.shikimori_people import (
     _cache_ttl_seconds,
     _character_ids_from_roles,
@@ -19,7 +19,7 @@ _ROLE_INDEX_CACHE = BoundedTTLCache[str, list[str]](max_entries=1000)
 
 
 def _settings(settings: SourceSettings | None = None) -> SourceSettings:
-    return settings or AppSettings.from_env().sources
+    return settings or get_settings().sources
 
 
 def _character_chunk_size(settings: SourceSettings | None = None) -> int:

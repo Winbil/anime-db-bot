@@ -71,6 +71,26 @@ class AppSettingsTests(unittest.TestCase):
             AppSettings.from_env({"BOT_TOKEN": "x"}).require_bot_token(), "x"
         )
 
+    def test_only_settings_module_reads_environment_in_production(self) -> None:
+        forbidden = (
+            "AppSettings.from_env(",
+            "os.getenv(",
+            "os.environ",
+            "load_dotenv(",
+        )
+        violations: list[str] = []
+        settings_module = ROOT_DIR / "core" / "settings.py"
+        for root_name in ("bots", "core", "mappings", "search", "services", "sources"):
+            for path in (ROOT_DIR / root_name).rglob("*.py"):
+                if path == settings_module:
+                    continue
+                source = path.read_text(encoding="utf-8")
+                for token in forbidden:
+                    if token in source:
+                        violations.append(f"{path.relative_to(ROOT_DIR)}: {token}")
+
+        self.assertEqual(violations, [])
+
 
 if __name__ == "__main__":
     unittest.main()

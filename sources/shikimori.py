@@ -17,7 +17,7 @@ from core.identity import AnimeIdentity
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord, CharacterRecord, PersonCredit
 from core.people_loading import PeopleBatch
-from core.settings import AppSettings, SourceSettings
+from core.settings import SourceSettings, get_settings
 from core.temporal import PartialDate, parse_datetime, parse_partial_date
 from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
@@ -123,7 +123,7 @@ _SEASON_RE = re.compile(r"^(?P<year>\d{4})[_\s-]+(?P<season>[a-z]+)$", re.IGNORE
 
 
 def _settings(settings: SourceSettings | None = None) -> SourceSettings:
-    return settings or AppSettings.from_env().sources
+    return settings or get_settings().sources
 
 
 def graphql_url(settings: SourceSettings | None = None) -> str:

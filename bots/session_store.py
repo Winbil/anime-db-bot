@@ -4,7 +4,7 @@ import time
 from collections.abc import Iterator, MutableMapping
 from typing import Generic, TypeVar
 
-from core.settings import AppSettings
+from core.settings import get_settings
 
 T = TypeVar("T")
 
@@ -12,7 +12,7 @@ T = TypeVar("T")
 def session_ttl_seconds() -> int:
     # Compatibility helper remains dynamic for tests and small standalone uses;
     # AppContext passes the frozen startup value explicitly.
-    return AppSettings.from_env().telegram.session_ttl_seconds
+    return get_settings().telegram.session_ttl_seconds
 
 
 class ExpiringSessionStore(MutableMapping[str, T], Generic[T]):
