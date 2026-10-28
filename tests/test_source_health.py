@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, patch
 from core.identity import AnimeIdentity
 from core.source_errors import SourceCircuitOpen, SourceUnavailable
 from services.source_health import SourceHealthRegistry
-from sources.resilient import resilient_source
+from sources.resilient import (
+    resilient_episode_source,
+    resilient_search_provider,
+    resilient_source,
+    resilient_trailer_source,
+)
 
 
 class _FailingSource:
@@ -18,6 +23,56 @@ class _FailingSource:
             "temporary outage",
             source="health",
             operation="metadata",
+            transient=True,
+        )
+
+
+class _FailingSearchProvider:
+    name = "MyAnimeList"
+
+    async def search(self, query: str, *, page: int, limit: int):
+        raise SourceUnavailable(
+            "temporary search outage",
+            source="mal",
+            operation="search",
+            transient=True,
+        )
+
+
+class _FailingTrailerSource:
+    name = "Jikan"
+    display_name = "MAL / Jikan"
+    source_key = "mal"
+    backend_key = "jikan"
+
+    async def load_trailers(self, identity: AnimeIdentity):
+        raise SourceUnavailable(
+            "temporary trailer outage",
+            source="jikan",
+            operation="trailers",
+            transient=True,
+        )
+
+
+class _FailingEpisodeSource:
+    name = "Jikan"
+    display_name = "MAL / Jikan"
+    source_key = "mal"
+    backend_key = "jikan"
+
+    async def load_episode_page(self, identity: AnimeIdentity, *, page: int = 1):
+        raise SourceUnavailable(
+            "temporary episode outage",
+            source="jikan",
+            operation="episodes",
+            transient=True,
+        )
+
+    async def load_episode(self, identity: AnimeIdentity, episode_number: int):
+        raise SourceUnavailable(
+            "temporary episode outage",
+            source="jikan",
+            operation="episode",
             transient=True,
         )
 
@@ -37,6 +92,45 @@ class SourceHealthTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(snapshot.circuit_open)
         with self.assertRaises(SourceCircuitOpen):
             await source.get_details(AnimeIdentity({"mal": "1"}))
+
+    async def test_search_provider_uses_shared_source_circuit(self) -> None:
+        health = SourceHealthRegistry(failure_threshold=1, cooldown_seconds=30)
+        provider = resilient_search_provider(
+            _FailingSearchProvider(),
+            health,
+            health_key="mal",
+        )
+
+        with patch("sources.resilient.asyncio.sleep", new=AsyncMock()):
+            with self.assertRaises(SourceUnavailable):
+                await provider.search("test", page=1, limit=10)
+
+        self.assertTrue(health.snapshot("mal").circuit_open)
+        with self.assertRaises(SourceCircuitOpen):
+            await provider.search("test", page=1, limit=10)
+
+    async def test_trailer_backend_uses_backend_health_key(self) -> None:
+        health = SourceHealthRegistry(failure_threshold=1, cooldown_seconds=30)
+        source = resilient_trailer_source(_FailingTrailerSource(), health)
+
+        with patch("sources.resilient.asyncio.sleep", new=AsyncMock()):
+            with self.assertRaises(SourceUnavailable):
+                await source.load_trailers(AnimeIdentity({"mal": "1"}))
+
+        self.assertTrue(health.snapshot("jikan").circuit_open)
+        self.assertFalse(health.snapshot("mal").circuit_open)
+
+    async def test_episode_backend_uses_backend_health_key(self) -> None:
+        health = SourceHealthRegistry(failure_threshold=1, cooldown_seconds=30)
+        source = resilient_episode_source(_FailingEpisodeSource(), health)
+
+        with patch("sources.resilient.asyncio.sleep", new=AsyncMock()):
+            with self.assertRaises(SourceUnavailable):
+                await source.load_episode_page(AnimeIdentity({"mal": "1"}), page=1)
+
+        self.assertTrue(health.snapshot("jikan").circuit_open)
+        with self.assertRaises(SourceCircuitOpen):
+            await source.load_episode(AnimeIdentity({"mal": "1"}), 1)
 
     def test_success_resets_transient_failure_state(self) -> None:
         health = SourceHealthRegistry(failure_threshold=3, cooldown_seconds=30)
