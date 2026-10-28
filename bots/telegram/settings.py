@@ -26,7 +26,7 @@ def _settings_keyboard(locale: str) -> InlineKeyboardMarkup:
 
 def _language_keyboard(locale: str) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
-    for value, flag in (("ru", "🇷🇺"), ("en", "🇬🇧")):
+    for value, flag in (("ru", "🇷🇺"), ("en", "🇬🇧"), ("ja", "🇯🇵")):
         if value not in available_locales():
             continue
         label = f"{flag} {locale_name(value, display_locale=value)}"
