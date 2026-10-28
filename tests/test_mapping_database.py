@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from core.identity import AnimeIdentity
+from core.sqlite import managed_sqlite_connection
 from mappings.config import MappingSourceSpec
 from mappings.database import MappingDatabaseBuilder, MappingRecord
 from mappings.importers import (
@@ -79,7 +80,7 @@ class MappingDatabaseTests(unittest.TestCase):
         )
         resolver = self._build([("fribb", [edge("a")]), ("kometa", [edge("b")])])
         self.assertEqual(resolver.resolve(AnimeIdentity({"mal": "100"})), {})
-        with sqlite3.connect(self.path) as conn:
+        with managed_sqlite_connection(sqlite3.connect(self.path)) as conn:
             row = conn.execute(
                 "SELECT status, evidence_count, evidence_group_count FROM edges"
             ).fetchone()
@@ -219,7 +220,7 @@ class MappingDatabaseTests(unittest.TestCase):
 
     def test_legacy_override_table_is_migrated_on_write(self) -> None:
         self._build([])
-        with sqlite3.connect(self.path) as conn:
+        with managed_sqlite_connection(sqlite3.connect(self.path)) as conn:
             conn.execute("DROP TABLE mapping_override_history")
             conn.execute("ALTER TABLE mapping_overrides RENAME TO mapping_overrides_new")
             conn.execute("""

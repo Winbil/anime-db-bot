@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from core.settings import get_settings
+from core.sqlite import managed_sqlite_connection
 from localization import DEFAULT_LOCALE, normalize_locale
 
 
@@ -24,7 +25,9 @@ class SQLiteUserSettingsStore:
 
     def _connect(self) -> sqlite3.Connection:
         if self._path != ":memory:":
-            Path(self._path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+            Path(self._path).expanduser().resolve().parent.mkdir(
+                parents=True, exist_ok=True
+            )
         connection = sqlite3.connect(self._path, timeout=5.0)
         connection.execute("PRAGMA busy_timeout = 5000")
         return connection
@@ -35,7 +38,7 @@ class SQLiteUserSettingsStore:
         with self._init_lock:
             if self._initialized:
                 return
-            with self._connect() as connection:
+            with managed_sqlite_connection(self._connect()) as connection:
                 connection.execute(
                     """
                     CREATE TABLE IF NOT EXISTS user_settings (
@@ -71,7 +74,7 @@ class SQLiteUserSettingsStore:
         if user_id is None:
             return UserSettings()
         self._ensure_schema()
-        with self._connect() as connection:
+        with managed_sqlite_connection(self._connect()) as connection:
             row = connection.execute(
                 "SELECT locale FROM user_settings WHERE user_id = ?",
                 (int(user_id),),
@@ -83,7 +86,7 @@ class SQLiteUserSettingsStore:
     def set_locale(self, user_id: int, locale: str) -> UserSettings:
         self._ensure_schema()
         normalized = normalize_locale(locale)
-        with self._connect() as connection:
+        with managed_sqlite_connection(self._connect()) as connection:
             connection.execute(
                 """
                 INSERT INTO user_settings (user_id, locale, updated_at)
@@ -105,7 +108,7 @@ class SQLiteUserSettingsStore:
             raise ValueError("user_id must be positive")
 
         self._ensure_schema()
-        with self._connect() as connection:
+        with managed_sqlite_connection(self._connect()) as connection:
             connection.execute(
                 """
                 INSERT INTO known_users (platform, user_id, first_seen_at, last_seen_at)
@@ -121,7 +124,7 @@ class SQLiteUserSettingsStore:
         if not platform_key:
             return []
         self._ensure_schema()
-        with self._connect() as connection:
+        with managed_sqlite_connection(self._connect()) as connection:
             rows = connection.execute(
                 "SELECT user_id FROM known_users WHERE platform = ? ORDER BY user_id",
                 (platform_key,),
@@ -130,7 +133,7 @@ class SQLiteUserSettingsStore:
 
     def clear(self) -> None:
         self._ensure_schema()
-        with self._connect() as connection:
+        with managed_sqlite_connection(self._connect()) as connection:
             connection.execute("DELETE FROM user_settings")
             connection.execute("DELETE FROM known_users")
 
