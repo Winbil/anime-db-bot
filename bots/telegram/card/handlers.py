@@ -4,6 +4,12 @@ from aiogram import Dispatcher, F
 from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, Message
 
+from bots.telegram.callbacks import (
+    EpisodeDetailCallback,
+    IndexedCallback,
+    SectionSourceCallback,
+    ViewCallback,
+)
 from bots.telegram.card.constants import SECTION_LABELS, SOURCE_SELECTABLE_SECTIONS
 from bots.telegram.card.characters import edit_characters_view
 from bots.telegram.card.episodes import edit_episode_detail, edit_episodes_view
@@ -72,14 +78,14 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
     @dp.callback_query(F.data.startswith("ad:"))
     async def description_source_callback_handler(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        data = (callback.data or "").split(":")
-        if len(data) != 4 or not data[2].isdigit() or not data[3].isdigit():
+        data = IndexedCallback.parse(callback.data, prefix="ad")
+        if data is None:
             await callback.answer(
                 text("card", "invalid_description", locale=locale), show_alert=True
             )
             return
 
-        _, token, source_index_text, page_text = data
+        token = data.token
         raw_session = ANIME_SESSIONS.get(token)
         if raw_session is None:
             await callback.answer(text("card", "expired", locale=locale), show_alert=True)
@@ -92,7 +98,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             await callback.answer()
             return
 
-        source_index = int(source_index_text)
+        source_index = data.index
         if source_index >= len(description_sources(anime)):
             await callback.answer(
                 text("card", "description_source_unavailable", locale=locale),
@@ -102,30 +108,26 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
 
         await callback.answer()
         await edit_description_view(
-            callback.message,
+            callback.messae,
             token,
             anime,
             source_index=source_index,
-            page=int(page_text),
+            page=data.page,
             locale=locale,
         )
 
     @dp.callback_query(F.data.startswith("as:"))
     async def source_section_callback_handler(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        data = (callback.data or "").split(":")
-        if (
-            len(data) != 5
-            or data[2] not in SOURCE_SELECTABLE_SECTIONS
-            or not data[3].isdigit()
-            or not data[4].isdigit()
-        ):
+        data = SectionSourceCallback.parse(callback.data)
+        if data is None or data.section not in SOURCE_SELECTABLE_SECTIONS:
             await callback.answer(
                 text("card", "invalid_source", locale=locale), show_alert=True
             )
             return
 
-        _, token, section, source_index_text, page_text = data
+        token = data.token
+        section = data.section
         raw_session = ANIME_SESSIONS.get(token)
         if raw_session is None:
             await callback.answer(text("card", "expired", locale=locale), show_alert=True)
@@ -139,7 +141,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             return
 
         sources = source_section_sources(anime, section)
-        source_index = int(source_index_text)
+        source_index = data.source_index
         if source_index >= len(sources):
             await callback.answer(
                 text("card", "source_unavailable", locale=locale), show_alert=True
@@ -148,30 +150,30 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
 
         await callback.answer()
         await edit_source_section_view(
-            callback.message,
+            callback.messae,
             token,
             anime,
             section,
             source_index,
-            int(page_text),
+            data.page,
             locale=locale,
         )
 
     @dp.callback_query(F.data.startswith("ap:"))
     async def episode_source_callback_handler(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        data = (callback.data or "").split(":")
-        if len(data) != 4 or not data[2].isdigit() or not data[3].isdigit():
+        data = IndexedCallback.parse(callback.data, prefix="ap")
+        if data is None:
             await callback.answer(text("card", "invalid_source", locale=locale), show_alert=True)
             return
-        _, token, backend_index_text, page_text = data
+        token = data.token
         session = _session_for_callback(callback, token)
         if session is None:
             raw_session = ANIME_SESSIONS.get(token)
             key = "not_owner" if raw_session is not None else "expired"
             await callback.answer(text("card", key, locale=locale), show_alert=True)
             return
-        if callback.message is None:
+        if callback.messae is None:
             await callback.answer()
             return
         await callback.answer()
@@ -180,8 +182,8 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 callback.message,
                 token,
                 session,
-                view_page=int(page_text),
-                backend_index=int(backend_index_text),
+                view_page=data.page,
+                backend_index=data.index,
                 locale=locale,
             )
         except ValueError:
@@ -197,31 +199,21 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
     @dp.callback_query(F.data.startswith("ae:"))
     async def episode_detail_callback_handler(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        data = (callback.data or "").split(":")
-        if len(data) == 4 and data[2].isdigit() and data[3].isdigit():
-            _, token, episode_text, return_page_text = data
-            backend_index = 0
-        elif (
-            len(data) == 5
-            and data[2].isdigit()
-            and data[3].isdigit()
-            and data[4].isdigit()
-        ):
-            _, token, backend_index_text, episode_text, return_page_text = data
-            backend_index = int(backend_index_text)
-        else:
+        data = EpisodeDetailCallback.parse(callback.data)
+        if data is None:
             await callback.answer(
                 text("card", "invalid_command", locale=locale), show_alert=True
             )
             return
 
+        token = data.token
         session = _session_for_callback(callback, token)
         if session is None:
             raw_session = ANIME_SESSIONS.get(token)
             key = "not_owner" if raw_session is not None else "expired"
             await callback.answer(text("card", key, locale=locale), show_alert=True)
             return
-        if callback.message is None:
+        if callback.messae is None:
             await callback.answer()
             return
 
@@ -230,21 +222,21 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             callback.message,
             token,
             session,
-            episode_number=int(episode_text),
-            return_page=int(return_page_text),
-            backend_index=backend_index,
+            episode_number=data.episode_number,
+            return_page=data.return_page,
+            backend_index=data.backend_index,
             locale=locale,
         )
 
     @dp.callback_query(F.data.startswith("ac:"))
     async def character_source_callback_handler(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        data = (callback.data or "").split(":")
-        if len(data) != 4 or not data[2].isdigit() or not data[3].isdigit():
+        data = IndexedCallback.parse(callback.data, prefix="ac")
+        if data is None:
             await callback.answer(text("card", "invalid_source", locale=locale), show_alert=True)
             return
 
-        _, token, source_index_text, page_text = data
+        token = data.token
         session = _session_for_callback(callback, token)
         if session is None:
             raw_session = ANIME_SESSIONS.get(token)
@@ -261,8 +253,8 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 callback.message,
                 token,
                 session,
-                source_index=int(source_index_text),
-                page=int(page_text),
+                source_index=data.index,
+                page=data.page,
                 locale=locale,
             )
         except ValueError:
@@ -278,14 +270,14 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
     @dp.callback_query(F.data.startswith("at:"))
     async def trailer_source_callback_handler(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        data = (callback.data or "").split(":")
-        if len(data) != 4 or not data[2].isdigit() or not data[3].isdigit():
+        data = IndexedCallback.parse(callback.data, prefix="at")
+        if data is None:
             await callback.answer(
                 text("card", "invalid_source", locale=locale), show_alert=True
             )
             return
 
-        _, token, source_index_text, page_text = data
+        token = data.token
         session = _session_for_callback(callback, token)
         if session is None:
             raw_session = ANIME_SESSIONS.get(token)
@@ -302,8 +294,8 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 callback.message,
                 token,
                 session,
-                source_index=int(source_index_text),
-                page=int(page_text),
+                source_index=data.index,
+                page=data.page,
                 locale=locale,
             )
         except ValueError:
@@ -319,14 +311,15 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
     @dp.callback_query(F.data.startswith("av:"))
     async def anime_view_callback_handler(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        data = (callback.data or "").split(":")
-        if len(data) != 4 or not data[3].isdigit():
+        data = ViewCallback.parse(callback.data)
+        if data is None:
             await callback.answer(
                 text("card", "invalid_command", locale=locale), show_alert=True
             )
             return
 
-        _, token, section, page_text = data
+        token = data.token
+        section = data.section
         raw_session = ANIME_SESSIONS.get(token)
         if raw_session is None:
             await callback.answer(text("card", "expired", locale=locale), show_alert=True)
@@ -340,7 +333,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 text("card", "invalid_section", locale=locale), show_alert=True
             )
             return
-        if callback.message is None:
+        if callback.messae is None:
             await callback.answer()
             return
 
@@ -350,7 +343,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 callback.message,
                 token,
                 raw_session,
-                view_page=int(page_text),
+                view_page=data.page,
                 backend_index=None,
                 locale=locale,
             )
@@ -361,7 +354,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 token,
                 raw_session,
                 source_index=None,
-                page=int(page_text),
+                page=data.page,
                 locale=locale,
             )
             return
@@ -377,11 +370,11 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             return
 
         await edit_anime_view(
-            callback.message,
+            callback.messae,
             token,
             anime,
             section=section,
-            page=int(page_text),
+            page=data.page,
             locale=locale,
         )
 

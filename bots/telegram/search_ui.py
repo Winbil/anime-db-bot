@@ -20,6 +20,7 @@ from aiogram.types import (
 )
 
 from bots.session_store import ExpiringSessionStore
+from bots.telegram.callbacks import TokenCallback, TokenIndexCallback, TokenValueCallback
 from bots.telegram.card.renderer import plain_text_to_rich_html
 from core.models import SearchCandidate, SearchResultSet
 from core.settings import get_settings
@@ -220,14 +221,14 @@ def _scope_keyboard(token: str, locale: str) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = [[
         InlineKeyboardButton(
             text=_ui(locale, "all"),
-            callback_data=f"sc:{token}:all",
+            callback_data=TokenValueCallback("sc", token, "all").encode(),
         )
     ]]
 
     provider_buttons = [
         InlineKeyboardButton(
             text=_source_label(key),
-            callback_data=f"sc:{token}:{key}",
+            callback_data=TokenValueCallback("sc", token, key).encode(),
         )
         for key in ALL_PROVIDER_KEYS
     ]
@@ -238,7 +239,7 @@ def _scope_keyboard(token: str, locale: str) -> InlineKeyboardMarkup:
     rows.append([
         InlineKeyboardButton(
             text=_ui(locale, "cancel"),
-            callback_data=f"sx:{token}",
+            callback_data=TokenCallback("sx", token).encode(),
         )
     ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -248,7 +249,7 @@ def _waiting_keyboard(token: str, locale: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
             text=_ui(locale, "cancel"),
-            callback_data=f"sx:{token}",
+            callback_data=TokenCallback("sx", token).encode(),
         )
     ]])
 
@@ -264,7 +265,7 @@ def _preview_keyboard(
     nav: list[InlineKeyboardButton] = []
     if index > 0:
         nav.append(
-            InlineKeyboardButton(text="◀️", callback_data=f"sr:{token}:{index - 1}")
+            InlineKeyboardButton(text="◀️", callback_data=TokenIndexCallback("sr", token, index - 1).encode())
         )
 
     suffix = "" if complete else "+"
@@ -276,7 +277,7 @@ def _preview_keyboard(
     )
     if index + 1 < total:
         nav.append(
-            InlineKeyboardButton(text="▶️", callback_data=f"sr:{token}:{index + 1}")
+            InlineKeyboardButton(text="▶️", callback_data=TokenIndexCallback("sr", token, index + 1).encode())
         )
 
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -284,7 +285,7 @@ def _preview_keyboard(
         [
             InlineKeyboardButton(
                 text=_ui(locale, "details"),
-                callback_data=f"sd:{token}:{index}",
+                callback_data=TokenIndexCallback("sd", token, index).encode(),
             )
         ],
     ])
@@ -634,12 +635,13 @@ def register_search_handlers(
     @dp.callback_query(F.data.startswith("sc:"))
     async def scope_callback(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        parts = (callback.data or "").split(":")
-        if len(parts) != 3:
+        data = TokenValueCallback.parse(callback.data, prefix="sc")
+        if data is None:
             await callback.answer(text("search", "invalid_provider", locale=locale), show_alert=True)
             return
 
-        _, token, selected = parts
+        token = data.token
+        selected = data.value
         scope_session = SCOPE_SESSIONS.get(token)
         if scope_session is None:
             await callback.answer(_ui(locale, "expired"), show_alert=True)
@@ -679,11 +681,11 @@ def register_search_handlers(
     @dp.callback_query(F.data.startswith("sx:"))
     async def cancel_scope_callback(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        parts = (callback.data or "").split(":")
-        if len(parts) != 2:
+        data = TokenCallback.parse(callback.data, prefix="sx")
+        if data is None:
             await callback.answer()
             return
-        _, token = parts
+        token = data.token
         scope_session = SCOPE_SESSIONS.get(token)
         if scope_session is not None and scope_session.owner_user_id != callback.from_user.id:
             await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
@@ -723,12 +725,12 @@ def register_search_handlers(
     @dp.callback_query(F.data.startswith("sr:"))
     async def result_page_callback(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        parts = (callback.data or "").split(":")
-        if len(parts) != 3 or not parts[2].isdigit():
+        data = TokenIndexCallback.parse(callback.data, prefix="sr")
+        if data is None:
             await callback.answer(text("search", "invalid_page", locale=locale), show_alert=True)
             return
 
-        _, token, index_text = parts
+        token = data.token
         session = SESSIONS.get(token)
         if session is None:
             await callback.answer(text("search", "expired", locale=locale), show_alert=True)
@@ -740,7 +742,7 @@ def register_search_handlers(
             await callback.answer()
             return
 
-        index = int(index_text)
+        index = data.index
         if index < 0 or index >= len(session.items):
             await callback.answer(text("search", "result_unavailable", locale=locale), show_alert=True)
             return
@@ -751,12 +753,12 @@ def register_search_handlers(
     @dp.callback_query(F.data.startswith("sd:"))
     async def result_details_callback(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
-        parts = (callback.data or "").split(":")
-        if len(parts) != 3 or not parts[2].isdigit():
+        data = TokenIndexCallback.parse(callback.data, prefix="sd")
+        if data is None:
             await callback.answer(text("search", "invalid_result", locale=locale), show_alert=True)
             return
 
-        _, token, index_text = parts
+        token = data.token
         session = SESSIONS.get(token)
         if session is None:
             await callback.answer(text("search", "expired", locale=locale), show_alert=True)
@@ -768,7 +770,7 @@ def register_search_handlers(
             await callback.answer()
             return
 
-        index = int(index_text)
+        index = data.index
         if index < 0 or index >= len(session.items):
             await callback.answer(text("search", "result_unavailable", locale=locale), show_alert=True)
             return

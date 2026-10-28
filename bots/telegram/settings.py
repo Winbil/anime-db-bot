@@ -4,6 +4,7 @@ from aiogram import Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+from bots.telegram.callbacks import SettingsCallback
 from localization import available_locales, locale_name, text
 from services.user_settings import get_user_locale, set_user_locale
 
@@ -16,7 +17,7 @@ def _settings_keyboard(locale: str) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text=text("settings", "language_button", locale=locale),
-                    callback_data="settings:language",
+                    callback_data=SettingsCallback("language").encode(),
                 )
             ]
         ]
@@ -34,13 +35,13 @@ def _language_keyboard(locale: str) -> InlineKeyboardMarkup:
         rows.append([
             InlineKeyboardButton(
                 text=label,
-                callback_data=f"settings:locale:{value}",
+                callback_data=SettingsCallback("locale", value).encode(),
             )
         ])
     rows.append([
         InlineKeyboardButton(
             text=text("settings", "back", locale=locale),
-            callback_data="settings:back",
+            callback_data=SettingsCallback("back").encode(),
         )
     ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -78,16 +79,16 @@ def register_settings_handlers(dp: Dispatcher) -> None:
 
     @dp.callback_query(F.data.startswith("settings:locale:"))
     async def settings_locale_callback(callback: CallbackQuery) -> None:
-        parts = (callback.data or "").split(":")
+        data = SettingsCallback.parse(callback.data)
         current_locale = get_user_locale(callback.from_user.id)
-        if len(parts) != 3 or parts[2] not in available_locales():
+        if data is None or data.action != "locale" or data.value not in available_locales():
             await callback.answer(
                 text("settings", "unsupported_language", locale=current_locale),
                 show_alert=True,
             )
             return
 
-        locale = set_user_locale(callback.from_user.id, parts[2])
+        locale = set_user_locale(callback.from_user.id, data.value)
         if callback.message is None:
             await callback.answer()
             return

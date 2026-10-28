@@ -140,3 +140,79 @@ class EpisodeDetailCallback:
         ):
             return None
         return cls(parts[1], backend, episode, page)
+
+
+@dataclass(frozen=True, slots=True)
+class TokenCallback:
+    prefix: str
+    token: str
+
+    def encode(self) -> str:
+        return _encode([self.prefix, self.token])
+
+    @classmethod
+    def parse(cls, raw: str | None, *, prefix: str) -> "TokenCallback | None":
+        parts = (raw or "").split(":")
+        if len(parts) != 2 or parts[0] != prefix or not parts[1]:
+            return None
+        return cls(prefix, parts[1])
+
+
+@dataclass(frozen=True, slots=True)
+class TokenValueCallback:
+    prefix: str
+    token: str
+    value: str
+
+    def encode(self) -> str:
+        return _encode([self.prefix, self.token, self.value])
+
+    @classmethod
+    def parse(cls, raw: str | None, *, prefix: str) -> "TokenValueCallback | None":
+        parts = (raw or "").split(":")
+        if len(parts) != 3 or parts[0] != prefix or not parts[1] or not parts[2]:
+            return None
+        return cls(prefix, parts[1], parts[2])
+
+
+@dataclass(frozen=True, slots=True)
+class TokenIndexCallback:
+    prefix: str
+    token: str
+    index: int
+
+    def encode(self) -> str:
+        return _encode([self.prefix, self.token, str(max(0, int(self.index)))])
+
+    @classmethod
+    def parse(cls, raw: str | None, *, prefix: str) -> "TokenIndexCallback | None":
+        parts = (raw or "").split(":")
+        if len(parts) != 3 or parts[0] != prefix or not parts[1]:
+            return None
+        index = _non_negative(parts[2])
+        if index is None:
+            return None
+        return cls(prefix, parts[1], index)
+
+
+@dataclass(frozen=True, slots=True)
+class SettingsCallback:
+    action: str
+    value: str | None = None
+
+    prefix = "settings"
+
+    def encode(self) -> str:
+        parts = [self.prefix, self.action]
+        if self.value is not None:
+            parts.append(self.value)
+        return _encode(parts)
+
+    @classmethod
+    def parse(cls, raw: str | None) -> "SettingsCallback | None":
+        parts = (raw or "").split(":")
+        if len(parts) not in {2, 3} or parts[0] != cls.prefix or not parts[1]:
+            return None
+        if len(parts) == 3 and not parts[2]:
+            return None
+        return cls(parts[1], parts[2] if len(parts) == 3 else None)
