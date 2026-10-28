@@ -4,12 +4,12 @@ import re
 from typing import Any
 from urllib.parse import urlsplit
 
-import httpx
-
+from core.http_client import http_request
 from core.http_config import USER_AGENT
 from core.identity import AnimeIdentity
 from core.models import TrailerRecord
 from core.settings import SourceSettings, get_settings
+from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
 from services.rate_limits import wait_for_upstream
 from sources.anilist import _graphql as _anilist_graphql
@@ -149,6 +149,7 @@ class AniListTrailerSource:
             ANILIST_TRAILER_QUERY,
             {"id": int(media_id)},
             self._settings,
+            operation="trailers",
         )
         raw = (data.get("Media") or {}).get("trailer") or {}
         return _anilist_trailers(raw if isinstance(raw, dict) else None)
@@ -169,18 +170,22 @@ class ShikimoriTrailerSource:
             return []
 
         await wait_for_upstream("shikimori", "trailers")
-        headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
-        async with httpx.AsyncClient(timeout=20.0, headers=headers, follow_redirects=True) as client:
-            response = await client.get(f"{shikimori_site_url(self._settings)}/api/animes/{anime_id}/videos")
-        if response.is_error:
-            preview = response.text.replace("\n", " ")[:800]
-            raise RuntimeError(
-                f"Shikimori trailers HTTP {response.status_code} from {response.url}: {preview}"
-            )
+        response = await http_request(
+            "shikimori",
+            "GET",
+            f"{shikimori_site_url(self._settings)}/api/animes/{anime_id}/videos",
+            operation="trailers",
+            timeout=20.0,
+            headers={"Accept": "application/json", "User-Agent": USER_AGENT},
+        )
         try:
             body = response.json()
         except ValueError as exc:
-            raise RuntimeError("Shikimori trailers returned non-JSON response") from exc
+            raise SourceInvalidResponse(
+                "Shikimori trailers returned non-JSON response",
+                source="shikimori",
+                operation="trailers",
+            ) from exc
         if not isinstance(body, list):
             return []
         return _shikimori_trailers(body)

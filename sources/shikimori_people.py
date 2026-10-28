@@ -6,12 +6,12 @@ import logging
 import time
 from typing import Any
 
-import httpx
-
 from core.canonicalization import voice_role_token
+from core.http_client import http_request
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord, CharacterRecord, PersonCredit
 from core.settings import AppSettings, SourceSettings
+from core.source_errors import SourceInvalidResponse
 from sources.shikimori import (
     ShikimoriSource as BaseShikimoriSource,
     _best_poster_url,
@@ -101,7 +101,10 @@ def _rest_person_credit(person: dict[str, Any], *, character_name: str, settings
     )
 
 
-async def _rate_limited_get(client: httpx.AsyncClient, url: str, settings: SourceSettings | None = None) -> httpx.Response:
+async def _rate_limited_get(
+    url: str,
+    settings: SourceSettings | None = None,
+):
     global _NEXT_REST_REQUEST_AT
     async with _REST_RATE_LOCK:
         now = time.monotonic()
@@ -109,14 +112,25 @@ async def _rate_limited_get(client: httpx.AsyncClient, url: str, settings: Sourc
         if delay > 0:
             await asyncio.sleep(delay)
         _NEXT_REST_REQUEST_AT = time.monotonic() + _rest_spacing_seconds(settings)
-    return await client.get(url)
+    return await http_request(
+        "shikimori",
+        "GET",
+        url,
+        operation="people",
+        timeout=20.0,
+        allowed_statuses={429},
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+    )
 
 
-async def _rest_get_json(client: httpx.AsyncClient, path: str, settings: SourceSettings | None = None) -> Any:
+async def _rest_get_json(
+    path: str,
+    settings: SourceSettings | None = None,
+) -> Any:
     url = f"{site_url(settings)}{path}"
-    response: httpx.Response | None = None
+    response = None
     for attempt in range(3):
-        response = await _rate_limited_get(client, url, settings)
+        response = await _rate_limited_get(url, settings)
         if response.status_code != 429:
             break
         retry_after = response.headers.get("Retry-After")
@@ -126,20 +140,31 @@ async def _rest_get_json(client: httpx.AsyncClient, path: str, settings: SourceS
             delay = 1.2
         await asyncio.sleep(delay * (attempt + 1))
     assert response is not None
-    if response.is_error:
-        preview = response.text.replace("\n", " ")[:800]
-        raise RuntimeError(f"Shikimori REST HTTP {response.status_code} from {response.url}: {preview}")
+    if response.status_code == 429:
+        # The shared transport intentionally allowed 429 through so this source's
+        # legacy Retry-After policy could run first. After exhausting it, surface a
+        # typed rate-limit error through the normal transport path.
+        response = await http_request(
+            "shikimori",
+            "GET",
+            url,
+            operation="people",
+            timeout=20.0,
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        )
     try:
         return response.json()
     except ValueError as exc:
         preview = response.text.replace("\n", " ")[:800]
-        raise RuntimeError(f"Shikimori REST returned non-JSON response from {response.url}: {preview}") from exc
+        raise SourceInvalidResponse(
+            f"Shikimori REST returned non-JSON response from {response.url}: {preview}",
+            source="shikimori",
+            operation="people",
+        ) from exc
 
 
 async def _rest_anime_roles(anime_id: str, settings: SourceSettings | None = None) -> list[dict[str, Any]]:
-    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-    async with httpx.AsyncClient(timeout=20.0, headers=headers, follow_redirects=True) as client:
-        body = await _rest_get_json(client, f"/api/animes/{anime_id}/roles", settings)
+    body = await _rest_get_json(f"/api/animes/{anime_id}/roles", settings)
     if not isinstance(body, list):
         raise RuntimeError("Shikimori anime roles returned non-list JSON")
     return [item for item in body if isinstance(item, dict)]
@@ -215,9 +240,10 @@ async def _rest_character_details(character_ids: list[str], settings: SourceSett
                 _CHARACTER_CACHE.pop(character_id, None)
             missing.append(character_id)
     if missing:
-        headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-        async with httpx.AsyncClient(timeout=20.0, headers=headers, follow_redirects=True) as client:
-            responses = await asyncio.gather(*(_rest_get_json(client, f"/api/characters/{character_id}", settings) for character_id in missing), return_exceptions=True)
+        responses = await asyncio.gather(
+            *(_rest_get_json(f"/api/characters/{character_id}", settings) for character_id in missing),
+            return_exceptions=True,
+        )
         expires_at = time.monotonic() + ttl
         for character_id, response in zip(missing, responses):
             if isinstance(response, Exception):
@@ -283,7 +309,7 @@ async def _refresh_people(people: list[PersonCredit], settings: SourceSettings |
     by_id = {_clean_text(person.external_ids.get("shikimori")): person for person in people if _clean_text(person.external_ids.get("shikimori"))}
     for offset in range(0, len(ids), 50):
         batch = ids[offset:offset + 50]
-        data = await _graphql(PEOPLE_DETAILS_QUERY, {"ids": batch}, settings)
+        data = await _graphql(PEOPLE_DETAILS_QUERY, {"ids": batch}, settings, operation="people")
         for raw_person in data.get("people") or []:
             person_id = _clean_text(raw_person.get("id"))
             credit = by_id.get(person_id)
