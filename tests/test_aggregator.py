@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from core.identity import AnimeIdentity
 from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate
@@ -59,15 +59,23 @@ class _MALSecondPassSource:
 
 class AggregatorPeopleTests(unittest.TestCase):
     def test_conflicting_same_source_ids_do_not_merge_by_name(self) -> None:
-        people = _merge_people([
-            [PersonCredit(name="Same Name", external_ids={"anilist": "1"})],
-            [PersonCredit(name="Same Name", external_ids={"anilist": "2"})],
-        ])
+        people = _merge_people(
+            [
+                [PersonCredit(name="Same Name", external_ids={"anilist": "1"})],
+                [PersonCredit(name="Same Name", external_ids={"anilist": "2"})],
+            ]
+        )
         self.assertEqual(len(people), 2)
 
     def test_localization_credit_is_removed_as_a_whole(self) -> None:
         people = _merge_people(
-            [[PersonCredit(name="Dub Person", roles=["Producer", "English ADR Director"])]],
+            [
+                [
+                    PersonCredit(
+                        name="Dub Person", roles=["Producer", "English ADR Director"]
+                    )
+                ]
+            ],
             drop_localization_roles=True,
         )
         self.assertEqual(people, [])
@@ -142,23 +150,23 @@ class _PopularitySource:
 
 
 class AggregatorIdentityTests(unittest.IsolatedAsyncioTestCase):
-    async def test_enriched_identity_reaches_sources_without_mutating_candidate(self) -> None:
+    async def test_enriched_identity_reaches_sources_without_mutating_candidate(
+        self,
+    ) -> None:
         source = FakeSource()
-        aggregator = AnimeAggregator((source,))
+        enriched = AnimeIdentity({"mal": "123", "shikimori": "456"})
+        resolver = AsyncMock()
+        resolver.enrich = AsyncMock(return_value=enriched)
+        aggregator = AnimeAggregator((source,), identity_resolver=resolver)
         candidate = SearchCandidate(
             title="Test",
             aliases=["テスト"],
             external_ids={"mal": "123"},
         )
-        enriched = AnimeIdentity({"mal": "123", "shikimori": "456"})
 
-        with patch(
-            "services.identity_aggregator.enrich_identity",
-            new=AsyncMock(return_value=enriched),
-        ) as resolver:
-            anime = await aggregator.aggregate(candidate)
+        anime = await aggregator.aggregate(candidate)
 
-        resolver.assert_awaited()
+        resolver.enrich.assert_awaited()
         self.assertEqual(source.identities[0].external_ids, enriched.external_ids)
         self.assertEqual(candidate.external_ids, {"mal": "123"})
         self.assertEqual(anime.external_ids["shikimori"], "456")
@@ -166,20 +174,21 @@ class AggregatorIdentityTests(unittest.IsolatedAsyncioTestCase):
     async def test_popularity_statistics_remain_source_scoped(self) -> None:
         first = _PopularitySource("FirstDB", list_users=1000, scoring_users=700)
         second = _PopularitySource("SecondDB", list_users=250, scoring_users=120)
-        aggregator = AnimeAggregator((first, second))
+
+        async def no_external_enrichment(
+            identity: AnimeIdentity, titles: list[str]
+        ) -> AnimeIdentity:
+            return identity.copy()
+
+        resolver = AsyncMock()
+        resolver.enrich = AsyncMock(side_effect=no_external_enrichment)
+        aggregator = AnimeAggregator((first, second), identity_resolver=resolver)
         candidate = SearchCandidate(
             title="Popularity Test",
             external_ids={"mal": "20"},
         )
 
-        async def no_external_enrichment(identity: AnimeIdentity, titles: list[str]) -> AnimeIdentity:
-            return identity.copy()
-
-        with patch(
-            "services.identity_aggregator.enrich_identity",
-            new=AsyncMock(side_effect=no_external_enrichment),
-        ):
-            anime = await aggregator.aggregate(candidate)
+        anime = await aggregator.aggregate(candidate)
 
         self.assertEqual(anime.popularity_by_source["FirstDB"].list_users, 1000)
         self.assertEqual(anime.popularity_by_source["SecondDB"].list_users, 250)
@@ -189,20 +198,21 @@ class AggregatorIdentityTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_id_from_first_source_enables_second_pass_source(self) -> None:
         bridge = _AniListBridgeSource()
         mal = _MALSecondPassSource()
-        aggregator = AnimeAggregator((bridge, mal))
+
+        async def no_external_enrichment(
+            identity: AnimeIdentity, titles: list[str]
+        ) -> AnimeIdentity:
+            return identity.copy()
+
+        resolver = AsyncMock()
+        resolver.enrich = AsyncMock(side_effect=no_external_enrichment)
+        aggregator = AnimeAggregator((bridge, mal), identity_resolver=resolver)
         candidate = SearchCandidate(
             title="Bridge",
             external_ids={"anilist": "10"},
         )
 
-        async def no_external_enrichment(identity: AnimeIdentity, titles: list[str]) -> AnimeIdentity:
-            return identity.copy()
-
-        with patch(
-            "services.identity_aggregator.enrich_identity",
-            new=AsyncMock(side_effect=no_external_enrichment),
-        ):
-            anime = await aggregator.aggregate(candidate)
+        anime = await aggregator.aggregate(candidate)
 
         self.assertEqual(anime.external_ids, {"anilist": "10", "mal": "20"})
         self.assertEqual(len(mal.identities), 2)

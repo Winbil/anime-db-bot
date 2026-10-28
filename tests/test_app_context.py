@@ -7,6 +7,8 @@ from services import bans as bans_service
 from services import rate_limits as rate_limits_service
 from services import user_settings as user_settings_service
 from core.settings import AppSettings
+from mappings import database as mapping_database_module
+from mappings import resolver as mapping_resolver_module
 from services.app_context import AppContext, activate_app_context, get_app_context
 from services.bans import get_ban_store
 from services.rate_limits import get_personal_rate_limiter, get_upstream_rate_limiter
@@ -48,6 +50,14 @@ class AppContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             context.direct_lookup.source_keys,
             tuple(str(source.source_key) for source in context.sources),
+        )
+        self.assertIs(context.aggregator.identity_resolver, context.identity_resolver)
+        self.assertIs(
+            context.direct_lookup.identity_resolver, context.identity_resolver
+        )
+        self.assertEqual(
+            context.identity_resolver.mapping_resolver.path,
+            context.settings.mappings.db_path,
         )
         await context.aclose()
 
@@ -92,6 +102,10 @@ class AppContextTests(unittest.IsolatedAsyncioTestCase):
             for name in names:
                 with self.subTest(module=module.__name__, name=name):
                     self.assertFalse(hasattr(module, name))
+
+    def test_mapping_modules_export_no_runtime_singletons(self) -> None:
+        self.assertFalse(hasattr(mapping_resolver_module, "MAPPING_RESOLVER"))
+        self.assertFalse(hasattr(mapping_database_module, "MAPPING_DATABASE"))
 
 
 if __name__ == "__main__":
