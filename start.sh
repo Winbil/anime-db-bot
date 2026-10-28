@@ -127,6 +127,8 @@ if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
     info "Logs:    tail -f '$LOG_FILE'"
 else
     printf '\n' >&2
-    [[ -f "$LOG_FILE" ]] && tail -n 50 "$LOG_FILE" >&2 || true
+    if [[ -f "$LOG_FILE" ]]; then
+        tail -n 50 "$LOG_FILE" >&2
+    fi
     fail "The bot exited immediately. See the log above or $LOG_FILE"
 fi
