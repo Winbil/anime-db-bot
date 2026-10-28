@@ -8,6 +8,7 @@ from typing import Iterator
 from core.contracts import AnimeSearchProvider, AnimeSource
 from core.http_client import HttpClientPool, activate_http_pool
 from core.settings import AppSettings, get_settings
+from core.source_keys import SourceKey
 from services.characters import CharacterService
 from services.direct_lookup import DirectIdLookupService
 from services.episodes import EpisodeService
@@ -18,7 +19,7 @@ from services.source_health import SourceHealthRegistry
 from services.trailers import TrailerService
 from sources.catalog import (
     get_episode_sources,
-    get_search_providers,
+    get_search_provider_map,
     get_sources,
     get_trailer_sources,
 )
@@ -31,6 +32,7 @@ class AppContext:
     settings: AppSettings
     http: HttpClientPool
     source_health: SourceHealthRegistry
+    search_provider_map: dict[SourceKey, AnimeSearchProvider]
     search_providers: tuple[AnimeSearchProvider, ...]
     sources: tuple[AnimeSource, ...]
     search_service: SearchService
@@ -49,13 +51,15 @@ class AppContext:
             failure_threshold=settings.source_health.failure_threshold,
             cooldown_seconds=settings.source_health.cooldown_seconds,
         )
-        search_providers = get_search_providers(settings.sources)
+        search_provider_map = get_search_provider_map(settings.sources)
+        search_providers = tuple(search_provider_map.values())
         sources = get_sources(source_health, settings.sources)
         aggregator = AnimeAggregator(sources)
         return cls(
             settings=settings,
             http=http,
             source_health=source_health,
+            search_provider_map=search_provider_map,
             search_providers=search_providers,
             sources=sources,
             search_service=SearchService(search_providers, settings=settings.search),

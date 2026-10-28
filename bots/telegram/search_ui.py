@@ -4,6 +4,7 @@ import logging
 import re
 import secrets
 from dataclasses import dataclass, field
+from collections.abc import Mapping
 from typing import Awaitable, Callable
 
 from aiogram import Dispatcher, F
@@ -20,13 +21,18 @@ from aiogram.types import (
 )
 
 from bots.session_store import ExpiringSessionStore
-from bots.telegram.callbacks import TokenCallback, TokenIndexCallback, TokenValueCallback
+from bots.telegram.callbacks import (
+    TokenCallback,
+    TokenIndexCallback,
+    TokenValueCallback,
+)
 from bots.telegram.card.renderer import plain_text_to_rich_html
+from core.contracts import AnimeSearchProvider
 from core.models import SearchCandidate, SearchResultSet
 from core.settings import get_settings
 from core.source_names import MAL_SOURCE_NAME
 from localization import text
-from search.registry import DEFAULT_SEARCH_PROVIDER_KEYS, get_search_provider_map
+from search.registry import DEFAULT_SEARCH_PROVIDER_KEYS
 from services.direct_lookup import DirectIdLookupService
 from services.search import SearchService
 from services.search_expansion import expand_text_search
@@ -37,8 +43,7 @@ MAX_SCOPE_SESSIONS = 200
 MAX_PENDING_INPUTS = 500
 
 
-PROVIDERS = get_search_provider_map()
-ALL_PROVIDER_KEYS = tuple(PROVIDERS)
+ALL_PROVIDER_KEYS = tuple(str(key) for key in DEFAULT_SEARCH_PROVIDER_KEYS)
 
 PROVIDER_ALIASES = {
     "mal": "mal",
@@ -135,7 +140,6 @@ PENDING_INPUTS: ExpiringSessionStore[PendingAnimeInput] = ExpiringSessionStore(
     max_entries=MAX_PENDING_INPUTS,
     ttl_seconds=_input_ttl,
 )
-SERVICES: dict[tuple[str, ...], SearchService] = {}
 
 
 def _ui(locale: str, key: str, **kwargs) -> str:
@@ -152,20 +156,22 @@ def _normalize_provider_keys(keys: tuple[str, ...] | list[str]) -> tuple[str, ..
 def _service_for(
     provider_keys: tuple[str, ...],
     default_service: SearchService,
+    provider_map: Mapping[str, AnimeSearchProvider],
+    service_cache: dict[tuple[str, ...], SearchService],
 ) -> SearchService:
     provider_keys = _normalize_provider_keys(provider_keys)
     if provider_keys == DEFAULT_SEARCH_PROVIDER_KEYS:
         return default_service
 
-    service = SERVICES.get(provider_keys)
+    service = service_cache.get(provider_keys)
     if service is None:
         if not provider_keys:
             raise ValueError("No search providers selected")
         service = SearchService(
-            tuple(PROVIDERS[key] for key in provider_keys),
+            tuple(provider_map[key] for key in provider_keys),
             settings=default_service.settings,
         )
-        SERVICES[provider_keys] = service
+        service_cache[provider_keys] = service
     return service
 
 
@@ -184,13 +190,15 @@ def _parse_scope(value: str) -> tuple[str, ...] | None:
     if value in {"default", "main", "основной"}:
         return DEFAULT_SEARCH_PROVIDER_KEYS
 
-    parts = [part.strip() for part in value.replace("+", ",").split(",") if part.strip()]
+    parts = [
+        part.strip() for part in value.replace("+", ",").split(",") if part.strip()
+    ]
     if not parts:
         return None
 
     keys: list[str] = []
     for part in parts:
-        key = PROVIDER_ALIASES.get(part, part if part in PROVIDERS else None)
+        key = PROVIDER_ALIASES.get(part, part if part in ALL_PROVIDER_KEYS else None)
         if key is None:
             return None
         keys.append(key)
@@ -218,12 +226,14 @@ def _parse_direct_query(
 
 
 def _scope_keyboard(token: str, locale: str) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = [[
-        InlineKeyboardButton(
-            text=_ui(locale, "all"),
-            callback_data=TokenValueCallback("sc", token, "all").encode(),
-        )
-    ]]
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text=_ui(locale, "all"),
+                callback_data=TokenValueCallback("sc", token, "all").encode(),
+            )
+        ]
+    ]
 
     provider_buttons = [
         InlineKeyboardButton(
@@ -233,25 +243,31 @@ def _scope_keyboard(token: str, locale: str) -> InlineKeyboardMarkup:
         for key in ALL_PROVIDER_KEYS
     ]
     rows.extend(
-        provider_buttons[index:index + 2]
+        provider_buttons[index : index + 2]
         for index in range(0, len(provider_buttons), 2)
     )
-    rows.append([
-        InlineKeyboardButton(
-            text=_ui(locale, "cancel"),
-            callback_data=TokenCallback("sx", token).encode(),
-        )
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=_ui(locale, "cancel"),
+                callback_data=TokenCallback("sx", token).encode(),
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _waiting_keyboard(token: str, locale: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(
-            text=_ui(locale, "cancel"),
-            callback_data=TokenCallback("sx", token).encode(),
-        )
-    ]])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=_ui(locale, "cancel"),
+                    callback_data=TokenCallback("sx", token).encode(),
+                )
+            ]
+        ]
+    )
 
 
 def _preview_keyboard(
@@ -265,7 +281,10 @@ def _preview_keyboard(
     nav: list[InlineKeyboardButton] = []
     if index > 0:
         nav.append(
-            InlineKeyboardButton(text="◀️", callback_data=TokenIndexCallback("sr", token, index - 1).encode())
+            InlineKeyboardButton(
+                text="◀️",
+                callback_data=TokenIndexCallback("sr", token, index - 1).encode(),
+            )
         )
 
     suffix = "" if complete else "+"
@@ -277,18 +296,23 @@ def _preview_keyboard(
     )
     if index + 1 < total:
         nav.append(
-            InlineKeyboardButton(text="▶️", callback_data=TokenIndexCallback("sr", token, index + 1).encode())
+            InlineKeyboardButton(
+                text="▶️",
+                callback_data=TokenIndexCallback("sr", token, index + 1).encode(),
+            )
         )
 
-    return InlineKeyboardMarkup(inline_keyboard=[
-        nav,
-        [
-            InlineKeyboardButton(
-                text=_ui(locale, "details"),
-                callback_data=TokenIndexCallback("sd", token, index).encode(),
-            )
-        ],
-    ])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            nav,
+            [
+                InlineKeyboardButton(
+                    text=_ui(locale, "details"),
+                    callback_data=TokenIndexCallback("sd", token, index).encode(),
+                )
+            ],
+        ]
+    )
 
 
 def _preview_text(
@@ -307,17 +331,18 @@ def _preview_text(
         ordered = [key for key in preferred if key in candidate.external_ids]
         ordered.extend(sorted(set(candidate.external_ids) - set(ordered)))
         lines.extend(
-            f"{_source_label(key)}: {candidate.external_ids[key]}"
-            for key in ordered
+            f"{_source_label(key)}: {candidate.external_ids[key]}" for key in ordered
         )
     else:
         lines.append(_ui(locale, "no_ids"))
 
     if session.errors:
-        lines.extend([
-            "",
-            _ui(locale, "unavailable", sources=", ".join(session.errors)),
-        ])
+        lines.extend(
+            [
+                "",
+                _ui(locale, "unavailable", sources=", ".join(session.errors)),
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -416,7 +441,11 @@ class PendingAnimeInputFilter(BaseFilter):
     """Match only the next text from the owner/chat of a live /anime flow."""
 
     async def __call__(self, message: Message) -> bool:
-        if message.from_user is None or not message.text or message.text.startswith("/"):
+        if (
+            message.from_user is None
+            or not message.text
+            or message.text.startswith("/")
+        ):
             return False
         pending = PENDING_INPUTS.get(_pending_key(message.from_user.id))
         return pending is not None and pending.chat_id == message.chat.id
@@ -541,6 +570,8 @@ async def _execute_query(
     direct_source_keys: tuple[str, ...] | None,
     default_service: SearchService,
     direct_lookup: DirectIdLookupService,
+    provider_map: Mapping[str, AnimeSearchProvider],
+    service_cache: dict[tuple[str, ...], SearchService],
 ) -> None:
     locale = get_user_locale(owner_user_id)
     parsed_direct = _parse_direct_query(query, direct_lookup.source_keys)
@@ -549,7 +580,10 @@ async def _execute_query(
         if parsed_direct is not None:
             explicit_source, external_id = parsed_direct
             if explicit_source is not None:
-                if direct_source_keys is not None and explicit_source not in direct_source_keys:
+                if (
+                    direct_source_keys is not None
+                    and explicit_source not in direct_source_keys
+                ):
                     await message.answer(
                         _ui(
                             locale,
@@ -566,7 +600,9 @@ async def _execute_query(
                 source_keys=lookup_keys,
             )
         else:
-            service = _service_for(provider_keys, default_service)
+            service = _service_for(
+                provider_keys, default_service, provider_map, service_cache
+            )
             result_set = await service.collect(query)
             if len(provider_keys) > 1:
                 result_set = await expand_text_search(
@@ -596,8 +632,11 @@ def register_search_handlers(
     aggregate_callback: Callable[[Message, SearchCandidate, int], Awaitable[None]],
     default_service: SearchService,
     direct_lookup: DirectIdLookupService,
+    provider_map: Mapping[str, AnimeSearchProvider],
 ) -> None:
     """Register the single public anime-search command and its interactive flow."""
+    provider_map = {str(key): provider for key, provider in provider_map.items()}
+    service_cache: dict[tuple[str, ...], SearchService] = {}
 
     @dp.message(Command("anime"))
     async def anime_handler(message: Message, command: CommandObject) -> None:
@@ -614,6 +653,8 @@ def register_search_handlers(
                 direct_source_keys=None,
                 default_service=default_service,
                 direct_lookup=direct_lookup,
+                provider_map=provider_map,
+                service_cache=service_cache,
             )
             return
 
@@ -637,7 +678,9 @@ def register_search_handlers(
         locale = get_user_locale(callback.from_user.id)
         data = TokenValueCallback.parse(callback.data, prefix="sc")
         if data is None:
-            await callback.answer(text("search", "invalid_provider", locale=locale), show_alert=True)
+            await callback.answer(
+                text("search", "invalid_provider", locale=locale), show_alert=True
+            )
             return
 
         token = data.token
@@ -647,7 +690,9 @@ def register_search_handlers(
             await callback.answer(_ui(locale, "expired"), show_alert=True)
             return
         if scope_session.owner_user_id != callback.from_user.id:
-            await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
+            await callback.answer(
+                text("card", "not_owner", locale=locale), show_alert=True
+            )
             return
         if callback.message is None:
             await callback.answer()
@@ -657,12 +702,14 @@ def register_search_handlers(
             provider_keys = ALL_PROVIDER_KEYS
             direct_source_keys = None
             scope_label = _ui(locale, "all")
-        elif selected in PROVIDERS:
+        elif selected in provider_map:
             provider_keys = (selected,)
             direct_source_keys = (selected,)
             scope_label = _source_label(selected)
         else:
-            await callback.answer(text("search", "invalid_provider", locale=locale), show_alert=True)
+            await callback.answer(
+                text("search", "invalid_provider", locale=locale), show_alert=True
+            )
             return
 
         PENDING_INPUTS[_pending_key(callback.from_user.id)] = PendingAnimeInput(
@@ -687,8 +734,13 @@ def register_search_handlers(
             return
         token = data.token
         scope_session = SCOPE_SESSIONS.get(token)
-        if scope_session is not None and scope_session.owner_user_id != callback.from_user.id:
-            await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
+        if (
+            scope_session is not None
+            and scope_session.owner_user_id != callback.from_user.id
+        ):
+            await callback.answer(
+                text("card", "not_owner", locale=locale), show_alert=True
+            )
             return
 
         _clear_pending(callback.from_user.id)
@@ -698,7 +750,9 @@ def register_search_handlers(
             pass
         await callback.answer()
         if callback.message is not None:
-            await callback.message.edit_text(_ui(locale, "cancelled"), reply_markup=None)
+            await callback.message.edit_text(
+                _ui(locale, "cancelled"), reply_markup=None
+            )
 
     @dp.message(PendingAnimeInputFilter())
     async def pending_anime_input_handler(message: Message) -> None:
@@ -720,6 +774,8 @@ def register_search_handlers(
             direct_source_keys=pending.direct_source_keys,
             default_service=default_service,
             direct_lookup=direct_lookup,
+            provider_map=provider_map,
+            service_cache=service_cache,
         )
 
     @dp.callback_query(F.data.startswith("sr:"))
@@ -727,16 +783,22 @@ def register_search_handlers(
         locale = get_user_locale(callback.from_user.id)
         data = TokenIndexCallback.parse(callback.data, prefix="sr")
         if data is None:
-            await callback.answer(text("search", "invalid_page", locale=locale), show_alert=True)
+            await callback.answer(
+                text("search", "invalid_page", locale=locale), show_alert=True
+            )
             return
 
         token = data.token
         session = SESSIONS.get(token)
         if session is None:
-            await callback.answer(text("search", "expired", locale=locale), show_alert=True)
+            await callback.answer(
+                text("search", "expired", locale=locale), show_alert=True
+            )
             return
         if session.owner_user_id != callback.from_user.id:
-            await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
+            await callback.answer(
+                text("card", "not_owner", locale=locale), show_alert=True
+            )
             return
         if callback.message is None:
             await callback.answer()
@@ -744,7 +806,9 @@ def register_search_handlers(
 
         index = data.index
         if index < 0 or index >= len(session.items):
-            await callback.answer(text("search", "result_unavailable", locale=locale), show_alert=True)
+            await callback.answer(
+                text("search", "result_unavailable", locale=locale), show_alert=True
+            )
             return
 
         await callback.answer()
@@ -755,16 +819,22 @@ def register_search_handlers(
         locale = get_user_locale(callback.from_user.id)
         data = TokenIndexCallback.parse(callback.data, prefix="sd")
         if data is None:
-            await callback.answer(text("search", "invalid_result", locale=locale), show_alert=True)
+            await callback.answer(
+                text("search", "invalid_result", locale=locale), show_alert=True
+            )
             return
 
         token = data.token
         session = SESSIONS.get(token)
         if session is None:
-            await callback.answer(text("search", "expired", locale=locale), show_alert=True)
+            await callback.answer(
+                text("search", "expired", locale=locale), show_alert=True
+            )
             return
         if session.owner_user_id != callback.from_user.id:
-            await callback.answer(text("card", "not_owner", locale=locale), show_alert=True)
+            await callback.answer(
+                text("card", "not_owner", locale=locale), show_alert=True
+            )
             return
         if callback.message is None:
             await callback.answer()
@@ -772,7 +842,9 @@ def register_search_handlers(
 
         index = data.index
         if index < 0 or index >= len(session.items):
-            await callback.answer(text("search", "result_unavailable", locale=locale), show_alert=True)
+            await callback.answer(
+                text("search", "result_unavailable", locale=locale), show_alert=True
+            )
             return
 
         candidate = session.items[index]

@@ -154,6 +154,7 @@ async def run_bot(
                 aggregate_callback=_aggregate_and_cleanup_search,
                 default_service=context.search_service,
                 direct_lookup=context.direct_lookup,
+                provider_map=context.search_provider_map,
             )
 
             await dp.start_polling(bot)

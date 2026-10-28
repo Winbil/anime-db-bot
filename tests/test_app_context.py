@@ -23,6 +23,9 @@ class AppContextTests(unittest.IsolatedAsyncioTestCase):
     async def test_context_owns_runtime_services(self) -> None:
         context = AppContext.create(self._settings())
         self.assertTrue(context.search_providers)
+        self.assertEqual(
+            tuple(context.search_provider_map.values()), context.search_providers
+        )
         self.assertTrue(context.sources)
         self.assertTrue(context.search_service.provider_name)
         self.assertIsNotNone(context.people_progress_service)
