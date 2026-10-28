@@ -1,31 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 
 from core.canonicalization import normalize_key
 from core.models import SearchCandidate, SearchResultSet
+from core.settings import AppSettings
 from services.direct_lookup import DirectIdLookupService
 from services.search import SearchService, merge_candidates
 
 _CYRILLIC_RE = re.compile(r"[а-яё]", flags=re.IGNORECASE)
 _LATIN_RE = re.compile(r"[a-z]", flags=re.IGNORECASE)
-
-
-def _env_int(
-    name: str,
-    default: int,
-    *,
-    minimum: int,
-    maximum: int,
-) -> int:
-    raw = os.getenv(name, str(default)).strip()
-    try:
-        value = int(raw)
-    except ValueError:
-        value = default
-    return min(max(value, minimum), maximum)
 
 
 def _clean(value: str) -> str:
@@ -109,10 +94,11 @@ async def expand_text_search(
     if not initial.items:
         return initial
 
-    max_seeds = _env_int("SEARCH_EXPANSION_MAX_SEEDS", 1, minimum=0, maximum=3)
-    max_queries = _env_int("SEARCH_EXPANSION_MAX_QUERIES", 1, minimum=0, maximum=3)
-    max_pages = _env_int("SEARCH_EXPANSION_MAX_PAGES", 2, minimum=1, maximum=4)
-    max_items = _env_int("SEARCH_COLLECTION_MAX_ITEMS", 120, minimum=10, maximum=1000)
+    settings = AppSettings.from_env().search
+    max_seeds = min(max(settings.expansion_max_seeds, 0), 3)
+    max_queries = min(max(settings.expansion_max_queries, 0), 3)
+    max_pages = min(max(settings.expansion_max_pages, 1), 4)
+    max_items = min(max(settings.collection_max_items, 10), 1000)
     if max_seeds == 0 or max_queries == 0:
         return initial
 
