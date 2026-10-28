@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import secrets
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
 from aiogram import BaseMiddleware, Dispatcher
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message, TelegramObject
 
+from bots.session_store import ExpiringSessionStore
 from mappings.resolver import (
     MappingOverride,
     MappingOverrideHistory,
+    delete_mapping_override,
     list_mapping_override_history,
     list_mapping_overrides,
+    set_mapping_override,
 )
 from services.access_control import is_telegram_admin
 from services.bans import BanRecord, ban_user, get_active_ban, unban_user
@@ -47,6 +52,28 @@ _ADMIN_TEXT = {
         "mapping_history_title": "Последние записи mapping override history: {shown}",
         "mapping_history_empty": "История mapping overrides пока пуста.",
         "mapping_history_usage": "Использование: /mapping_history [limit], limit от 1 до 100.",
+        "mapping_set_usage": (
+            "Использование: /mapping_set <accept|reject> <source_provider> <source_id> "
+            "<target_provider> <target_id> <reason>"
+        ),
+        "mapping_delete_usage": (
+            "Использование: /mapping_delete <source_provider> <source_id> "
+            "<target_provider> <target_id> <reason>"
+        ),
+        "mapping_confirm_usage": "Использование: /mapping_confirm <token>.",
+        "mapping_cancel_usage": "Использование: /mapping_cancel <token>.",
+        "mapping_pending": (
+            "Изменение ещё НЕ применено. Проверьте:\n{preview}\n"
+            "Подтвердить: /mapping_confirm {token}\n"
+            "Отменить: /mapping_cancel {token}"
+        ),
+        "mapping_confirmed_set": "Mapping override применён: {preview}",
+        "mapping_confirmed_delete": "Mapping override удалён: {preview}",
+        "mapping_confirm_missing": "Подтверждение не найдено или уже истекло.",
+        "mapping_confirm_owner": "Это подтверждение принадлежит другому администратору.",
+        "mapping_cancelled": "Изменение отменено.",
+        "mapping_delete_missing": "Такого mapping override уже нет.",
+        "mapping_mutation_failed": "Не удалось применить изменение: {error}",
     },
     "en": {
         "forbidden": "Insufficient permissions.",
@@ -71,8 +98,42 @@ _ADMIN_TEXT = {
         "mapping_history_title": "Latest mapping override history entries: {shown}",
         "mapping_history_empty": "Mapping override history is empty.",
         "mapping_history_usage": "Usage: /mapping_history [limit], limit must be 1..100.",
+        "mapping_set_usage": (
+            "Usage: /mapping_set <accept|reject> <source_provider> <source_id> "
+            "<target_provider> <target_id> <reason>"
+        ),
+        "mapping_delete_usage": (
+            "Usage: /mapping_delete <source_provider> <source_id> "
+            "<target_provider> <target_id> <reason>"
+        ),
+        "mapping_confirm_usage": "Usage: /mapping_confirm <token>.",
+        "mapping_cancel_usage": "Usage: /mapping_cancel <token>.",
+        "mapping_pending": (
+            "The change has NOT been applied yet. Review it:\n{preview}\n"
+            "Confirm: /mapping_confirm {token}\n"
+            "Cancel: /mapping_cancel {token}"
+        ),
+        "mapping_confirmed_set": "Mapping override applied: {preview}",
+        "mapping_confirmed_delete": "Mapping override deleted: {preview}",
+        "mapping_confirm_missing": "Confirmation was not found or has expired.",
+        "mapping_confirm_owner": "This confirmation belongs to another administrator.",
+        "mapping_cancelled": "Change cancelled.",
+        "mapping_delete_missing": "That mapping override no longer exists.",
+        "mapping_mutation_failed": "Could not apply the change: {error}",
     },
 }
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingMappingMutation:
+    admin_id: int
+    operation: str
+    source_provider: str
+    source_id: str
+    target_provider: str
+    target_id: str
+    reason: str
+    action: str | None = None
 
 
 def _t(locale: str, key: str, **params: object) -> str:
@@ -147,6 +208,66 @@ def _clip_admin_field(value: object, limit: int = 900) -> str:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: max(1, limit - 1)] + "…"
+
+
+def _clean_mapping_route_part(value: object) -> str:
+    return _clean_admin_field(value).casefold()
+
+
+def _parse_mapping_set(text_value: str | None) -> tuple[str, str, str, str, str, str] | None:
+    parts = (text_value or "").split(maxsplit=6)
+    if len(parts) != 7:
+        return None
+    _, action, source_provider, source_id, target_provider, target_id, reason = parts
+    action = action.strip().casefold()
+    source_provider = _clean_mapping_route_part(source_provider)
+    source_id = _clean_admin_field(source_id)
+    target_provider = _clean_mapping_route_part(target_provider)
+    target_id = _clean_admin_field(target_id)
+    reason = _clean_admin_field(reason)
+    if (
+        action not in {"accept", "reject"}
+        or not source_provider
+        or not source_id
+        or not target_provider
+        or not target_id
+        or source_provider == target_provider
+        or not reason
+    ):
+        return None
+    return action, source_provider, source_id, target_provider, target_id, reason
+
+
+def _parse_mapping_delete(text_value: str | None) -> tuple[str, str, str, str, str] | None:
+    parts = (text_value or "").split(maxsplit=5)
+    if len(parts) != 6:
+        return None
+    _, source_provider, source_id, target_provider, target_id, reason = parts
+    source_provider = _clean_mapping_route_part(source_provider)
+    source_id = _clean_admin_field(source_id)
+    target_provider = _clean_mapping_route_part(target_provider)
+    target_id = _clean_admin_field(target_id)
+    reason = _clean_admin_field(reason)
+    if (
+        not source_provider
+        or not source_id
+        or not target_provider
+        or not target_id
+        or source_provider == target_provider
+        or not reason
+    ):
+        return None
+    return source_provider, source_id, target_provider, target_id, reason
+
+
+def _mapping_mutation_preview(item: _PendingMappingMutation) -> str:
+    route = (
+        f"{item.source_provider}:{item.source_id} → "
+        f"{item.target_provider}:{item.target_id}"
+    )
+    if item.operation == "set":
+        return f"SET {item.action} {route} | reason={_clip_admin_field(item.reason)}"
+    return f"DELETE {route} | reason={_clip_admin_field(item.reason)}"
 
 
 def _chunk_lines(
@@ -265,12 +386,29 @@ class TelegramModerationMiddleware(BaseMiddleware):
 
 
 def register_admin_handlers(dp: Dispatcher) -> None:
+    pending_mapping_mutations = ExpiringSessionStore[_PendingMappingMutation](
+        max_entries=128,
+        ttl_seconds=300,
+    )
+
+    def new_mapping_token() -> str:
+        while True:
+            token = secrets.token_hex(4)
+            if token not in pending_mapping_mutations:
+                return token
+
+    async def require_admin(message: Message) -> tuple[int | None, str]:
+        admin_id = int(message.from_user.id) if message.from_user else None
+        locale = get_user_locale(admin_id)
+        if admin_id is None or not is_telegram_admin(admin_id):
+            await message.answer(_t(locale, "forbidden"))
+            return None, locale
+        return admin_id, locale
+
     @dp.message(Command("users"))
     async def users_handler(message: Message) -> None:
-        user_id = int(message.from_user.id) if message.from_user else None
-        locale = get_user_locale(user_id)
-        if user_id is None or not is_telegram_admin(user_id):
-            await message.answer(_t(locale, "forbidden"))
+        admin_id, locale = await require_admin(message)
+        if admin_id is None:
             return
 
         for chunk in _chunk_user_ids(list_platform_user_ids("telegram"), locale):
@@ -278,10 +416,8 @@ def register_admin_handlers(dp: Dispatcher) -> None:
 
     @dp.message(Command("mapping_overrides"))
     async def mapping_overrides_handler(message: Message) -> None:
-        admin_id = int(message.from_user.id) if message.from_user else None
-        locale = get_user_locale(admin_id)
-        if admin_id is None or not is_telegram_admin(admin_id):
-            await message.answer(_t(locale, "forbidden"))
+        admin_id, locale = await require_admin(message)
+        if admin_id is None:
             return
 
         overrides = list_mapping_overrides()
@@ -295,10 +431,8 @@ def register_admin_handlers(dp: Dispatcher) -> None:
 
     @dp.message(Command("mapping_history"))
     async def mapping_history_handler(message: Message) -> None:
-        admin_id = int(message.from_user.id) if message.from_user else None
-        locale = get_user_locale(admin_id)
-        if admin_id is None or not is_telegram_admin(admin_id):
-            await message.answer(_t(locale, "forbidden"))
+        admin_id, locale = await require_admin(message)
+        if admin_id is None:
             return
 
         limit = _parse_mapping_history_limit(message.text)
@@ -315,12 +449,154 @@ def register_admin_handlers(dp: Dispatcher) -> None:
         ):
             await message.answer(chunk)
 
+    @dp.message(Command("mapping_set"))
+    async def mapping_set_handler(message: Message) -> None:
+        admin_id, locale = await require_admin(message)
+        if admin_id is None:
+            return
+
+        parsed = _parse_mapping_set(message.text)
+        if parsed is None:
+            await message.answer(_t(locale, "mapping_set_usage"))
+            return
+        action, source_provider, source_id, target_provider, target_id, reason = parsed
+        pending = _PendingMappingMutation(
+            admin_id=admin_id,
+            operation="set",
+            source_provider=source_provider,
+            source_id=source_id,
+            target_provider=target_provider,
+            target_id=target_id,
+            reason=reason,
+            action=action,
+        )
+        token = new_mapping_token()
+        pending_mapping_mutations[token] = pending
+        await message.answer(
+            _t(
+                locale,
+                "mapping_pending",
+                preview=_mapping_mutation_preview(pending),
+                token=token,
+            )
+        )
+
+    @dp.message(Command("mapping_delete"))
+    async def mapping_delete_handler(message: Message) -> None:
+        admin_id, locale = await require_admin(message)
+        if admin_id is None:
+            return
+
+        parsed = _parse_mapping_delete(message.text)
+        if parsed is None:
+            await message.answer(_t(locale, "mapping_delete_usage"))
+            return
+        source_provider, source_id, target_provider, target_id, reason = parsed
+        pending = _PendingMappingMutation(
+            admin_id=admin_id,
+            operation="delete",
+            source_provider=source_provider,
+            source_id=source_id,
+            target_provider=target_provider,
+            target_id=target_id,
+            reason=reason,
+        )
+        token = new_mapping_token()
+        pending_mapping_mutations[token] = pending
+        await message.answer(
+            _t(
+                locale,
+                "mapping_pending",
+                preview=_mapping_mutation_preview(pending),
+                token=token,
+            )
+        )
+
+    @dp.message(Command("mapping_confirm"))
+    async def mapping_confirm_handler(message: Message) -> None:
+        admin_id, locale = await require_admin(message)
+        if admin_id is None:
+            return
+
+        parts = (message.text or "").split()
+        if len(parts) != 2:
+            await message.answer(_t(locale, "mapping_confirm_usage"))
+            return
+        token = parts[1].strip().casefold()
+        pending = pending_mapping_mutations.get(token)
+        if pending is None:
+            await message.answer(_t(locale, "mapping_confirm_missing"))
+            return
+        if pending.admin_id != admin_id:
+            await message.answer(_t(locale, "mapping_confirm_owner"))
+            return
+
+        preview = _mapping_mutation_preview(pending)
+        author = f"telegram:{admin_id}"
+        try:
+            if pending.operation == "set":
+                set_mapping_override(
+                    pending.source_provider,
+                    pending.source_id,
+                    pending.target_provider,
+                    pending.target_id,
+                    action=pending.action or "",
+                    reason=pending.reason,
+                    author=author,
+                )
+                response_key = "mapping_confirmed_set"
+            else:
+                deleted = delete_mapping_override(
+                    pending.source_provider,
+                    pending.source_id,
+                    pending.target_provider,
+                    pending.target_id,
+                    reason=pending.reason,
+                    author=author,
+                )
+                if not deleted:
+                    del pending_mapping_mutations[token]
+                    await message.answer(_t(locale, "mapping_delete_missing"))
+                    return
+                response_key = "mapping_confirmed_delete"
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            await message.answer(
+                _t(
+                    locale,
+                    "mapping_mutation_failed",
+                    error=_clip_admin_field(exc, 500),
+                )
+            )
+            return
+
+        del pending_mapping_mutations[token]
+        await message.answer(_t(locale, response_key, preview=preview))
+
+    @dp.message(Command("mapping_cancel"))
+    async def mapping_cancel_handler(message: Message) -> None:
+        admin_id, locale = await require_admin(message)
+        if admin_id is None:
+            return
+
+        parts = (message.text or "").split()
+        if len(parts) != 2:
+            await message.answer(_t(locale, "mapping_cancel_usage"))
+            return
+        token = parts[1].strip().casefold()
+        pending = pending_mapping_mutations.get(token)
+        if pending is None:
+            await message.answer(_t(locale, "mapping_confirm_missing"))
+            return
+        if pending.admin_id != admin_id:
+            await message.answer(_t(locale, "mapping_confirm_owner"))
+            return
+        del pending_mapping_mutations[token]
+        await message.answer(_t(locale, "mapping_cancelled"))
+
     @dp.message(Command("ban"))
     async def ban_handler(message: Message) -> None:
-        admin_id = int(message.from_user.id) if message.from_user else None
-        locale = get_user_locale(admin_id)
-        if admin_id is None or not is_telegram_admin(admin_id):
-            await message.answer(_t(locale, "forbidden"))
+        admin_id, locale = await require_admin(message)
+        if admin_id is None:
             return
 
         parsed = _parse_ban_arguments(message.text)
@@ -358,10 +634,8 @@ def register_admin_handlers(dp: Dispatcher) -> None:
 
     @dp.message(Command("unban"))
     async def unban_handler(message: Message) -> None:
-        admin_id = int(message.from_user.id) if message.from_user else None
-        locale = get_user_locale(admin_id)
-        if admin_id is None or not is_telegram_admin(admin_id):
-            await message.answer(_t(locale, "forbidden"))
+        admin_id, locale = await require_admin(message)
+        if admin_id is None:
             return
 
         parts = (message.text or "").split()
