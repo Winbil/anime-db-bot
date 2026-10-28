@@ -12,7 +12,7 @@ from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
 from services.rate_limits import wait_for_upstream
-from sources.anilist import _graphql as _anilist_graphql
+from sources.anilist import graphql_request as anilist_graphql_request
 from sources.jikan import JikanSource
 from sources.shikimori import site_url as shikimori_site_url
 
@@ -93,16 +93,18 @@ def _anilist_trailers(raw: dict[str, Any] | None) -> list[TrailerRecord]:
     url, embed_url = _anilist_url(site, external_id)
     if not url:
         return []
-    return [TrailerRecord(
-        source="anilist",
-        backend="anilist",
-        title=None,
-        kind="trailer",
-        hosting=site,
-        url=url,
-        embed_url=embed_url,
-        thumbnail=_https(raw.get("thumbnail")) or None,
-    )]
+    return [
+        TrailerRecord(
+            source="anilist",
+            backend="anilist",
+            title=None,
+            kind="trailer",
+            hosting=site,
+            url=url,
+            embed_url=embed_url,
+            thumbnail=_https(raw.get("thumbnail")) or None,
+        )
+    ]
 
 
 def _shikimori_trailers(body: list[Any]) -> list[TrailerRecord]:
@@ -117,16 +119,18 @@ def _shikimori_trailers(body: list[Any]) -> list[TrailerRecord]:
         url = _https(raw.get("url"))
         if not url:
             continue
-        result.append(TrailerRecord(
-            source="shikimori",
-            backend="shikimori",
-            title=_clean(raw.get("name")) or None,
-            kind=kind,
-            hosting=_clean(raw.get("hosting")) or None,
-            url=url,
-            embed_url=_https(raw.get("player_url")) or None,
-            thumbnail=_https(raw.get("image_url")) or None,
-        ))
+        result.append(
+            TrailerRecord(
+                source="shikimori",
+                backend="shikimori",
+                title=_clean(raw.get("name")) or None,
+                kind=kind,
+                hosting=_clean(raw.get("hosting")) or None,
+                url=url,
+                embed_url=_https(raw.get("player_url")) or None,
+                thumbnail=_https(raw.get("image_url")) or None,
+            )
+        )
     return _dedupe(result)
 
 
@@ -145,7 +149,7 @@ class AniListTrailerSource:
             return []
 
         await wait_for_upstream("anilist", "trailers")
-        data = await _anilist_graphql(
+        data = await anilist_graphql_request(
             ANILIST_TRAILER_QUERY,
             {"id": int(media_id)},
             self._settings,

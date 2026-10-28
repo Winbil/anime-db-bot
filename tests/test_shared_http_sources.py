@@ -37,13 +37,17 @@ class SharedHttpSourceTests(unittest.IsolatedAsyncioTestCase):
             new=AsyncMock(return_value=response),
         ) as request:
             with self.assertRaises(SourceInvalidResponse) as raised:
-                await anilist._graphql("query Test { x }", {}, operation="people")
+                await anilist.graphql_request(
+                    "query Test { x }", {}, operation="people"
+                )
 
         self.assertEqual(raised.exception.info.source, "anilist")
         self.assertEqual(raised.exception.info.operation, "people")
         self.assertEqual(request.await_args.kwargs["operation"], "people")
 
-    async def test_shikimori_people_keeps_retry_after_policy_on_shared_transport(self) -> None:
+    async def test_shikimori_people_keeps_retry_after_policy_on_shared_transport(
+        self,
+    ) -> None:
         limited = _response(429, json_data={}, headers={"Retry-After": "0"})
         success = _response(200, json_data={"id": 1})
         with (
@@ -76,7 +80,9 @@ class SharedHttpSourceTests(unittest.IsolatedAsyncioTestCase):
             data = await anidb._network_xml("1", settings)
 
         self.assertIn(b"<anime", data)
-        self.assertEqual(request.await_args.args[:3], ("anidb", "GET", settings.anidb_http_api_url))
+        self.assertEqual(
+            request.await_args.args[:3], ("anidb", "GET", settings.anidb_http_api_url)
+        )
         self.assertEqual(request.await_args.kwargs["operation"], "metadata")
 
 

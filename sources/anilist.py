@@ -13,11 +13,14 @@ from core.canonicalization import (
     voice_role_token,
 )
 from core.http_client import http_request
+from core.identity import AnimeIdentity
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord, CharacterRecord, PersonCredit, PopularityRanking
+from core.people_loading import PeopleBatch
 from core.settings import AppSettings, SourceSettings
 from core.temporal import PartialDate, parse_partial_date
 from core.source_errors import SourceInvalidResponse
+from core.source_keys import SourceKey
 from localization import source_value_key
 
 DEFAULT_ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
@@ -27,6 +30,40 @@ DEFAULT_PEOPLE_CACHE_TTL_SECONDS = 21600
 DETAIL_QUERY = """
 query AnimeDetails($idMal: Int!) {
   Media(idMal: $idMal, type: ANIME) {
+    id
+    idMal
+    title { romaji english native }
+    synonyms
+    format
+    status
+    description(asHtml: false)
+    startDate { year month day }
+    endDate { year month day }
+    season
+    seasonYear
+    episodes
+    duration
+    averageScore
+    popularity
+    favourites
+    rankings { rank type year season allTime }
+    stats {
+      statusDistribution { status amount }
+      scoreDistribution { score amount }
+    }
+    genres
+    isAdult
+    coverImage { extraLarge large medium }
+    siteUrl
+    nextAiringEpisode { airingAt episode }
+    studios { nodes { name } }
+  }
+}
+"""
+
+BY_ID_QUERY = """
+query AnimeDetailsById($id: Int!) {
+  Media(id: $id, type: ANIME) {
     id
     idMal
     title { romaji english native }
@@ -289,7 +326,7 @@ def _headers(settings: SourceSettings | None = None) -> dict[str, str]:
     return headers
 
 
-async def _graphql(
+async def graphql_request(
     query: str,
     variables: dict[str, Any],
     settings: SourceSettings | None = None,
@@ -400,7 +437,7 @@ async def _all_characters(
     page = 1
     has_next = True
     while has_next and page <= _people_max_pages(settings):
-        data = await _graphql(
+        data = await graphql_request(
             CHARACTERS_PAGE_QUERY,
             {"id": media_id, "page": page},
             settings,
@@ -433,7 +470,7 @@ async def _all_staff(
     page = 1
     has_next = True
     while has_next and page <= _people_max_pages(settings):
-        data = await _graphql(
+        data = await graphql_request(
             STAFF_PAGE_QUERY,
             {"id": media_id, "page": page},
             settings,
@@ -454,7 +491,7 @@ async def _all_voices(
     page = 1
     has_next = True
     while has_next and page <= _people_max_pages(settings):
-        data = await _graphql(
+        data = await graphql_request(
             CHARACTERS_PAGE_QUERY,
             {"id": media_id, "page": page},
             settings,
@@ -631,48 +668,86 @@ async def _cached_people(
 
 
 class AniListSource:
+    """Identity-native AniList metadata and lazy people source."""
+
     name = "AniList"
+    source_key = SourceKey.ANILIST
 
     def __init__(self, settings: SourceSettings | None = None) -> None:
         self._settings = _settings(settings)
 
-    async def get_details(
-        self,
-        mal_id: str,
-        known_ids: dict[str, str],
-    ) -> AnimeRecord | None:
-        mal_id = str(mal_id).strip()
+    async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
+        anilist_id = str(identity.get(SourceKey.ANILIST) or "").strip()
+        if anilist_id.isdigit():
+            data = await graphql_request(
+                BY_ID_QUERY,
+                {"id": int(anilist_id)},
+                self._settings,
+            )
+            raw = data.get("Media")
+            if not raw or str(raw.get("id") or "") != anilist_id:
+                return None
+            return _record(raw)
+
+        mal_id = str(identity.get(SourceKey.MAL) or "").strip()
         if not mal_id.isdigit():
             return None
-
-        data = await _graphql(
+        data = await graphql_request(
             DETAIL_QUERY,
             {"idMal": int(mal_id)},
             self._settings,
         )
         raw = data.get("Media")
-        if not raw:
-            return None
-        if str(raw.get("idMal") or "") != mal_id:
+        if not raw or str(raw.get("idMal") or "") != mal_id:
             return None
         return _record(raw)
 
-    async def load_staff(
-        self,
-        mal_id: str,
-        known_ids: dict[str, str],
-    ) -> list[PersonCredit]:
-        media_id = str(known_ids.get("anilist") or "").strip()
-        if not str(mal_id).strip().isdigit() or not media_id.isdigit():
+    async def load_characters(self, identity: AnimeIdentity) -> list[CharacterRecord]:
+        media_id = str(identity.get(SourceKey.ANILIST) or "").strip()
+        if not media_id.isdigit():
+            return []
+        return await _all_characters(int(media_id), self._settings)
+
+    async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
+        media_id = str(identity.get(SourceKey.ANILIST) or "").strip()
+        if not media_id.isdigit():
             return []
         return await _cached_people(media_id, "staff", self._settings)
 
-    async def load_voices(
-        self,
-        mal_id: str,
-        known_ids: dict[str, str],
-    ) -> list[PersonCredit]:
-        media_id = str(known_ids.get("anilist") or "").strip()
-        if not str(mal_id).strip().isdigit() or not media_id.isdigit():
+    async def load_voices(self, identity: AnimeIdentity) -> list[PersonCredit]:
+        media_id = str(identity.get(SourceKey.ANILIST) or "").strip()
+        if not media_id.isdigit():
             return []
         return await _cached_people(media_id, "voices", self._settings)
+
+    async def load_staff_batch(
+        self,
+        identity: AnimeIdentity,
+        *,
+        cursor: str | None = None,
+        portrait_limit: int = 50,
+    ) -> PeopleBatch:
+        if cursor is not None:
+            return PeopleBatch(complete=True)
+        people = await self.load_staff(identity)
+        return PeopleBatch(
+            people=people,
+            complete=True,
+            total_count=len(people),
+        )
+
+    async def load_voices_batch(
+        self,
+        identity: AnimeIdentity,
+        *,
+        cursor: str | None = None,
+        portrait_limit: int = 50,
+    ) -> PeopleBatch:
+        if cursor is not None:
+            return PeopleBatch(complete=True)
+        people = await self.load_voices(identity)
+        return PeopleBatch(
+            people=people,
+            complete=True,
+            total_count=len(people),
+        )
