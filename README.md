@@ -290,9 +290,10 @@ anime-db-bot/
 
 ## Оставшиеся архитектурные долги
 
+Domain-модели anime/episode/broadcast теперь хранят календарные и временные значения типизированно (`PartialDate`, `datetime`, `time`); строковый parsing остаётся только на adapter/compatibility границах.
+
 После текущего refactor foundation основные долги уже не относятся к primary-ID или transport wiring. Наиболее заметные следующие шаги:
 
-- typed date/datetime values вместо части строковых дат в domain models;
 - расширение persistent user/account/preferences/watch-state слоя поверх существующего repository boundary;
 - дальнейшее повышение общего coverage и постепенное расширение mypy/formatter scope на legacy modules;
 - admin UI/операционные инструменты для просмотра и управления mapping override history.

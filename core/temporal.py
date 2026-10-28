@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Mapping
 
 
@@ -115,3 +115,36 @@ def parse_datetime(value: object) -> datetime | None:
 
 def format_datetime(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
+
+
+def parse_time(value: object) -> time | None:
+    """Parse an ISO-like clock time without attaching an invented date."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, time):
+        return value
+    if isinstance(value, datetime):
+        return value.timetz()
+
+    raw = str(value).strip()
+    if not raw:
+        return None
+    if "T" in raw or " " in raw:
+        parsed = parse_datetime(raw)
+        return parsed.timetz() if parsed is not None else None
+    try:
+        return time.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def format_time(value: time | None) -> str | None:
+    if value is None:
+        return None
+    if value.microsecond:
+        timespec = "microseconds"
+    elif value.second:
+        timespec = "seconds"
+    else:
+        timespec = "minutes"
+    return value.isoformat(timespec=timespec)

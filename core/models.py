@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, time
 
 from core.character_identity import CharacterIdentity
 from core.identity import AnimeIdentity
-from core.temporal import PartialDate, parse_datetime, parse_partial_date
+from core.temporal import PartialDate, parse_datetime, parse_partial_date, parse_time
 
 
 @dataclass(slots=True)
@@ -57,10 +57,13 @@ class SearchResultSet:
 
 @dataclass(frozen=True, slots=True)
 class BroadcastSlot:
-    """Locale-neutral broadcast schedule entry."""
+    """Locale-neutral broadcast schedule entry with a typed clock time."""
 
     weekday: str | None = None
-    time: str | None = None
+    time: time | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "time", parse_time(self.time))
 
 
 @dataclass(frozen=True, slots=True)

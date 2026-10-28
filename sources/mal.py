@@ -10,7 +10,7 @@ from core.people_loading import PeopleBatch
 from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
-from core.temporal import parse_partial_date
+from core.temporal import parse_partial_date, parse_time
 from localization import source_value_key
 from sources.jikan import JIKAN_DISPLAY_NAME, JikanSource
 
@@ -83,7 +83,7 @@ def _season(value: dict[str, Any] | None) -> tuple[str | None, int | None]:
 def _broadcast(value: dict[str, Any] | None) -> list[BroadcastSlot]:
     value = value or {}
     raw_day = _clean(value.get("day_of_the_week")).casefold()
-    start_time = _clean(value.get("start_time")) or None
+    start_time = parse_time(_clean(value.get("start_time")))
     weekday = source_value_key("mal", "weekday", raw_day, default=raw_day or None)
     return [BroadcastSlot(weekday=weekday, time=start_time)] if weekday or start_time else []
 
