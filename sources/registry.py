@@ -5,6 +5,7 @@ from collections.abc import Callable
 from core.capabilities import SourceCapability, source_keys_with
 from core.contracts import AnimeSource
 from core.source_keys import SourceKey
+from services.source_health import SourceHealthRegistry
 from sources.anidb import AniDBSource
 from sources.identity_sources import AniListIdentitySource, ShikimoriIdentitySource
 from sources.mal import MALSource
@@ -20,7 +21,9 @@ _SOURCE_FACTORIES: dict[SourceKey, Callable[[], AnimeSource]] = {
 }
 
 
-def get_source_map() -> dict[SourceKey, AnimeSource]:
+def get_source_map(
+    health: SourceHealthRegistry | None = None,
+) -> dict[SourceKey, AnimeSource]:
     """Return enabled metadata sources declared by the capability catalog."""
     result: dict[SourceKey, AnimeSource] = {}
     for source_key in source_keys_with(SourceCapability.METADATA):
@@ -30,15 +33,20 @@ def get_source_map() -> dict[SourceKey, AnimeSource]:
         if factory is None:
             continue
 
-        # Rate limiting wraps the raw source, then resilience wraps that proxy.
-        # This makes every retry attempt consume quota again instead of bypassing
-        # the outbound safety limiter.
-        source = resilient_source(rate_limited_source(factory(), source_key.value))
+        # Rate limiting wraps the raw source, then retry/health wraps that proxy.
+        # Every retry therefore consumes quota again instead of bypassing the
+        # outbound safety limiter.
+        source = resilient_source(
+            rate_limited_source(factory(), source_key.value),
+            health,
+        )
         source.source_key = source_key
         result[source_key] = source
     return result
 
 
-def get_sources() -> tuple[AnimeSource, ...]:
+def get_sources(
+    health: SourceHealthRegistry | None = None,
+) -> tuple[AnimeSource, ...]:
     """Composition point for enabled identity-native metadata sources."""
-    return tuple(get_source_map().values())
+    return tuple(get_source_map(health).values())
