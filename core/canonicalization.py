@@ -157,7 +157,7 @@ def _dynamic_voice_character(value: str) -> str | None:
     if cleaned.startswith(VOICE_OF_PREFIX):
         return clean_text(cleaned.removeprefix(VOICE_OF_PREFIX))
     folded = cleaned.casefold()
-    for prefix in ("озвучка:", "voice:"):
+    for prefix in ("озвучка:", "voice:", "声:", "声："):
         if folded.startswith(prefix):
             return clean_text(cleaned[len(prefix):])
     return None
@@ -295,8 +295,18 @@ def preferred_person_name(names: list[str], *, locale: str = DEFAULT_LOCALE) -> 
         for value in unique
         if LATIN_RE.search(value) and not CYRILLIC_RE.search(value) and not JAPANESE_RE.search(value)
     ]
+    japanese = [
+        value
+        for value in unique
+        if JAPANESE_RE.search(value) and not CYRILLIC_RE.search(value)
+    ]
 
-    preferred_groups = (latin, cyrillic) if locale == "en" else (cyrillic, latin)
+    if locale == "ja":
+        preferred_groups = (japanese, latin, cyrillic)
+    elif locale == "en":
+        preferred_groups = (latin, japanese, cyrillic)
+    else:
+        preferred_groups = (cyrillic, latin, japanese)
     for group in preferred_groups:
         if group:
             return min(group, key=lambda value: (len(value), value.casefold()))
@@ -345,7 +355,9 @@ def display_person_name(
 
     if locale == "ru" and CYRILLIC_RE.search(primary) and latin:
         extras.append(latin)
-    if japanese:
+    if locale == "ja" and JAPANESE_RE.search(primary) and latin:
+        extras.append(latin)
+    if japanese and not JAPANESE_RE.search(primary):
         extras.append(japanese)
 
     return f"{primary} ({', '.join(extras)})" if extras else primary
