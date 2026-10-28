@@ -279,6 +279,10 @@ def fallback_main_keyboard(token: str, *, locale: str) -> InlineKeyboardMarkup:
                     text=text("card", "characters_button", locale=locale),
                     callback_data=f"av:{token}:characters:0",
                 ),
+                InlineKeyboardButton(
+                    text=text("card", "screenshots_button", locale=locale),
+                    callback_data=f"av:{token}:screenshots:0",
+                ),
             ],
             [
                 InlineKeyboardButton(

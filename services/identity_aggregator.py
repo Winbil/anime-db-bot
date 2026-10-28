@@ -166,6 +166,7 @@ class AnimeAggregator(AggregationMergeSupport):
         synonyms_by_source: dict[str, list[str]] = {}
         staff_by_source: dict[str, list[PersonCredit]] = {}
         voices_by_source: dict[str, list[PersonCredit]] = {}
+        screenshots_by_source: dict[str, list[str]] = {}
 
         for record in records:
             source_titles = {
@@ -188,6 +189,10 @@ class AnimeAggregator(AggregationMergeSupport):
             source_voices = _merge_people([record.voices])
             if source_voices:
                 voices_by_source[record.source] = source_voices
+
+            source_screenshots = _dedupe_strings(record.screenshots)
+            if source_screenshots:
+                screenshots_by_source[record.source] = source_screenshots
 
             for key, value in source_titles.items():
                 existing = titles.get(key)
@@ -289,6 +294,7 @@ class AnimeAggregator(AggregationMergeSupport):
             synonyms_by_source=synonyms_by_source,
             staff_by_source=staff_by_source,
             voices_by_source=voices_by_source,
+            screenshots_by_source=screenshots_by_source,
             descriptions=descriptions,
             background=_best_text(background_values),
             posters=_dedupe_strings(

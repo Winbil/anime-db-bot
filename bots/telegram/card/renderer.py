@@ -61,12 +61,18 @@ def plain_text_to_rich_html(text_value: str) -> str:
     return "".join(paragraphs)
 
 
-def poster_html(anime: AggregatedAnime) -> str:
-    urls = anime.posters[:50]
+def image_gallery_html(urls: list[str], *, limit: int | None = None) -> str:
+    urls = dedupe_strings(urls)
+    if limit is not None:
+        urls = urls[:limit]
     if not urls:
         return ""
     images = "".join(f'<img src="{html.escape(url, quote=True)}"/>' for url in urls)
     return images if len(urls) == 1 else f"<tg-slideshow>{images}</tg-slideshow>"
+
+
+def poster_html(anime: AggregatedAnime) -> str:
+    return image_gallery_html(anime.posters, limit=50)
 
 
 def rich(text_value: str) -> InputRichMessage:
@@ -156,7 +162,10 @@ def _quick_actions_html(token: str, *, locale: str) -> str:
         + "</tg-button-row>"
         '<tg-button-row align="left">'
         + button("titles_button", "titles")
+        + button("screenshots_button", "screenshots")
         + button("trailers_button", "trailers")
+        + "</tg-button-row>"
+        '<tg-button-row align="left">'
         + button("links_button", "links")
         + "</tg-button-row>"
         "<hr/>"
@@ -645,6 +654,50 @@ def format_titles(
     return "\n".join(lines)
 
 
+def screenshot_urls(anime: AggregatedAnime, source: str | None = None) -> list[str]:
+    if source is not None:
+        return dedupe_strings(anime.screenshots_by_source.get(source, []))
+    values: list[str] = []
+    for _, screenshots in ordered_mapping_items(
+        anime.screenshots_by_source, anime.sources
+    ):
+        values.extend(screenshots)
+    return dedupe_strings(values)
+
+
+def format_screenshots(
+    anime: AggregatedAnime, *, locale: str, source: str | None = None
+) -> str:
+    title_value = (
+        text("card", "screenshots_title", locale=locale, source=source)
+        if source
+        else text("card", "screenshots", locale=locale)
+    )
+    urls = screenshot_urls(anime, source)
+    if not urls:
+        return f"{title_value}:\n{text('common', 'no_data', locale=locale)}"
+    lines = [f"{title_value}:"]
+    lines.extend(f"{index}. {url}" for index, url in enumerate(urls, start=1))
+    return "\n".join(lines)
+
+
+def screenshots_rich_html(
+    anime: AggregatedAnime, *, locale: str, source: str | None = None
+) -> str:
+    title_value = (
+        text("card", "screenshots_title", locale=locale, source=source)
+        if source
+        else text("card", "screenshots", locale=locale)
+    )
+    urls = screenshot_urls(anime, source)
+    if not urls:
+        return (
+            f"<h2>{html.escape(title_value)}</h2>"
+            f"<p>{html.escape(text('common', 'no_data', locale=locale))}</p>"
+        )
+    return f"<h2>{html.escape(title_value)}</h2>" + image_gallery_html(urls)
+
+
 def append_block(target: list[str], title_value: str, lines: list[str]) -> None:
     lines = [line for line in lines if line]
     if not lines:
@@ -685,6 +738,8 @@ def source_section_text(
         stats = anime.popularity_by_source.get(source)
         if stats is not None and stats.has_data():
             return format_popularity(source, stats, locale=locale)
+    if section == "screenshots":
+        return format_screenshots(anime, source=source, locale=locale)
     return text("common", "no_data", locale=locale)
 
 
@@ -719,6 +774,7 @@ def anime_sections(
         "voices": format_people(
             text("card", "voices", locale=locale), anime.voices, locale=locale
         ),
+        "screenshots": format_screenshots(anime, locale=locale),
     }
 
 
@@ -747,6 +803,10 @@ def rich_view(
             return InputRichMessage(
                 html=_titles_table_html(anime.titles, anime.synonyms, locale=locale)
             )
+    if section == "screenshots":
+        full_screenshots = format_screenshots(anime, locale=locale)
+        if text_value.strip() == full_screenshots.strip():
+            return InputRichMessage(html=screenshots_rich_html(anime, locale=locale))
     return rich(text_value)
 
 
@@ -915,6 +975,10 @@ async def edit_source_section_view(
                 if stats is not None
                 else plain_text_to_rich_html(pages[page])
             )
+        )
+    elif section == "screenshots" and len(pages) == 1:
+        rich_message = InputRichMessage(
+            html=screenshots_rich_html(anime, source=source, locale=locale)
         )
     else:
         rich_message = rich(pages[page])

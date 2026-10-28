@@ -61,6 +61,11 @@ DETAIL_FIELDS = """
       preview2xUrl
       previewUrl
     }
+    screenshots {
+      originalUrl
+      x332Url
+      x166Url
+    }
     url
 """
 
@@ -358,6 +363,26 @@ def _credits(raw: dict[str, Any], *, voices: bool) -> list[PersonCredit]:
     return result
 
 
+def _screenshot_urls(values: Any, settings: SourceSettings | None = None) -> list[str]:
+    result: list[str] = []
+    for item in values or []:
+        if not isinstance(item, dict):
+            continue
+        value = next(
+            (
+                _clean_text(item.get(key))
+                for key in ("originalUrl", "x332Url", "x166Url")
+                if _clean_text(item.get(key))
+            ),
+            "",
+        )
+        if value.startswith("/"):
+            value = f"{site_url(settings)}{value}"
+        if value:
+            result.append(value)
+    return _dedupe(result)
+
+
 def _record(raw: dict[str, Any], settings: SourceSettings | None = None) -> AnimeRecord:
     russian = _clean_text(raw.get("russian"))
     romaji = _clean_text(raw.get("name"))
@@ -437,6 +462,7 @@ def _record(raw: dict[str, Any], settings: SourceSettings | None = None) -> Anim
         licensors=_dedupe(raw.get("licensors") or []),
         descriptions={"Shikimori": description} if description else {},
         posters=[poster_url] if poster_url else [],
+        screenshots=_screenshot_urls(raw.get("screenshots"), settings),
         urls={"Shikimori": url} if url else {},
         staff=[],
         voices=[],

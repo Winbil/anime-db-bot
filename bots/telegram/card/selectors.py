@@ -47,6 +47,12 @@ def source_section_sources(anime: AggregatedAnime, section: str) -> list[str]:
             for source, stats in anime.popularity_by_source.items()
             if stats.has_data()
         }
+    elif section == "screenshots":
+        available = {
+            source
+            for source, screenshots in anime.screenshots_by_source.items()
+            if screenshots
+        }
     else:
         return []
 
