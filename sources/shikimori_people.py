@@ -6,13 +6,13 @@ import logging
 import time
 from typing import Any
 
-from core.cache import BoundedTTLCache
 from core.canonicalization import voice_role_token
 from core.http_client import http_request
 from core.http_config import USER_AGENT
 from core.models import CharacterRecord, PersonCredit
 from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse
+from sources.shikimori_people_runtime import ShikimoriPeopleRuntime
 from sources.shikimori import (
     _best_poster_url,
     _dedupe,
@@ -41,8 +41,6 @@ query PeopleDetails($ids: [ID!]) {
 
 _REST_RATE_LOCK = asyncio.Lock()
 _NEXT_REST_REQUEST_AT = 0.0
-_CHARACTER_CACHE = BoundedTTLCache[str, dict[str, Any]](max_entries=2000)
-_VOICE_CACHE = BoundedTTLCache[str, list[PersonCredit]](max_entries=1000)
 
 
 def _settings(settings: SourceSettings | None = None) -> SourceSettings:
@@ -252,15 +250,18 @@ def _character_ids_from_roles(entries: list[dict[str, Any]]) -> list[str]:
 
 
 async def _rest_character_details(
-    character_ids: list[str], settings: SourceSettings | None = None
+    character_ids: list[str],
+    settings: SourceSettings | None = None,
+    runtime: ShikimoriPeopleRuntime | None = None,
 ) -> list[dict[str, Any]]:
     if not character_ids:
         return []
+    runtime = runtime or ShikimoriPeopleRuntime()
     ttl = _cache_ttl_seconds(settings)
     result_by_id: dict[str, dict[str, Any]] = {}
     missing: list[str] = []
     for character_id in character_ids:
-        cached = _CHARACTER_CACHE.get(character_id)
+        cached = runtime.character_cache.get(character_id)
         if cached is not None:
             result_by_id[character_id] = copy.deepcopy(cached)
         else:
@@ -284,7 +285,7 @@ async def _rest_character_details(
             if isinstance(response, dict):
                 result_by_id[character_id] = response
                 if ttl > 0:
-                    _CHARACTER_CACHE.set(
+                    runtime.character_cache.set(
                         character_id, copy.deepcopy(response), ttl_seconds=ttl
                     )
     return [
@@ -402,16 +403,19 @@ async def _refresh_people(
 
 
 async def _load_shikimori_voices(
-    anime_id: str, settings: SourceSettings | None = None
+    anime_id: str,
+    settings: SourceSettings | None = None,
+    runtime: ShikimoriPeopleRuntime | None = None,
 ) -> list[PersonCredit]:
+    runtime = runtime or ShikimoriPeopleRuntime()
     ttl = _cache_ttl_seconds(settings)
-    cached = _VOICE_CACHE.get(anime_id)
+    cached = runtime.voice_cache.get(anime_id)
     if cached is not None:
         logging.info("Shikimori seiyuu cache hit for anime %s", anime_id)
         return copy.deepcopy(cached)
     raw_roles = await _rest_anime_roles(anime_id, settings)
     character_ids = _character_ids_from_roles(raw_roles)
-    characters = await _rest_character_details(character_ids, settings)
+    characters = await _rest_character_details(character_ids, settings, runtime)
     voices = _voices_from_character_details(characters, settings)
     try:
         await _refresh_people(voices, settings)
@@ -431,5 +435,5 @@ async def _load_shikimori_voices(
         _portrait_count(voices),
     )
     if ttl > 0:
-        _VOICE_CACHE.set(anime_id, copy.deepcopy(voices), ttl_seconds=ttl)
+        runtime.voice_cache.set(anime_id, copy.deepcopy(voices), ttl_seconds=ttl)
     return voices

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import logging
 
-from core.cache import BoundedTTLCache
 from core.people_loading import PeopleBatch
 from core.settings import SourceSettings, get_settings
+from sources.shikimori_people_runtime import ShikimoriPeopleRuntime
 from sources.shikimori_people import (
     _cache_ttl_seconds,
     _character_ids_from_roles,
@@ -14,8 +14,6 @@ from sources.shikimori_people import (
     _rest_character_details,
     _voices_from_character_details,
 )
-
-_ROLE_INDEX_CACHE = BoundedTTLCache[str, list[str]](max_entries=1000)
 
 
 def _settings(settings: SourceSettings | None = None) -> SourceSettings:
@@ -32,8 +30,10 @@ def _character_chunk_size(settings: SourceSettings | None = None) -> int:
 async def _character_ids_for_anime(
     anime_id: str,
     settings: SourceSettings | None = None,
+    runtime: ShikimoriPeopleRuntime | None = None,
 ) -> list[str]:
-    cached = _ROLE_INDEX_CACHE.get(anime_id)
+    runtime = runtime or ShikimoriPeopleRuntime()
+    cached = runtime.role_index_cache.get(anime_id)
     if cached is not None:
         return list(cached)
 
@@ -45,7 +45,7 @@ async def _character_ids_for_anime(
     character_ids = _character_ids_from_roles(raw_roles)
     ttl = _cache_ttl_seconds(settings)
     if ttl > 0:
-        _ROLE_INDEX_CACHE.set(anime_id, list(character_ids), ttl_seconds=ttl)
+        runtime.role_index_cache.set(anime_id, list(character_ids), ttl_seconds=ttl)
     return character_ids
 
 
@@ -55,6 +55,7 @@ async def load_shikimori_voices_batch(
     cursor: str | None = None,
     portrait_limit: int = 50,
     settings: SourceSettings | None = None,
+    runtime: ShikimoriPeopleRuntime | None = None,
 ) -> PeopleBatch:
     """Load one bounded Shikimori seiyuu batch.
 
@@ -77,10 +78,11 @@ async def load_shikimori_voices_batch(
     except ValueError:
         index = 0
 
-    character_ids = (
-        await _character_ids_for_anime(anime_id)
-        if settings is None
-        else await _character_ids_for_anime(anime_id, settings)
+    runtime = runtime or ShikimoriPeopleRuntime()
+    character_ids = await _character_ids_for_anime(
+        anime_id,
+        settings,
+        runtime,
     )
     if index >= len(character_ids):
         return PeopleBatch(complete=True)
@@ -93,11 +95,7 @@ async def load_shikimori_voices_batch(
         batch_ids = character_ids[index : index + chunk_size]
         if not batch_ids:
             break
-        details = (
-            await _rest_character_details(batch_ids)
-            if settings is None
-            else await _rest_character_details(batch_ids, settings)
-        )
+        details = await _rest_character_details(batch_ids, settings, runtime)
         characters.extend(details)
         index += len(batch_ids)
         people = _voices_from_character_details(characters, settings)
