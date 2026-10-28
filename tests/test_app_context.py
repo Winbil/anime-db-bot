@@ -15,6 +15,8 @@ class AppContextTests(unittest.IsolatedAsyncioTestCase):
                 "MAL_CLIENT_ID": "",
                 "ANIDB_CLIENT": "",
                 "MAPPINGS_AUTO_UPDATE": "0",
+                "SOURCE_HEALTH_FAILURE_THRESHOLD": "7",
+                "SOURCE_HEALTH_COOLDOWN_SECONDS": "45",
             }
         )
 
@@ -24,6 +26,16 @@ class AppContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(context.sources)
         self.assertTrue(context.search_service.provider_name)
         self.assertIsNotNone(context.people_progress_service)
+        self.assertEqual(
+            context.source_health.failure_threshold,
+            context.settings.source_health.failure_threshold,
+        )
+        self.assertEqual(
+            context.source_health.cooldown_seconds,
+            context.settings.source_health.cooldown_seconds,
+        )
+        self.assertEqual(context.source_health.failure_threshold, 7)
+        self.assertEqual(context.source_health.cooldown_seconds, 45.0)
         self.assertEqual(
             context.direct_lookup.source_keys,
             tuple(str(source.source_key) for source in context.sources),

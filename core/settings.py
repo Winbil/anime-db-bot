@@ -135,6 +135,12 @@ class SourceSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceHealthSettings:
+    failure_threshold: int
+    cooldown_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
 class RateLimitSettings:
     user_per_minute: int
     user_per_hour: int
@@ -161,6 +167,7 @@ class AppSettings:
     search: SearchSettings
     mappings: MappingSettings
     sources: SourceSettings
+    source_health: SourceHealthSettings
     rate_limits: RateLimitSettings
 
     @classmethod
@@ -213,8 +220,12 @@ class AppSettings:
                 bot_token=_raw(values, "BOT_TOKEN"),
                 bot_api_url=_raw(values, "TELEGRAM_BOT_API_URL"),
                 bot_api_local=_bool(values, "TELEGRAM_BOT_API_LOCAL", False),
-                session_ttl_seconds=_int(values, "TELEGRAM_SESSION_TTL_SECONDS", 3600, 30),
-                anime_input_ttl_seconds=_int(values, "ANIME_INPUT_TTL_SECONDS", 300, 30),
+                session_ttl_seconds=_int(
+                    values, "TELEGRAM_SESSION_TTL_SECONDS", 3600, 30
+                ),
+                anime_input_ttl_seconds=_int(
+                    values, "ANIME_INPUT_TTL_SECONDS", 300, 30
+                ),
                 admin_user_ids=_admin_ids(_raw(values, "ADMIN_TELEGRAM_USER_IDS")),
             ),
             storage=StorageSettings(
@@ -230,11 +241,17 @@ class AppSettings:
                 cache_max_entries=_int(values, "SEARCH_CACHE_MAX_ENTRIES", 500, 1),
                 collection_page_size=_int(values, "SEARCH_COLLECTION_PAGE_SIZE", 20, 1),
                 collection_max_pages=_int(values, "SEARCH_COLLECTION_MAX_PAGES", 4, 1),
-                collection_max_items=_int(values, "SEARCH_COLLECTION_MAX_ITEMS", 120, 1),
+                collection_max_items=_int(
+                    values, "SEARCH_COLLECTION_MAX_ITEMS", 120, 1
+                ),
                 relevance_threshold=_int(values, "SEARCH_RELEVANCE_THRESHOLD", 55, 0),
-                irrelevant_tail_pages=_int(values, "SEARCH_IRRELEVANT_TAIL_PAGES", 1, 1),
+                irrelevant_tail_pages=_int(
+                    values, "SEARCH_IRRELEVANT_TAIL_PAGES", 1, 1
+                ),
                 expansion_max_seeds=_int(values, "SEARCH_EXPANSION_MAX_SEEDS", 1, 0),
-                expansion_max_queries=_int(values, "SEARCH_EXPANSION_MAX_QUERIES", 1, 0),
+                expansion_max_queries=_int(
+                    values, "SEARCH_EXPANSION_MAX_QUERIES", 1, 0
+                ),
                 expansion_max_pages=_int(values, "SEARCH_EXPANSION_MAX_PAGES", 2, 1),
             ),
             mappings=MappingSettings(
@@ -359,6 +376,20 @@ class AppSettings:
                     21600.0,
                 ),
             ),
+            source_health=SourceHealthSettings(
+                failure_threshold=_int(
+                    values,
+                    "SOURCE_HEALTH_FAILURE_THRESHOLD",
+                    3,
+                    1,
+                ),
+                cooldown_seconds=_float(
+                    values,
+                    "SOURCE_HEALTH_COOLDOWN_SECONDS",
+                    30.0,
+                    1.0,
+                ),
+            ),
             rate_limits=RateLimitSettings(
                 user_per_minute=_int(values, "USER_RATE_LIMIT_PER_MINUTE", 50, 1),
                 user_per_hour=_int(values, "USER_RATE_LIMIT_PER_HOUR", 1000, 1),
@@ -370,7 +401,9 @@ class AppSettings:
 
     def require_bot_token(self) -> str:
         if not self.telegram.bot_token:
-            raise RuntimeError("BOT_TOKEN is empty. Add it to .env before starting the bot.")
+            raise RuntimeError(
+                "BOT_TOKEN is empty. Add it to .env before starting the bot."
+            )
         return self.telegram.bot_token
 
 
