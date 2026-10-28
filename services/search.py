@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 import time
 import unicodedata
@@ -12,6 +11,7 @@ from core.canonicalization import contains_cyrillic, normalize_key, transliterat
 from core.contracts import AnimeSearchProvider
 from core.identity import AnimeIdentity
 from core.models import SearchCandidate, SearchPage, SearchResultSet
+from core.settings import AppSettings, SearchSettings
 
 
 _LOW_SIGNAL_TOKENS = frozenset({
@@ -71,10 +71,16 @@ class SearchService:
     locally instead of fetching progressively less relevant upstream pages.
     """
 
-    def __init__(self, providers: tuple[AnimeSearchProvider, ...] | list[AnimeSearchProvider]) -> None:
+    def __init__(
+        self,
+        providers: tuple[AnimeSearchProvider, ...] | list[AnimeSearchProvider],
+        *,
+        settings: SearchSettings | None = None,
+    ) -> None:
         self._providers = tuple(providers)
         if not self._providers:
             raise ValueError("SearchService requires at least one search provider")
+        self._settings = settings or AppSettings.from_env().search
         self._cache: dict[tuple[str, int, int], _CacheEntry] = {}
         self._result_set_cache: dict[tuple[str, int, int, int, int], _ResultSetCacheEntry] = {}
 
@@ -86,26 +92,30 @@ class SearchService:
     def provider_name(self) -> str:
         return ", ".join(self.provider_names)
 
+    @property
+    def settings(self) -> SearchSettings:
+        return self._settings
+
     def _cache_ttl(self) -> int:
-        return _env_int("SEARCH_CACHE_TTL_SECONDS", 21600, minimum=0)
+        return max(0, int(self._settings.cache_ttl_seconds))
 
     def _cache_max_entries(self) -> int:
-        return _env_int("SEARCH_CACHE_MAX_ENTRIES", 500, minimum=10)
+        return max(10, int(self._settings.cache_max_entries))
 
     def _collection_page_size(self) -> int:
-        return _env_int("SEARCH_COLLECTION_PAGE_SIZE", 20, minimum=5, maximum=50)
+        return min(max(5, int(self._settings.collection_page_size)), 50)
 
     def _collection_max_pages(self) -> int:
-        return _env_int("SEARCH_COLLECTION_MAX_PAGES", 4, minimum=1, maximum=20)
+        return min(max(1, int(self._settings.collection_max_pages)), 20)
 
     def _relevance_threshold(self) -> int:
-        return _env_int("SEARCH_RELEVANCE_THRESHOLD", 55, minimum=1, maximum=100)
+        return min(max(1, int(self._settings.relevance_threshold)), 100)
 
     def _irrelevant_tail_pages(self) -> int:
-        return _env_int("SEARCH_IRRELEVANT_TAIL_PAGES", 1, minimum=1, maximum=5)
+        return min(max(1, int(self._settings.irrelevant_tail_pages)), 5)
 
     def _collection_max_items(self) -> int:
-        return _env_int("SEARCH_COLLECTION_MAX_ITEMS", 120, minimum=10, maximum=1000)
+        return min(max(10, int(self._settings.collection_max_items)), 1000)
 
     async def search(
         self,
@@ -647,24 +657,6 @@ def _dedupe(values: list[str]) -> list[str]:
             seen.add(key)
             result.append(value)
     return result
-
-
-def _env_int(
-    name: str,
-    default: int,
-    *,
-    minimum: int,
-    maximum: int | None = None,
-) -> int:
-    raw = os.getenv(name, str(default)).strip()
-    try:
-        value = int(raw)
-    except ValueError:
-        value = default
-    value = max(minimum, value)
-    if maximum is not None:
-        value = min(maximum, value)
-    return value
 
 
 def _trim_cache(cache: dict, maximum: int) -> None:
