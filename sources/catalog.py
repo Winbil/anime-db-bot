@@ -23,7 +23,12 @@ from sources.anilist import AniListSource
 from sources.jikan import JikanSource
 from sources.mal import MALSource
 from sources.rate_limited import rate_limited_source
-from sources.resilient import resilient_source
+from sources.resilient import (
+    resilient_episode_source,
+    resilient_search_provider,
+    resilient_source,
+    resilient_trailer_source,
+)
 from sources.shikimori import ShikimoriSource
 from sources.trailers import AniListTrailerSource, ShikimoriTrailerSource
 
@@ -186,20 +191,28 @@ def source_key_for_display_name(display_name: str) -> SourceKey | None:
 
 def get_search_provider_map(
     settings: SourceSettings | None = None,
+    health: SourceHealthRegistry | None = None,
 ) -> dict[SourceKey, AnimeSearchProvider]:
     settings = settings or get_settings().sources
-    return {
-        registration.key: registration.search_factory(settings)
-        for registration in SOURCE_CATALOG
-        if registration.search_factory is not None
-        and registration.supports(SourceCapability.SEARCH)
-    }
+    result: dict[SourceKey, AnimeSearchProvider] = {}
+    for registration in SOURCE_CATALOG:
+        factory = registration.search_factory
+        if factory is None or not registration.supports(SourceCapability.SEARCH):
+            continue
+        provider = resilient_search_provider(
+            factory(settings),
+            health,
+            health_key=registration.key.value,
+        )
+        result[registration.key] = cast(AnimeSearchProvider, provider)
+    return result
 
 
 def get_search_providers(
     settings: SourceSettings | None = None,
+    health: SourceHealthRegistry | None = None,
 ) -> tuple[AnimeSearchProvider, ...]:
-    providers = get_search_provider_map(settings)
+    providers = get_search_provider_map(settings, health)
     return tuple(
         providers[registration.key]
         for registration in SOURCE_CATALOG
@@ -255,19 +268,21 @@ def _build_backends(
 
 def get_trailer_sources(
     settings: SourceSettings | None = None,
+    health: SourceHealthRegistry | None = None,
 ) -> tuple[AnimeTrailerSource, ...]:
     settings = settings or get_settings().sources
     return tuple(
-        cast(AnimeTrailerSource, source)
+        cast(AnimeTrailerSource, resilient_trailer_source(source, health))
         for source in _build_backends("trailer_backends", settings)
     )
 
 
 def get_episode_sources(
     settings: SourceSettings | None = None,
+    health: SourceHealthRegistry | None = None,
 ) -> tuple[AnimeEpisodeSource, ...]:
     settings = settings or get_settings().sources
     return tuple(
-        cast(AnimeEpisodeSource, source)
+        cast(AnimeEpisodeSource, resilient_episode_source(source, health))
         for source in _build_backends("episode_backends", settings)
     )
