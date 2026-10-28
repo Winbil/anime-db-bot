@@ -137,7 +137,7 @@ class StartupWiringTests(unittest.TestCase):
     def test_source_selectable_sections_and_portraits(self) -> None:
         self.assertEqual(
             SOURCE_SELECTABLE_SECTIONS,
-            {"titles", "staff", "voices", "popularity"},
+            {"titles", "staff", "voices", "popularity", "screenshots"},
         )
 
         sample = AggregatedAnime(

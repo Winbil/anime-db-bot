@@ -28,6 +28,30 @@ class ShikimoriDescriptionTests(unittest.TestCase):
             "Начало\nссылка и аниме.\nКонец",
         )
 
+    def test_record_stores_screenshot_urls(self) -> None:
+        record = _record(
+            {
+                "id": "48316",
+                "name": "Kage no Jitsuryokusha ni Naritakute!",
+                "poster": {},
+                "screenshots": [
+                    {
+                        "originalUrl": "/system/screenshots/original/1.jpg",
+                        "x332Url": "/system/screenshots/x332/1.jpg",
+                    },
+                    {"x332Url": "https://cdn.example.invalid/2.jpg"},
+                ],
+            }
+        )
+
+        self.assertEqual(
+            record.screenshots,
+            [
+                "https://shikimori.io/system/screenshots/original/1.jpg",
+                "https://cdn.example.invalid/2.jpg",
+            ],
+        )
+
     def test_record_stores_clean_shikimori_description(self) -> None:
         record = _record(
             {

@@ -15,12 +15,14 @@ SECTION_LABELS = {
     "staff": "section_staff",
     "voices": "section_voices",
     "characters": "section_characters",
+    "screenshots": "section_screenshots",
 }
 
-SOURCE_SELECTABLE_SECTIONS = {"titles", "staff", "voices", "popularity"}
+SOURCE_SELECTABLE_SECTIONS = {"titles", "staff", "voices", "popularity", "screenshots"}
 
 ALL_SOURCE_LABELS = {
     "titles": "all_titles",
     "staff": "all_staff",
     "voices": "all_voices",
+    "screenshots": "all_screenshots",
 }

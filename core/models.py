@@ -249,6 +249,7 @@ class AnimeRecord:
     descriptions: dict[str, str] = field(default_factory=dict)
     backgrounds: list[str] = field(default_factory=list)
     posters: list[str] = field(default_factory=list)
+    screenshots: list[str] = field(default_factory=list)
     urls: dict[str, str] = field(default_factory=dict)
     staff: list[PersonCredit] = field(default_factory=list)
     voices: list[PersonCredit] = field(default_factory=list)
@@ -318,6 +319,7 @@ class AggregatedAnime:
     staff_by_source: dict[str, list[PersonCredit]] = field(default_factory=dict)
     voices_by_source: dict[str, list[PersonCredit]] = field(default_factory=dict)
     characters_by_source: dict[str, list[CharacterRecord]] = field(default_factory=dict)
+    screenshots_by_source: dict[str, list[str]] = field(default_factory=dict)
 
     descriptions: dict[str, str] = field(default_factory=dict)
     background: str | None = None

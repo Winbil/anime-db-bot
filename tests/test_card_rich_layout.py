@@ -77,6 +77,12 @@ class CardRichLayoutTests(unittest.TestCase):
             sources=["MyAnimeList", "AniList", "Shikimori"],
             external_ids={"mal": "37430", "anilist": "101280", "shikimori": "37430"},
             posters=["https://example.com/poster.jpg"],
+            screenshots_by_source={
+                "Shikimori": [
+                    "https://example.com/screenshot-1.jpg",
+                    "https://example.com/screenshot-2.jpg",
+                ]
+            },
         )
 
     def test_main_rich_uses_native_tables_and_places_actions_before_data(self) -> None:
@@ -99,7 +105,7 @@ class CardRichLayoutTests(unittest.TestCase):
         self.assertIn(">выходит</td>", html)
 
         first_table = html.index("<table")
-        for section in ("description", "popularity", "episodes", "trailers", "staff", "voices", "characters", "titles", "links"):
+        for section in ("description", "popularity", "episodes", "trailers", "staff", "voices", "characters", "titles", "screenshots", "links"):
             self.assertLess(
                 html.index(f"av:card-token:{section}:0"),
                 first_table,
@@ -130,6 +136,29 @@ class CardRichLayoutTests(unittest.TestCase):
         self.assertIn("10/10: 15 000", text_value)
         self.assertIn("По популярности — Весна 2026: #4", text_value)
         self.assertNotIn("Средняя оценка", text_value)
+
+    def test_screenshots_show_all_images_and_allow_source_filtering(self) -> None:
+        anime = self._sample()
+        screenshots_text = anime_sections(anime, locale="ru")["screenshots"]
+        rich_message = rich_view(
+            "card-token",
+            anime,
+            "screenshots",
+            screenshots_text,
+            locale="ru",
+        )
+
+        html = rich_message.html or ""
+        self.assertIn("<h2>Скриншоты</h2>", html)
+        self.assertIn("<tg-slideshow>", html)
+        self.assertIn("https://example.com/screenshot-1.jpg", html)
+        self.assertIn("https://example.com/screenshot-2.jpg", html)
+        self.assertEqual(source_section_sources(anime, "screenshots"), ["Shikimori"])
+        source_text = source_section_text(
+            anime, "screenshots", "Shikimori", locale="ru"
+        )
+        self.assertIn("Скриншоты — Shikimori", source_text)
+        self.assertIn("screenshot-1.jpg", source_text)
 
     def test_titles_section_uses_table_for_structured_title_variants(self) -> None:
         anime = self._sample()

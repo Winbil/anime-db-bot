@@ -128,6 +128,26 @@ class AggregatorPeopleTests(unittest.TestCase):
         )
 
 
+class _ScreenshotSource:
+    name = "Shikimori"
+
+    async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
+        source_id = str(identity.get("shikimori") or "")
+        if not source_id:
+            return None
+        return AnimeRecord(
+            source=self.name,
+            source_id=source_id,
+            titles={"romaji": "Screenshot Test"},
+            external_ids={"shikimori": source_id},
+            screenshots=[
+                "https://example.invalid/1.jpg",
+                "https://example.invalid/1.jpg",
+                "https://example.invalid/2.jpg",
+            ],
+        )
+
+
 class _PopularitySource:
     def __init__(self, name: str, *, list_users: int, scoring_users: int) -> None:
         self.name = name
@@ -170,6 +190,32 @@ class AggregatorIdentityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(source.identities[0].external_ids, enriched.external_ids)
         self.assertEqual(candidate.external_ids, {"mal": "123"})
         self.assertEqual(anime.external_ids["shikimori"], "456")
+
+    async def test_screenshots_remain_source_scoped_and_deduplicated(self) -> None:
+        source = _ScreenshotSource()
+
+        async def no_external_enrichment(
+            identity: AnimeIdentity, titles: list[str]
+        ) -> AnimeIdentity:
+            return identity.copy()
+
+        resolver = AsyncMock()
+        resolver.enrich = AsyncMock(side_effect=no_external_enrichment)
+        aggregator = AnimeAggregator((source,), identity_resolver=resolver)
+        anime = await aggregator.aggregate(
+            SearchCandidate(
+                title="Screenshot Test",
+                external_ids={"shikimori": "48316"},
+            )
+        )
+
+        self.assertEqual(
+            anime.screenshots_by_source["Shikimori"],
+            [
+                "https://example.invalid/1.jpg",
+                "https://example.invalid/2.jpg",
+            ],
+        )
 
     async def test_popularity_statistics_remain_source_scoped(self) -> None:
         first = _PopularitySource("FirstDB", list_users=1000, scoring_users=700)
