@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 
+from core.logging_config import configure_logging
 from mappings.config import mappings_auto_update
 from mappings.resolver import (
     delete_mapping_override,
@@ -44,8 +44,12 @@ def _history_dict(item: object) -> dict[str, str]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build and inspect mappings.db")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--force", action="store_true", help="rebuild even when the DB is fresh")
-    group.add_argument("--status", action="store_true", help="print DB status without updating")
+    group.add_argument(
+        "--force", action="store_true", help="rebuild even when the DB is fresh"
+    )
+    group.add_argument(
+        "--status", action="store_true", help="print DB status without updating"
+    )
     group.add_argument(
         "--override-history",
         action="store_true",
@@ -68,11 +72,15 @@ def main() -> None:
         metavar=("SOURCE", "SOURCE_ID", "TARGET", "TARGET_ID"),
         help="delete one directional manual override",
     )
-    parser.add_argument("--reason", default="", help="audit reason for override changes")
-    parser.add_argument("--author", default="cli", help="audit author for override changes")
+    parser.add_argument(
+        "--reason", default="", help="audit reason for override changes"
+    )
+    parser.add_argument(
+        "--author", default="cli", help="audit author for override changes"
+    )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+    configure_logging(level="INFO", structured=False)
 
     if args.override_history:
         print(
@@ -131,7 +139,9 @@ def main() -> None:
         return
 
     if args.status:
-        print(json.dumps(mapping_status(), ensure_ascii=False, indent=2, sort_keys=True))
+        print(
+            json.dumps(mapping_status(), ensure_ascii=False, indent=2, sort_keys=True)
+        )
         return
 
     if args.force:
@@ -142,7 +152,9 @@ def main() -> None:
         stats = None
 
     if stats is None:
-        print(json.dumps(mapping_status(), ensure_ascii=False, indent=2, sort_keys=True))
+        print(
+            json.dumps(mapping_status(), ensure_ascii=False, indent=2, sort_keys=True)
+        )
         return
     print(
         json.dumps(

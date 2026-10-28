@@ -11,6 +11,8 @@ class AppSettingsTests(unittest.TestCase):
         settings = AppSettings.from_env(
             {
                 "BOT_TOKEN": "token",
+                "LOG_LEVEL": "debug",
+                "LOG_STRUCTURED": "0",
                 "TELEGRAM_BOT_API_LOCAL": "true",
                 "TELEGRAM_SESSION_TTL_SECONDS": "90",
                 "ADMIN_TELEGRAM_USER_IDS": "1, 2;3\n2",
@@ -23,6 +25,8 @@ class AppSettingsTests(unittest.TestCase):
                 "SOURCE_HEALTH_COOLDOWN_SECONDS": "42.5",
             }
         )
+        self.assertEqual(settings.logging.level, "DEBUG")
+        self.assertFalse(settings.logging.structured)
         self.assertEqual(settings.telegram.bot_token, "token")
         self.assertTrue(settings.telegram.bot_api_local)
         self.assertEqual(settings.telegram.session_ttl_seconds, 90)
