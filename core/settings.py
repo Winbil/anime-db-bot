@@ -67,6 +67,12 @@ def _admin_ids(value: str) -> tuple[int, ...]:
 
 
 @dataclass(frozen=True, slots=True)
+class LoggingSettings:
+    level: str
+    structured: bool
+
+
+@dataclass(frozen=True, slots=True)
 class TelegramSettings:
     bot_token: str
     bot_api_url: str
@@ -162,6 +168,7 @@ class RateLimitSettings:
 
 @dataclass(frozen=True, slots=True)
 class AppSettings:
+    logging: LoggingSettings
     telegram: TelegramSettings
     storage: StorageSettings
     search: SearchSettings
@@ -216,6 +223,10 @@ class AppSettings:
         }
 
         return cls(
+            logging=LoggingSettings(
+                level=(_raw(values, "LOG_LEVEL", "INFO") or "INFO").upper(),
+                structured=_bool(values, "LOG_STRUCTURED", True),
+            ),
             telegram=TelegramSettings(
                 bot_token=_raw(values, "BOT_TOKEN"),
                 bot_api_url=_raw(values, "TELEGRAM_BOT_API_URL"),

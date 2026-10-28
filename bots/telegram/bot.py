@@ -15,6 +15,7 @@ from bots.telegram.search_ui import register_search_handlers
 from bots.telegram.transports import TelegramTransport
 from bots.telegram.transports.official import TRANSPORT as OFFICIAL_TRANSPORT
 from bots.telegram.transports.tgapi import TRANSPORT as TGAPI_TRANSPORT
+from core.logging_config import configure_logging
 from core.models import SearchCandidate
 from core.settings import AppSettings, get_settings
 from localization import text
@@ -93,15 +94,20 @@ async def run_bot(
     context: AppContext | None = None,
 ) -> None:
     """Build and run the Telegram implementation of anime-db-bot."""
-    context = context or AppContext.create(get_settings())
-    settings = context.settings
+    settings = context.settings if context is not None else get_settings()
     settings.require_bot_token()
+    configure_logging(
+        level=settings.logging.level,
+        structured=settings.logging.structured,
+        secrets=(
+            settings.telegram.bot_token,
+            settings.sources.anilist_access_token,
+            settings.sources.mal_client_id,
+        ),
+    )
+    context = context or AppContext.create(settings)
     transport = transport or select_transport(settings)
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    )
     logging.info("Bot platform: Telegram")
     logging.info("Telegram transport: %s", transport.mode_name)
     logging.info("Configured Telegram administrators: %d", len(telegram_admin_ids()))
@@ -111,8 +117,12 @@ async def run_bot(
         PERSONAL_RATE_LIMITER.per_hour,
     )
     logging.info("Default search providers: %s", context.search_service.provider_name)
-    logging.info("Metadata sources: %s", ", ".join(source.name for source in context.sources))
-    logging.info("Interactive /anime provider selection and direct-ID lookup are enabled")
+    logging.info(
+        "Metadata sources: %s", ", ".join(source.name for source in context.sources)
+    )
+    logging.info(
+        "Interactive /anime provider selection and direct-ID lookup are enabled"
+    )
 
     bot = transport.create_bot()
     mapping_task = asyncio.create_task(periodic_mapping_updates())
@@ -121,9 +131,13 @@ async def run_bot(
             health = await transport.check_health(bot)
             if health.healthy:
                 identity = f" @{health.bot_username}" if health.bot_username else ""
-                logging.info("Telegram transport health: healthy%s — %s", identity, health.detail)
+                logging.info(
+                    "Telegram transport health: healthy%s — %s", identity, health.detail
+                )
             else:
-                logging.warning("Telegram transport health: degraded — %s", health.detail)
+                logging.warning(
+                    "Telegram transport health: degraded — %s", health.detail
+                )
 
             dp = build_dispatcher(mode_name=transport.mode_name)
             moderation = TelegramModerationMiddleware()
