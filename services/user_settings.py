@@ -49,8 +49,7 @@ class SQLiteUserSettingsStore:
     @staticmethod
     def _table_columns(connection: sqlite3.Connection, table: str) -> set[str]:
         return {
-            str(row[1])
-            for row in connection.execute(f"PRAGMA table_info({table})")
+            str(row[1]) for row in connection.execute(f"PRAGMA table_info({table})")
         }
 
     @staticmethod
@@ -240,11 +239,15 @@ def set_user_locale(
     locale: str,
     platform: str = _DEFAULT_PLATFORM,
 ) -> str:
-    return get_user_settings_store().set_locale(
-        user_id,
-        locale,
-        platform=platform,
-    ).locale
+    return (
+        get_user_settings_store()
+        .set_locale(
+            user_id,
+            locale,
+            platform=platform,
+        )
+        .locale
+    )
 
 
 def touch_platform_user(platform: str, user_id: int) -> None:
