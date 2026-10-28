@@ -8,13 +8,12 @@ from bots.telegram.callbacks import (
     EpisodeDetailCallback,
     KeyedPageCallback,
     SectionSourceCallback,
-    resolve_key_or_legacy_index,
     ViewCallback,
+    resolve_key_or_legacy_index,
 )
-from bots.telegram.card.constants import SECTION_LABELS, SOURCE_SELECTABLE_SECTIONS
 from bots.telegram.card.characters import edit_characters_view
+from bots.telegram.card.constants import SECTION_LABELS, SOURCE_SELECTABLE_SECTIONS
 from bots.telegram.card.episodes import edit_episode_detail, edit_episodes_view
-from bots.telegram.card.trailers import edit_trailers_view
 from bots.telegram.card.renderer import (
     edit_anime_view,
     edit_description_view,
@@ -24,7 +23,8 @@ from bots.telegram.card.selectors import (
     description_source_options,
     source_section_options,
 )
-from bots.telegram.card.state import ANIME_SESSIONS, AnimeCardSession
+from bots.telegram.card.state import AnimeCardSession, TelegramCardState
+from bots.telegram.card.trailers import edit_trailers_view
 from bots.telegram.settings import register_settings_handlers
 from localization import text
 from services.app_context import get_app_context
@@ -32,15 +32,15 @@ from services.user_settings import get_user_locale
 
 
 def _session_for_callback(
-    callback: CallbackQuery, token: str
+    callback: CallbackQuery, token: str, state: TelegramCardState
 ) -> AnimeCardSession | None:
-    session = ANIME_SESSIONS.get(token)
+    session = state.anime_sessions.get(token)
     if session is None or session.owner_user_id != callback.from_user.id:
         return None
     return session
 
 
-def build_dispatcher(mode_name: str) -> Dispatcher:
+def build_dispatcher(mode_name: str, state: TelegramCardState) -> Dispatcher:
     """Build the core Telegram dispatcher without search-provider-specific handlers."""
     dp = Dispatcher()
     register_settings_handlers(dp)
@@ -93,7 +93,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             return
 
         token = data.token
-        raw_session = ANIME_SESSIONS.get(token)
+        raw_session = state.anime_sessions.get(token)
         if raw_session is None:
             await callback.answer(
                 text("card", "expired", locale=locale), show_alert=True
@@ -143,7 +143,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
 
         token = data.token
         section = data.section
-        raw_session = ANIME_SESSIONS.get(token)
+        raw_session = state.anime_sessions.get(token)
         if raw_session is None:
             await callback.answer(
                 text("card", "expired", locale=locale), show_alert=True
@@ -191,9 +191,9 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             )
             return
         token = data.token
-        session = _session_for_callback(callback, token)
+        session = _session_for_callback(callback, token, state)
         if session is None:
-            raw_session = ANIME_SESSIONS.get(token)
+            raw_session = state.anime_sessions.get(token)
             key = "not_owner" if raw_session is not None else "expired"
             await callback.answer(text("card", key, locale=locale), show_alert=True)
             return
@@ -231,9 +231,9 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             return
 
         token = data.token
-        session = _session_for_callback(callback, token)
+        session = _session_for_callback(callback, token, state)
         if session is None:
-            raw_session = ANIME_SESSIONS.get(token)
+            raw_session = state.anime_sessions.get(token)
             key = "not_owner" if raw_session is not None else "expired"
             await callback.answer(text("card", key, locale=locale), show_alert=True)
             return
@@ -263,9 +263,9 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             return
 
         token = data.token
-        session = _session_for_callback(callback, token)
+        session = _session_for_callback(callback, token, state)
         if session is None:
-            raw_session = ANIME_SESSIONS.get(token)
+            raw_session = state.anime_sessions.get(token)
             key = "not_owner" if raw_session is not None else "expired"
             await callback.answer(text("card", key, locale=locale), show_alert=True)
             return
@@ -304,9 +304,9 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
             return
 
         token = data.token
-        session = _session_for_callback(callback, token)
+        session = _session_for_callback(callback, token, state)
         if session is None:
-            raw_session = ANIME_SESSIONS.get(token)
+            raw_session = state.anime_sessions.get(token)
             key = "not_owner" if raw_session is not None else "expired"
             await callback.answer(text("card", key, locale=locale), show_alert=True)
             return
@@ -346,7 +346,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
 
         token = data.token
         section = data.section
-        raw_session = ANIME_SESSIONS.get(token)
+        raw_session = state.anime_sessions.get(token)
         if raw_session is None:
             await callback.answer(
                 text("card", "expired", locale=locale), show_alert=True

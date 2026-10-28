@@ -5,7 +5,7 @@ import logging
 from aiogram.types import Message
 
 from bots.telegram.card.renderer import send_anime_view
-from bots.telegram.card.state import remember_anime
+from bots.telegram.card.state import TelegramCardState
 from core.models import SearchCandidate
 from localization import text
 from services.app_context import get_app_context
@@ -16,6 +16,7 @@ async def aggregate_and_send(
     message: Message,
     candidate: SearchCandidate,
     owner_user_id: int,
+    state: TelegramCardState,
 ) -> None:
     locale = get_user_locale(owner_user_id)
     identity = candidate.identity
@@ -36,7 +37,7 @@ async def aggregate_and_send(
         await message.answer(text("search", "get_result_failed", locale=locale))
         return
 
-    token = remember_anime(anime, owner_user_id)
+    token = state.remember_anime(anime, owner_user_id)
     await send_anime_view(
         message,
         token,
