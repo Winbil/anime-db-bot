@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 
 from aiogram.types import Message
@@ -10,6 +10,7 @@ from bots.telegram.card.renderer import send_anime_view
 from bots.telegram.card.state import remember_anime
 from core.models import SearchCandidate
 from localization import text
+from search.registry import get_search_providers
 from services.app_context import get_app_context
 from services.user_settings import get_user_locale
 
@@ -22,11 +23,23 @@ class _ContextAttributeProxy:
     ownership.
     """
 
-    def __init__(self, attribute: str) -> None:
+    def __init__(
+        self,
+        attribute: str,
+        *,
+        fallback: Callable[[], Any] | None = None,
+    ) -> None:
         self._attribute = attribute
+        self._fallback = fallback
 
     def _value(self) -> Any:
-        return getattr(get_app_context(), self._attribute)
+        try:
+            context = get_app_context()
+        except RuntimeError:
+            if self._fallback is None:
+                raise
+            return self._fallback()
+        return getattr(context, self._attribute)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._value(), name)
@@ -48,7 +61,12 @@ class _ContextAttributeProxy:
 
 # Temporary compatibility surfaces for UI modules. These are lazy views, not
 # service singletons; AppContext remains the sole owner of the actual objects.
-SEARCH_PROVIDERS = _ContextAttributeProxy("search_providers")
+# Search providers are lightweight and may be materialized lazily for legacy
+# callers outside an active context; runtime ownership still stays in AppContext.
+SEARCH_PROVIDERS = _ContextAttributeProxy(
+    "search_providers",
+    fallback=get_search_providers,
+)
 SEARCH_SERVICE = _ContextAttributeProxy("search_service")
 SOURCES = _ContextAttributeProxy("sources")
 AGGREGATOR = _ContextAttributeProxy("aggregator")
