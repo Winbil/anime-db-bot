@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from core.character_identity import CharacterIdentity
 from core.identity import AnimeIdentity
+from core.temporal import PartialDate, parse_datetime, parse_partial_date
 
 
 @dataclass(slots=True)
@@ -94,13 +96,16 @@ class EpisodeRecord:
     source: str
     backend: str
     titles: dict[str, str] = field(default_factory=dict)
-    aired_at: str | None = None
+    aired_at: PartialDate | None = None
     duration_seconds: int | None = None
     score: float | None = None
     filler: bool = False
     recap: bool = False
     synopsis: str | None = None
     urls: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.aired_at = parse_partial_date(self.aired_at)
 
 
 @dataclass(slots=True)
@@ -218,9 +223,9 @@ class AnimeRecord:
     episodes_total: int | None = None
     episodes_aired: int | None = None
     duration_minutes: int | None = None
-    aired_on: str | None = None
-    released_on: str | None = None
-    next_episode_at: str | None = None
+    aired_on: PartialDate | None = None
+    released_on: PartialDate | None = None
+    next_episode_at: datetime | None = None
 
     score: float | None = None
     rank: int | None = None
@@ -244,6 +249,11 @@ class AnimeRecord:
     urls: dict[str, str] = field(default_factory=dict)
     staff: list[PersonCredit] = field(default_factory=list)
     voices: list[PersonCredit] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.aired_on = parse_partial_date(self.aired_on)
+        self.released_on = parse_partial_date(self.released_on)
+        self.next_episode_at = parse_datetime(self.next_episode_at)
 
     @property
     def identity(self) -> AnimeIdentity:
@@ -280,9 +290,9 @@ class AggregatedAnime:
     episodes_total: int | None = None
     episodes_aired: int | None = None
     duration_minutes: int | None = None
-    aired_on: str | None = None
-    released_on: str | None = None
-    next_episode_at: str | None = None
+    aired_on: PartialDate | None = None
+    released_on: PartialDate | None = None
+    next_episode_at: datetime | None = None
 
     scores: dict[str, float] = field(default_factory=dict)
     score_average: float | None = None
@@ -314,6 +324,11 @@ class AggregatedAnime:
     voices: list[PersonCredit] = field(default_factory=list)
     characters: list[CharacterRecord] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.aired_on = parse_partial_date(self.aired_on)
+        self.released_on = parse_partial_date(self.released_on)
+        self.next_episode_at = parse_datetime(self.next_episode_at)
 
     @property
     def identity(self) -> AnimeIdentity:

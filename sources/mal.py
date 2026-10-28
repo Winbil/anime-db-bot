@@ -10,6 +10,7 @@ from core.people_loading import PeopleBatch
 from core.settings import AppSettings, SourceSettings
 from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
+from core.temporal import parse_partial_date
 from localization import source_value_key
 from sources.jikan import JIKAN_DISPLAY_NAME, JikanSource
 
@@ -192,8 +193,8 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         episodes_total=episodes_total,
         episodes_aired=episodes_aired,
         duration_minutes=duration_minutes,
-        aired_on=_clean(raw.get("start_date")) or None,
-        released_on=_clean(raw.get("end_date")) or None,
+        aired_on=parse_partial_date(raw.get("start_date")),
+        released_on=parse_partial_date(raw.get("end_date")),
         score=_float(raw.get("mean")),
         rank=_int(raw.get("rank")),
         popularity_rank=_int(raw.get("popularity")),

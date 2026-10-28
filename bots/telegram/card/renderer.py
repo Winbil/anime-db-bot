@@ -191,12 +191,19 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
                 "card",
                 "air_dates",
                 locale=locale,
-                start=anime.aired_on or "—",
-                end=anime.released_on or "—",
+                start=anime.aired_on.isoformat() if anime.aired_on else "—",
+                end=anime.released_on.isoformat() if anime.released_on else "—",
             )
         )
     if anime.next_episode_at:
-        release.append(text("card", "next_episode", locale=locale, value=anime.next_episode_at))
+        release.append(
+            text(
+                "card",
+                "next_episode",
+                locale=locale,
+                value=anime.next_episode_at.isoformat(),
+            )
+        )
     if anime.broadcasts:
         broadcast_text = ", ".join(
             value for item in anime.broadcasts if (value := _broadcast(item, locale))
