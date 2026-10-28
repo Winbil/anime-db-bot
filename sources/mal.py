@@ -7,7 +7,7 @@ from core.http_client import http_request
 from core.identity import AnimeIdentity
 from core.models import AnimeRecord, BroadcastSlot, CharacterRecord, PersonCredit
 from core.people_loading import PeopleBatch
-from core.settings import AppSettings, SourceSettings
+from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
 from core.temporal import parse_partial_date
@@ -26,7 +26,7 @@ DETAIL_FIELDS = ",".join(
 
 
 def _settings() -> SourceSettings:
-    return AppSettings.from_env().sources
+    return get_settings().sources
 
 
 def api_url() -> str:

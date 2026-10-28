@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from core.identity import AnimeIdentity
+from core.settings import AppSettings
 from sources.anidb import AniDBSource
 
 
@@ -83,7 +84,7 @@ class AniDBSourceTests(unittest.IsolatedAsyncioTestCase):
             "ANIDB_CACHE_TTL_SECONDS": "86400",
         })
         self.env.start()
-        self.source = AniDBSource()
+        self.source = AniDBSource(AppSettings.from_env().sources)
         self.identity = AnimeIdentity({"anidb": "10", "mal": "20"})
 
     async def asyncTearDown(self) -> None:

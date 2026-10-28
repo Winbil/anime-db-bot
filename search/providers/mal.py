@@ -4,7 +4,7 @@ from typing import Any
 
 from core.http_client import http_request
 from core.models import SearchCandidate, SearchPage
-from core.settings import AppSettings, SourceSettings
+from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse
 from core.source_names import MAL_SOURCE_NAME
 from services.rate_limits import wait_for_upstream
@@ -20,7 +20,7 @@ class MALSearchProvider:
 
     @property
     def settings(self) -> SourceSettings:
-        return self._settings or AppSettings.from_env().sources
+        return self._settings or get_settings().sources
 
     def api_url(self) -> str:
         return self.settings.mal_api_url
