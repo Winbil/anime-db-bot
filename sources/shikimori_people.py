@@ -10,11 +10,10 @@ from core.cache import BoundedTTLCache
 from core.canonicalization import voice_role_token
 from core.http_client import http_request
 from core.http_config import USER_AGENT
-from core.models import AnimeRecord, CharacterRecord, PersonCredit
+from core.models import CharacterRecord, PersonCredit
 from core.settings import AppSettings, SourceSettings
 from core.source_errors import SourceInvalidResponse
 from sources.shikimori import (
-    ShikimoriSource as BaseShikimoriSource,
     _best_poster_url,
     _dedupe,
     _graphql,
@@ -434,27 +433,3 @@ async def _load_shikimori_voices(
     if ttl > 0:
         _VOICE_CACHE.set(anime_id, copy.deepcopy(voices), ttl_seconds=ttl)
     return voices
-
-
-class ShikimoriSource(BaseShikimoriSource):
-    async def get_details(
-        self, mal_id: str, known_ids: dict[str, str]
-    ) -> AnimeRecord | None:
-        record = await super().get_details(mal_id, known_ids)
-        if record is None:
-            return None
-        anime_id = _clean_text(known_ids.get("shikimori") or record.source_id)
-        logging.info(
-            "Shikimori people for anime %s: staff=deferred, voices=deferred",
-            anime_id or "?",
-        )
-        return record
-
-    async def load_voices(
-        self, mal_id: str, known_ids: dict[str, str]
-    ) -> list[PersonCredit]:
-        mal_id = _clean_text(mal_id)
-        anime_id = _clean_text(known_ids.get("shikimori"))
-        if not mal_id.isdigit() or not anime_id.isdigit():
-            return []
-        return await _load_shikimori_voices(anime_id, self.settings)
