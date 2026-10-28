@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.md">English</a> · <strong>Русский</strong> · <a href="README.ja.md">日本語</a>
+  <a href="../README.md">English</a> · <strong>Русский</strong> · <a href="README.ja.md">日本語</a>
 </p>
 
 # anime-db-bot
@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11--3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
 [![CI](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](../LICENSE)
 
 `anime-db-bot` ищет аниме сразу в нескольких базах, разрешает подтверждённые cross-ID связи и собирает единую карточку, не назначая ни одну внешнюю базу главным источником истины.
 
@@ -234,7 +234,7 @@ Domain model locale-neutral. Source adapters приводят upstream status/ty
 
 Существующие пользователи сохраняют явно выбранный locale. Новые пользователи, отсутствующие settings, неизвестные locales и отсутствующие translation keys используют английский fallback.
 
-Свободный текст источников, например anime descriptions, машинно не переводится. Подробнее: [`localization/README.md`](localization/README.md).
+Свободный текст источников, например anime descriptions, машинно не переводится. Подробнее: [`localization/README.md`](../localization/README.md).
 
 ## Persistence
 
@@ -275,7 +275,7 @@ anime-db-bot/
 
 `services/app_context.py` — application composition root. Production runtime dependencies должны принадлежать ему, а не создаваться как import-time service singletons.
 
-Подробнее: [`docs/app-context.md`](docs/app-context.md).
+Подробнее: [`docs/app-context.md`](app-context.md).
 
 ## Cross-ID mappings
 
@@ -309,7 +309,7 @@ GitHub Actions тестирует Python 3.11, 3.12 и 3.13. Quality job так�
 
 ## Участие в разработке
 
-Pull requests приветствуются. Перед изменениями прочитайте [CONTRIBUTING.md](CONTRIBUTING.md) и соблюдайте [Code of Conduct](CODE_OF_CONDUCT.md). Для bug reports и feature requests используйте issue forms репозитория.
+Pull requests приветствуются. Перед изменениями прочитайте [CONTRIBUTING.md](../CONTRIBUTING.md) и соблюдайте [Code of Conduct](../CODE_OF_CONDUCT.md). Для bug reports и feature requests используйте issue forms репозитория.
 
 ## Безопасность
 
@@ -319,7 +319,7 @@ Pull requests приветствуются. Перед изменениями п
 - Self-hosted Telegram Bot API, будущий metrics endpoint и будущий external API нельзя публиковать наружу без явных authentication/network controls.
 - Mapping overrides аудируются, потому что ошибочный identity edge способен затронуть несколько capabilities.
 
-Правила безопасного сообщения об уязвимостях описаны в [SECURITY.md](SECURITY.md). Не публикуйте credentials, tokens или private deployment details в публичном issue.
+Правила безопасного сообщения об уязвимостях описаны в [SECURITY.md](../SECURITY.md). Не публикуйте credentials, tokens или private deployment details в публичном issue.
 
 ## Статус проекта
 
@@ -327,7 +327,7 @@ Pull requests приветствуются. Перед изменениями п
 
 ## Лицензия
 
-Проект распространяется по [Apache License 2.0](LICENSE). Код можно использовать, изменять и распространять на условиях лицензии; обязательные notices должны сохраняться, а существенные изменения — отмечаться в предусмотренных лицензией случаях.
+Проект распространяется по [Apache License 2.0](../LICENSE). Код можно использовать, изменять и распространять на условиях лицензии; обязательные notices должны сохраняться, а существенные изменения — отмечаться в предусмотренных лицензией случаях.
 
 ## Источники данных и благодарности
 
