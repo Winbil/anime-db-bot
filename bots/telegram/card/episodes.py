@@ -15,10 +15,11 @@ from bots.telegram.callbacks import (
     resolve_key_or_legacy_index,
 )
 from bots.telegram.card.renderer import edit_standard_text, plain_text_to_rich_html
-from bots.telegram.card.service import EPISODE_SERVICE
 from bots.telegram.card.state import AnimeCardSession
 from core.models import EpisodeRecord
 from localization import text
+from services.app_context import get_app_context
+from services.episodes import EpisodeService
 
 EPISODES_PER_VIEW = 10
 UPSTREAM_PAGE_SIZE = 100
@@ -112,6 +113,7 @@ def _episode_keyboard(
     has_prev: bool,
     has_next: bool,
     locale: str,
+    service: EpisodeService,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     buttons = [
@@ -155,7 +157,7 @@ def _episode_keyboard(
     source_buttons = [
         InlineKeyboardButton(
             text=("✓ " if candidate == backend else "")
-            + EPISODE_SERVICE.display_name(candidate),
+            + service.display_name(candidate),
             callback_data=KeyedPageCallback("ap", token, candidate, 0).encode(),
         )
         for candidate in backends
@@ -183,7 +185,8 @@ async def edit_episodes_view(
     locale: str,
     backend: str | None = None,
 ) -> None:
-    backends = EPISODE_SERVICE.available_backends(session.anime.identity)
+    service = get_app_context().episode_service
+    backends = service.available_backends(session.anime.identity)
     if not backends:
         await message.edit_text(
             text=text("card", "episodes_load_failed", locale=locale),
@@ -201,7 +204,7 @@ async def edit_episodes_view(
         return
 
     backend = resolve_backend_selector(backend, backends)
-    source_name = EPISODE_SERVICE.display_name(backend)
+    source_name = service.display_name(backend)
 
     view_page = max(0, int(view_page))
     upstream_page, offset = _view_slice(view_page)
@@ -209,7 +212,7 @@ async def edit_episodes_view(
     page = session.episode_pages.get(cache_key)
     if page is None:
         try:
-            page = await EPISODE_SERVICE.load_page(
+            page = await service.load_page(
                 session.anime.identity,
                 page=upstream_page,
                 backend=backend,
@@ -252,6 +255,7 @@ async def edit_episodes_view(
         has_prev=has_prev,
         has_next=has_next,
         locale=locale,
+        service=service,
     )
 
     try:
@@ -347,18 +351,19 @@ async def edit_episode_detail(
     locale: str,
     backend: str = "jikan",
 ) -> None:
-    backends = EPISODE_SERVICE.available_backends(session.anime.identity)
+    service = get_app_context().episode_service
+    backends = service.available_backends(session.anime.identity)
     if backends:
         backend = resolve_backend_selector(backend, backends)
     elif not backend:
         backend = "jikan"
-    source_name = EPISODE_SERVICE.display_name(backend)
+    source_name = service.display_name(backend)
 
     cache_key = (backend, int(episode_number))
     episode = session.episode_details.get(cache_key)
     if episode is None:
         try:
-            episode = await EPISODE_SERVICE.load_episode(
+            episode = await service.load_episode(
                 session.anime.identity,
                 episode_number,
                 backend=backend,

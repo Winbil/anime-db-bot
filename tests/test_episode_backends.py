@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
 
 from bots.telegram.card.episodes import _episode_keyboard, resolve_backend_selector
 from core.identity import AnimeIdentity
@@ -56,21 +55,23 @@ class EpisodeBackendTests(unittest.TestCase):
 
     def test_episode_keyboard_scopes_page_and_detail_callbacks_to_backend(self) -> None:
         item = EpisodeRecord(number=1, source="anidb", backend="anidb")
-        labels = {"jikan": "MAL / Jikan", "anidb": "AniDB"}
-        with patch(
-            "bots.telegram.card.episodes.EPISODE_SERVICE.display_name",
-            side_effect=lambda backend: labels[backend],
-        ):
-            keyboard = _episode_keyboard(
-                "token",
-                [item],
-                backends=["jikan", "anidb"],
-                backend="anidb",
-                view_page=3,
-                has_prev=True,
-                has_next=True,
-                locale="ru",
-            )
+        service = EpisodeService(
+            [
+                _EpisodeSource("jikan", "mal", "MAL / Jikan"),
+                _EpisodeSource("anidb", "anidb", "AniDB"),
+            ]
+        )
+        keyboard = _episode_keyboard(
+            "token",
+            [item],
+            backends=["jikan", "anidb"],
+            backend="anidb",
+            view_page=3,
+            has_prev=True,
+            has_next=True,
+            locale="ru",
+            service=service,
+        )
         flattened = [button for row in keyboard.inline_keyboard for button in row]
         callbacks = {
             button.callback_data for button in flattened if button.callback_data

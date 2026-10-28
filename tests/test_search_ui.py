@@ -7,8 +7,8 @@ from unittest.mock import patch
 from aiogram import Dispatcher
 
 from bots.telegram import search_ui
-from bots.telegram.card.service import SEARCH_PROVIDERS
 from core.models import SearchCandidate
+from search.registry import get_search_providers
 from services.direct_lookup import DirectIdLookupService
 from services.search import SearchService
 
@@ -46,7 +46,7 @@ class UnifiedSearchUiTests(unittest.TestCase):
         )
 
     def test_default_scope_reuses_shared_search_service(self) -> None:
-        default_service = SearchService(SEARCH_PROVIDERS)
+        default_service = SearchService(get_search_providers())
 
         service = search_ui._service_for(
             search_ui.DEFAULT_SEARCH_PROVIDER_KEYS,
@@ -69,12 +69,8 @@ class UnifiedSearchUiTests(unittest.TestCase):
             search_ui._parse_direct_query("ani:101280", supported),
             ("anilist", "101280"),
         )
-        self.assertIsNone(
-            search_ui._parse_direct_query("futuredb:42", supported)
-        )
-        self.assertIsNone(
-            search_ui._parse_direct_query("Tensei Slime", supported)
-        )
+        self.assertIsNone(search_ui._parse_direct_query("futuredb:42", supported))
+        self.assertIsNone(search_ui._parse_direct_query("Tensei Slime", supported))
 
     def test_preview_contains_all_external_ids(self) -> None:
         session = search_ui.SearchSession(
@@ -129,7 +125,7 @@ class UnifiedSearchUiTests(unittest.TestCase):
 
         rich = search_ui._preview_rich("Result", candidate)
 
-        self.assertIn('tg://photo?id=cover', rich.html or "")
+        self.assertIn("tg://photo?id=cover", rich.html or "")
         self.assertIsNotNone(rich.media)
         self.assertEqual(len(rich.media or []), 1)
         self.assertEqual(
@@ -168,7 +164,7 @@ class UnifiedSearchUiTests(unittest.TestCase):
         search_ui.register_search_handlers(
             dispatcher,
             aggregate_callback=_noop_aggregate,
-            default_service=SearchService(SEARCH_PROVIDERS),
+            default_service=SearchService(get_search_providers()),
             direct_lookup=DirectIdLookupService((DummyDirectSource(),)),
         )
 
@@ -189,7 +185,9 @@ class UnifiedSearchUiTests(unittest.TestCase):
 
 
 class InitialSearchPreviewTests(unittest.IsolatedAsyncioTestCase):
-    async def test_first_preview_sends_then_upgrades_same_message_to_rich_cover(self) -> None:
+    async def test_first_preview_sends_then_upgrades_same_message_to_rich_cover(
+        self,
+    ) -> None:
         class SentMessage:
             def __init__(self) -> None:
                 self.edits = []

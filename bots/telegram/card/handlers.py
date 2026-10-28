@@ -24,10 +24,10 @@ from bots.telegram.card.selectors import (
     description_source_options,
     source_section_options,
 )
-from bots.telegram.card.service import SEARCH_SERVICE, SOURCES
 from bots.telegram.card.state import ANIME_SESSIONS, AnimeCardSession
 from bots.telegram.settings import register_settings_handlers
 from localization import text
+from services.app_context import get_app_context
 from services.user_settings import get_user_locale
 
 
@@ -49,7 +49,8 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
     async def start_handler(message: Message) -> None:
         user_id = message.from_user.id if message.from_user else None
         locale = get_user_locale(user_id)
-        source_names = ", ".join(source.name for source in SOURCES) or text(
+        context = get_app_context()
+        source_names = ", ".join(source.name for source in context.sources) or text(
             "start", "no_sources", locale=locale
         )
         lines = [
@@ -60,7 +61,7 @@ def build_dispatcher(mode_name: str) -> Dispatcher:
                 "start",
                 "default_search",
                 locale=locale,
-                providers=SEARCH_SERVICE.provider_name,
+                providers=context.search_service.provider_name,
             ),
             text("start", "data_sources", locale=locale, sources=source_names),
             "",
