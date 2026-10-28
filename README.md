@@ -1,3 +1,5 @@
+> **AI-assisted project:** This project was developed with the help of AI.
+
 <p align="center">
   <strong>English</strong> · <a href="docs/README.ru.md">Русский</a> · <a href="docs/README.ja.md">日本語</a>
 </p>

@@ -1,3 +1,5 @@
+> **AI 支援プロジェクト:** このプロジェクトの開発には AI が使用されています。
+
 <p align="center">
   <a href="../README.md">English</a> · <a href="README.ru.md">Русский</a> · <strong>日本語</strong>
 </p>
