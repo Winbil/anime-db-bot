@@ -174,7 +174,8 @@ Search/card callback sessions остаются bounded in-memory state со slid
 Поддерживаются:
 
 - `ru`;
-- `en`.
+- `en`;
+- `ja`.
 
 Domain model locale-neutral: source adapters сохраняют canonical status/kind/season/genre/role values, а перевод выполняется только в renderer/localization layer. Свободные descriptions машинно не переводятся.
 
