@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import math
-import os
-import re
 import threading
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
+
+from core.settings import AppSettings, RateLimitSettings, get_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,28 +17,29 @@ class RateLimitDecision:
     window: str | None = None
 
 
+def _runtime_rate_settings() -> RateLimitSettings:
+    return AppSettings.from_env().rate_limits
+
+
 class PersonalRateLimiter:
     """Sliding-window limiter keyed strictly by ``(platform, user_id)``."""
 
-    def __init__(self) -> None:
+    def __init__(self, settings: RateLimitSettings | None = None) -> None:
+        self._settings = settings
         self._lock = threading.RLock()
         self._events: dict[tuple[str, int], deque[float]] = defaultdict(deque)
 
-    @staticmethod
-    def _positive_int(name: str, default: int) -> int:
-        raw = os.getenv(name, str(default)).strip()
-        try:
-            return max(1, int(raw))
-        except ValueError:
-            return default
+    @property
+    def settings(self) -> RateLimitSettings:
+        return self._settings or _runtime_rate_settings()
 
     @property
     def per_minute(self) -> int:
-        return self._positive_int("USER_RATE_LIMIT_PER_MINUTE", 50)
+        return self.settings.user_per_minute
 
     @property
     def per_hour(self) -> int:
-        return self._positive_int("USER_RATE_LIMIT_PER_HOUR", 1000)
+        return self.settings.user_per_hour
 
     def check(
         self,
@@ -81,81 +82,25 @@ class PersonalRateLimiter:
             self._events.clear()
 
 
-_ENV_TOKEN_RE = re.compile(r"[^A-Z0-9]+")
-
-
-def _env_token(value: str) -> str:
-    return _ENV_TOKEN_RE.sub("_", (value or "").strip().upper()).strip("_")
-
-
-def _configured_positive_int(name: str) -> int | None:
-    raw = os.getenv(name, "").strip()
-    if not raw:
-        return None
-    try:
-        return max(1, int(raw))
-    except ValueError:
-        return None
-
-
 def _source_limit(source: str) -> int:
-    source_token = _env_token(source)
-    configured = _configured_positive_int(
-        f"UPSTREAM_RATE_LIMIT_{source_token}_PER_MINUTE"
-    )
-    if configured is not None:
-        return configured
-
-    default_configured = _configured_positive_int(
-        "UPSTREAM_RATE_LIMIT_DEFAULT_PER_MINUTE"
-    )
-    if default_configured is not None:
-        return default_configured
-
-    defaults = {
-        "ANILIST": 80,
-        "SHIKIMORI": 240,
-        "MAL": 120,
-        "MYANIMELIST": 120,
-        "JIKAN": 30,
-        "ANIDB": 20,
-    }
-    return defaults.get(source_token, 120)
+    return _runtime_rate_settings().source_limit(source)
 
 
 def _operation_limit(source: str, operation: str) -> int | None:
-    source_token = _env_token(source)
-    operation_token = _env_token(operation)
-    configured = _configured_positive_int(
-        f"UPSTREAM_RATE_LIMIT_{source_token}_{operation_token}_PER_MINUTE"
-    )
-    if configured is not None:
-        return configured
-
-    # Multi-request logical operations are intentionally more conservative.
-    defaults = {
-        ("ANILIST", "PEOPLE"): 20,
-        ("SHIKIMORI", "PEOPLE"): 60,
-        ("JIKAN", "METADATA"): 20,
-        ("JIKAN", "PEOPLE"): 15,
-        ("JIKAN", "TRAILERS"): 15,
-        ("JIKAN", "EPISODES"): 20,
-        ("ANIDB", "EPISODES"): 20,
-    }
-    return defaults.get((source_token, operation_token))
+    return _runtime_rate_settings().operation_limit(source, operation)
 
 
 class UpstreamRateLimiter:
-    """Async source-global + optional endpoint sliding-window safety limiter.
+    """Async source-global + optional endpoint sliding-window safety limiter."""
 
-    Unlike the personal limiter, this layer waits instead of blaming/rejecting a
-    user. Every operation first consumes the source-global bucket, so endpoint
-    buckets can only make a path stricter and can never exceed the source quota.
-    """
-
-    def __init__(self) -> None:
+    def __init__(self, settings: RateLimitSettings | None = None) -> None:
+        self._settings = settings
         self._lock = threading.RLock()
         self._events: dict[tuple[str, ...], deque[float]] = defaultdict(deque)
+
+    @property
+    def settings(self) -> RateLimitSettings:
+        return self._settings or _runtime_rate_settings()
 
     async def _acquire_bucket(self, key: tuple[str, ...], limit: int) -> None:
         while True:
@@ -180,10 +125,10 @@ class UpstreamRateLimiter:
 
         await self._acquire_bucket(
             ("source", source_key),
-            _source_limit(source_key),
+            self.settings.source_limit(source_key),
         )
 
-        operation_limit = _operation_limit(source_key, operation_key)
+        operation_limit = self.settings.operation_limit(source_key, operation_key)
         if operation_limit is not None:
             await self._acquire_bucket(
                 ("operation", source_key, operation_key),
@@ -195,8 +140,10 @@ class UpstreamRateLimiter:
             self._events.clear()
 
 
-PERSONAL_RATE_LIMITER = PersonalRateLimiter()
-UPSTREAM_RATE_LIMITER = UpstreamRateLimiter()
+# Compatibility globals use the same frozen startup settings as AppContext. New
+# composition code can instantiate limiters with an explicit Settings object.
+PERSONAL_RATE_LIMITER = PersonalRateLimiter(get_settings().rate_limits)
+UPSTREAM_RATE_LIMITER = UpstreamRateLimiter(get_settings().rate_limits)
 
 
 async def wait_for_upstream(source: str, operation: str = "default") -> None:

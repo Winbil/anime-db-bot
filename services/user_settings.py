@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import os
 import sqlite3
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 
+from core.settings import get_settings
 from localization import DEFAULT_LOCALE, normalize_locale
-
-DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "user_settings.sqlite3"
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,12 +15,7 @@ class UserSettings:
 
 
 class SQLiteUserSettingsStore:
-    """Persistent repository for per-user preferences and known platform IDs.
-
-    Only requested rows are read during normal operation. Known user IDs are
-    stored in a small registry table so administrator tooling can enumerate
-    accounts the bot has actually seen without keeping them all in RAM.
-    """
+    """Persistent repository for per-user preferences and known platform IDs."""
 
     def __init__(self, path: str | Path) -> None:
         self._path = str(path)
@@ -142,12 +135,7 @@ class SQLiteUserSettingsStore:
             connection.execute("DELETE FROM known_users")
 
 
-def _default_db_path() -> str:
-    configured = os.getenv("USER_SETTINGS_DB_PATH", "").strip()
-    return configured or str(DEFAULT_DB_PATH)
-
-
-USER_SETTINGS = SQLiteUserSettingsStore(_default_db_path())
+USER_SETTINGS = SQLiteUserSettingsStore(get_settings().storage.user_settings_db_path)
 
 
 def get_user_locale(user_id: int | None) -> str:

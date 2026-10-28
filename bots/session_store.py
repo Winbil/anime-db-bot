@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Iterator, MutableMapping
 from typing import Generic, TypeVar
+
+from core.settings import AppSettings
 
 T = TypeVar("T")
 
 
 def session_ttl_seconds() -> int:
-    raw = os.getenv("TELEGRAM_SESSION_TTL_SECONDS", "3600").strip()
-    try:
-        return max(60, int(raw))
-    except ValueError:
-        return 3600
+    # Compatibility helper remains dynamic for tests and small standalone uses;
+    # AppContext passes the frozen startup value explicitly.
+    return AppSettings.from_env().telegram.session_ttl_seconds
 
 
 class ExpiringSessionStore(MutableMapping[str, T], Generic[T]):
@@ -42,9 +41,6 @@ class ExpiringSessionStore(MutableMapping[str, T], Generic[T]):
     def __getitem__(self, key: str) -> T:
         self._prune()
         _, value = self._items.pop(key)
-        # A session that is still being used remains alive and moves to the
-        # most-recently-used end, so capacity eviction cannot discard an active
-        # card merely because it was originally created a long time ago.
         self._items[key] = (time.monotonic() + self._ttl_seconds, value)
         return value
 
