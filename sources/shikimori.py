@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import logging
 import re
 from datetime import datetime
 from typing import Any
@@ -12,11 +13,14 @@ from core.canonicalization import (
     is_primary_voice_role,
 )
 from core.http_client import http_request
+from core.identity import AnimeIdentity
 from core.http_config import USER_AGENT
-from core.models import AnimeRecord, PersonCredit
+from core.models import AnimeRecord, CharacterRecord, PersonCredit
+from core.people_loading import PeopleBatch
 from core.settings import AppSettings, SourceSettings
 from core.temporal import PartialDate, parse_datetime, parse_partial_date
 from core.source_errors import SourceInvalidResponse
+from core.source_keys import SourceKey
 from localization import source_value_key
 
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
@@ -146,7 +150,9 @@ def _clean_description(value: Any) -> str:
     text_value = _HTML_BREAK_RE.sub("\n", text_value)
     text_value = _BBCODE_BREAK_RE.sub("\n", text_value)
     for _ in range(6):
-        text_value, count = _BBCODE_WRAPPED_RE.subn(lambda match: match.group("body"), text_value)
+        text_value, count = _BBCODE_WRAPPED_RE.subn(
+            lambda match: match.group("body"), text_value
+        )
         if not count:
             break
     text_value = _BBCODE_DECORATION_RE.sub("", text_value)
@@ -198,8 +204,12 @@ def _int(value: Any) -> int | None:
 
 def _status_distribution(value: list[dict[str, Any]] | None) -> dict[str, int]:
     aliases = {
-        "watching": "watching", "completed": "completed", "on_hold": "on_hold",
-        "dropped": "dropped", "planned": "planned", "rewatching": "rewatching",
+        "watching": "watching",
+        "completed": "completed",
+        "on_hold": "on_hold",
+        "dropped": "dropped",
+        "planned": "planned",
+        "rewatching": "rewatching",
     }
     result: dict[str, int] = {}
     for item in value or []:
@@ -307,13 +317,17 @@ async def _graphql(
     return data
 
 
-async def _get_raw(anime_id: str, settings: SourceSettings | None = None) -> dict[str, Any] | None:
+async def _get_raw(
+    anime_id: str, settings: SourceSettings | None = None
+) -> dict[str, Any] | None:
     data = await _graphql(BY_ID_QUERY, {"ids": anime_id}, settings)
     animes = data.get("animes", [])
     return animes[0] if animes else None
 
 
-async def _get_staff_raw(anime_id: str, settings: SourceSettings | None = None) -> dict[str, Any] | None:
+async def _get_staff_raw(
+    anime_id: str, settings: SourceSettings | None = None
+) -> dict[str, Any] | None:
     data = await _graphql(STAFF_QUERY, {"ids": anime_id}, settings, operation="people")
     animes = data.get("animes", [])
     return animes[0] if animes else None
@@ -349,10 +363,17 @@ def _record(raw: dict[str, Any], settings: SourceSettings | None = None) -> Anim
     english = _clean_text(raw.get("english"))
     japanese = _clean_text(raw.get("japanese"))
     licensed_ru = _clean_text(raw.get("licenseNameRu"))
-    titles = {key: value for key, value in {
-        "russian": russian, "romaji": romaji, "english": english,
-        "japanese": japanese, "licensed_ru": licensed_ru,
-    }.items() if value}
+    titles = {
+        key: value
+        for key, value in {
+            "russian": russian,
+            "romaji": romaji,
+            "english": english,
+            "japanese": japanese,
+            "licensed_ru": licensed_ru,
+        }.items()
+        if value
+    }
     external_ids = {"shikimori": str(raw.get("id") or "")}
     if raw.get("malId"):
         external_ids["mal"] = str(raw["malId"])
@@ -380,9 +401,15 @@ def _record(raw: dict[str, Any], settings: SourceSettings | None = None) -> Anim
         titles=titles,
         synonyms=_dedupe(raw.get("synonyms") or []),
         external_ids=external_ids,
-        kind=source_value_key("shikimori", "kind", kind_raw, default=str(kind_raw) or None),
-        status=source_value_key("shikimori", "status", status_raw, default=str(status_raw) or None),
-        rating=source_value_key("shikimori", "rating", rating_raw, default=str(rating_raw) or None),
+        kind=source_value_key(
+            "shikimori", "kind", kind_raw, default=str(kind_raw) or None
+        ),
+        status=source_value_key(
+            "shikimori", "status", status_raw, default=str(status_raw) or None
+        ),
+        rating=source_value_key(
+            "shikimori", "rating", rating_raw, default=str(rating_raw) or None
+        ),
         season=season,
         season_year=season_year,
         franchise=_clean_text(raw.get("franchise")) or None,
@@ -397,8 +424,15 @@ def _record(raw: dict[str, Any], settings: SourceSettings | None = None) -> Anim
         scoring_users=sum(score_distribution.values()) if score_distribution else None,
         status_distribution=status_distribution,
         score_distribution=score_distribution,
-        genres=_dedupe([canonical_genre_token(genre.get("name") or genre.get("russian") or "") for genre in raw.get("genres") or []]),
-        studios=_dedupe([studio.get("name", "") for studio in raw.get("studios") or []]),
+        genres=_dedupe(
+            [
+                canonical_genre_token(genre.get("name") or genre.get("russian") or "")
+                for genre in raw.get("genres") or []
+            ]
+        ),
+        studios=_dedupe(
+            [studio.get("name", "") for studio in raw.get("studios") or []]
+        ),
         licensors=_dedupe(raw.get("licensors") or []),
         descriptions={"Shikimori": description} if description else {},
         posters=[poster_url] if poster_url else [],
@@ -409,7 +443,10 @@ def _record(raw: dict[str, Any], settings: SourceSettings | None = None) -> Anim
 
 
 class ShikimoriSource:
+    """Identity-native Shikimori metadata and lazy people source."""
+
     name = "Shikimori"
+    source_key = SourceKey.SHIKIMORI
 
     def __init__(self, settings: SourceSettings | None = None) -> None:
         self._settings = _settings(settings)
@@ -418,24 +455,80 @@ class ShikimoriSource:
     def settings(self) -> SourceSettings:
         return self._settings
 
-    async def get_details(self, mal_id: str, known_ids: dict[str, str]) -> AnimeRecord | None:
-        mal_id = str(mal_id).strip()
-        shikimori_id = str(known_ids.get("shikimori") or "").strip()
-        if not mal_id.isdigit() or not shikimori_id.isdigit():
-            return None
-        raw = await _get_raw(shikimori_id, self._settings)
-        if not raw:
-            return None
-        if str(raw.get("malId") or "") != mal_id:
-            return None
-        return _record(raw, self._settings)
+    @staticmethod
+    def _anime_id(identity: AnimeIdentity) -> str:
+        return str(identity.get(SourceKey.SHIKIMORI) or "").strip()
 
-    async def load_staff(self, mal_id: str, known_ids: dict[str, str]) -> list[PersonCredit]:
-        mal_id = str(mal_id).strip()
-        shikimori_id = str(known_ids.get("shikimori") or "").strip()
-        if not mal_id.isdigit() or not shikimori_id.isdigit():
+    async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
+        anime_id = self._anime_id(identity)
+        if not anime_id.isdigit():
+            return None
+        raw = await _get_raw(anime_id, self._settings)
+        if not raw or str(raw.get("id") or "") != anime_id:
+            return None
+        record = _record(raw, self._settings)
+        logging.info(
+            "Shikimori people for anime %s: staff=deferred, voices=deferred",
+            anime_id,
+        )
+        return record
+
+    async def load_characters(self, identity: AnimeIdentity) -> list[CharacterRecord]:
+        anime_id = self._anime_id(identity)
+        if not anime_id.isdigit():
             return []
-        raw = await _get_staff_raw(shikimori_id, self._settings)
-        if not raw or str(raw.get("malId") or "") != mal_id:
+        from sources.shikimori_people import _load_shikimori_characters
+
+        return await _load_shikimori_characters(anime_id, self._settings)
+
+    async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
+        anime_id = self._anime_id(identity)
+        if not anime_id.isdigit():
+            return []
+        raw = await _get_staff_raw(anime_id, self._settings)
+        if not raw or str(raw.get("id") or "") != anime_id:
             return []
         return _credits(raw, voices=False)
+
+    async def load_voices(self, identity: AnimeIdentity) -> list[PersonCredit]:
+        anime_id = self._anime_id(identity)
+        if not anime_id.isdigit():
+            return []
+        from sources.shikimori_people import _load_shikimori_voices
+
+        return await _load_shikimori_voices(anime_id, self._settings)
+
+    async def load_staff_batch(
+        self,
+        identity: AnimeIdentity,
+        *,
+        cursor: str | None = None,
+        portrait_limit: int = 50,
+    ) -> PeopleBatch:
+        if cursor is not None:
+            return PeopleBatch(complete=True)
+        people = await self.load_staff(identity)
+        return PeopleBatch(
+            people=people,
+            complete=True,
+            total_count=len(people),
+        )
+
+    async def load_voices_batch(
+        self,
+        identity: AnimeIdentity,
+        *,
+        cursor: str | None = None,
+        portrait_limit: int = 50,
+    ) -> PeopleBatch:
+        anime_id = self._anime_id(identity)
+        if not anime_id.isdigit():
+            return PeopleBatch(complete=True)
+        from sources.shikimori_people_batches import load_shikimori_voices_batch
+
+        return await load_shikimori_voices_batch(
+            anime_id,
+            cursor=cursor,
+            portrait_limit=portrait_limit,
+            settings=self._settings,
+        )

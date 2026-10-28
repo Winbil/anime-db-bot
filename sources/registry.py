@@ -9,14 +9,14 @@ from core.source_keys import SourceKey
 from services.source_health import SourceHealthRegistry
 from sources.anidb import AniDBSource
 from sources.anilist import AniListSource
-from sources.identity_sources import ShikimoriIdentitySource
+from sources.shikimori import ShikimoriSource
 from sources.mal import MALSource
 from sources.rate_limited import rate_limited_source
 from sources.resilient import resilient_source
 
 
 _SOURCE_FACTORIES: dict[SourceKey, Callable[[SourceSettings], AnimeSource]] = {
-    SourceKey.SHIKIMORI: ShikimoriIdentitySource,
+    SourceKey.SHIKIMORI: ShikimoriSource,
     SourceKey.ANILIST: AniListSource,
     SourceKey.MAL: MALSource,
     SourceKey.ANIDB: AniDBSource,
