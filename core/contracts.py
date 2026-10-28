@@ -4,6 +4,7 @@ from typing import Protocol
 
 from core.identity import AnimeIdentity
 from core.models import AnimeRecord, EpisodePage, EpisodeRecord, SearchPage, TrailerRecord
+from core.source_keys import SourceKey
 
 
 class AnimeSearchProvider(Protocol):
@@ -24,13 +25,13 @@ class AnimeSearchProvider(Protocol):
 class AnimeSource(Protocol):
     """Metadata source operating on a source-independent anime identity.
 
-    ``source_key`` is the stable key used inside :class:`AnimeIdentity` (for
-    example ``mal`` or ``anilist``). Direct-ID search uses this capability rather
-    than hard-coding individual databases in Telegram handlers.
+    ``source_key`` is the stable key used inside :class:`AnimeIdentity`. Direct-ID
+    search uses this capability rather than hard-coding individual databases in
+    Telegram handlers.
     """
 
     name: str
-    source_key: str
+    source_key: SourceKey
 
     async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
         ...
@@ -40,13 +41,13 @@ class AnimeEpisodeSource(Protocol):
     """Lazy episode capability supplied by one backend.
 
     A backend may reuse another database identity edge. Jikan, for example,
-    advertises ``source_key='mal'`` and ``backend_key='jikan'`` instead of
+    advertises ``source_key=SourceKey.MAL`` and ``backend_key='jikan'`` instead of
     introducing a synthetic Jikan identity.
     """
 
     name: str
     display_name: str
-    source_key: str
+    source_key: SourceKey
     backend_key: str
 
     async def load_episode_page(
@@ -70,7 +71,7 @@ class AnimeTrailerSource(Protocol):
 
     name: str
     display_name: str
-    source_key: str
+    source_key: SourceKey
     backend_key: str
 
     async def load_trailers(self, identity: AnimeIdentity) -> list[TrailerRecord]:

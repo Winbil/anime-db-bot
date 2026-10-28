@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from core.capabilities import SourceCapability, source_keys_with
 from core.contracts import AnimeSource
+from core.source_keys import SourceKey
 from sources.anidb import AniDBSource
 from sources.identity_sources import AniListIdentitySource, ShikimoriIdentitySource
 from sources.mal import MALSource
@@ -10,25 +12,28 @@ from sources.rate_limited import rate_limited_source
 from sources.resilient import resilient_source
 
 
-_SOURCE_FACTORIES: tuple[tuple[str, Callable[[], AnimeSource]], ...] = (
-    ("shikimori", ShikimoriIdentitySource),
-    ("anilist", AniListIdentitySource),
-    ("mal", MALSource),
-)
+_SOURCE_FACTORIES: dict[SourceKey, Callable[[], AnimeSource]] = {
+    SourceKey.SHIKIMORI: ShikimoriIdentitySource,
+    SourceKey.ANILIST: AniListIdentitySource,
+    SourceKey.MAL: MALSource,
+    SourceKey.ANIDB: AniDBSource,
+}
 
 
-def get_source_map() -> dict[str, AnimeSource]:
-    """Return enabled metadata sources keyed by their AnimeIdentity key."""
-    factories: list[tuple[str, Callable[[], AnimeSource]]] = list(_SOURCE_FACTORIES)
-    if AniDBSource.is_enabled():
-        factories.append(("anidb", AniDBSource))
+def get_source_map() -> dict[SourceKey, AnimeSource]:
+    """Return enabled metadata sources declared by the capability catalog."""
+    result: dict[SourceKey, AnimeSource] = {}
+    for source_key in source_keys_with(SourceCapability.METADATA):
+        if source_key is SourceKey.ANIDB and not AniDBSource.is_enabled():
+            continue
+        factory = _SOURCE_FACTORIES.get(source_key)
+        if factory is None:
+            continue
 
-    result: dict[str, AnimeSource] = {}
-    for source_key, factory in factories:
         # Rate limiting wraps the raw source, then resilience wraps that proxy.
         # This makes every retry attempt consume quota again instead of bypassing
         # the outbound safety limiter.
-        source = resilient_source(rate_limited_source(factory(), source_key))
+        source = resilient_source(rate_limited_source(factory(), source_key.value))
         source.source_key = source_key
         result[source_key] = source
     return result
