@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import html
-import os
 import re
 import time
 from datetime import datetime, timezone
@@ -13,6 +12,7 @@ import httpx
 from core.canonicalization import canonical_genre_token, canonical_role_token, voice_role_token
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord, CharacterRecord, PersonCredit, PopularityRanking
+from core.settings import AppSettings, SourceSettings
 from localization import source_value_key
 
 DEFAULT_ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
@@ -97,30 +97,20 @@ query AnimeCharacters($id: Int!, $page: Int!) {
 _PEOPLE_CACHE: dict[tuple[str, str], tuple[float, list[PersonCredit]]] = {}
 
 
-def graphql_url() -> str:
-    return (
-        os.getenv("ANILIST_API_URL", DEFAULT_ANILIST_GRAPHQL_URL).strip()
-        or DEFAULT_ANILIST_GRAPHQL_URL
-    )
+def _settings(settings: SourceSettings | None = None) -> SourceSettings:
+    return settings or AppSettings.from_env().sources
 
 
-def _people_max_pages() -> int:
-    raw = os.getenv("ANILIST_PEOPLE_MAX_PAGES", str(DEFAULT_PEOPLE_MAX_PAGES)).strip()
-    try:
-        return max(1, min(int(raw), 20))
-    except ValueError:
-        return DEFAULT_PEOPLE_MAX_PAGES
+def graphql_url(settings: SourceSettings | None = None) -> str:
+    return _settings(settings).anilist_api_url or DEFAULT_ANILIST_GRAPHQL_URL
 
 
-def _people_cache_ttl() -> int:
-    raw = os.getenv(
-        "ANILIST_PEOPLE_CACHE_TTL_SECONDS",
-        str(DEFAULT_PEOPLE_CACHE_TTL_SECONDS),
-    ).strip()
-    try:
-        return max(0, int(raw))
-    except ValueError:
-        return DEFAULT_PEOPLE_CACHE_TTL_SECONDS
+def _people_max_pages(settings: SourceSettings | None = None) -> int:
+    return max(1, min(_settings(settings).anilist_people_max_pages, 20))
+
+
+def _people_cache_ttl(settings: SourceSettings | None = None) -> int:
+    return max(0, int(_settings(settings).anilist_people_cache_ttl_seconds))
 
 
 def _clean_text(value: Any) -> str:
@@ -256,8 +246,6 @@ def _score_distribution(value: dict[str, Any] | None) -> dict[int, int]:
         amount = _int(item.get("amount"))
         if raw_score is None or amount is None or amount < 0:
             continue
-        # AniList exposes the histogram on a 10..100 scale. The bot renders
-        # every source on the familiar 1..10 scale without changing counts.
         score = max(1, min(10, round(raw_score / 10)))
         result[score] = result.get(score, 0) + amount
     return result
@@ -287,26 +275,30 @@ def _rankings(value: list[dict[str, Any]] | None) -> list[PopularityRanking]:
     return result
 
 
-def _headers() -> dict[str, str]:
+def _headers(settings: SourceSettings | None = None) -> dict[str, str]:
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
         "User-Agent": USER_AGENT,
     }
-    access_token = os.getenv("ANILIST_ACCESS_TOKEN", "").strip()
+    access_token = _settings(settings).anilist_access_token
     if access_token:
         headers["Authorization"] = f"Bearer {access_token}"
     return headers
 
 
-async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
+async def _graphql(
+    query: str,
+    variables: dict[str, Any],
+    settings: SourceSettings | None = None,
+) -> dict[str, Any]:
     async with httpx.AsyncClient(
         timeout=20.0,
-        headers=_headers(),
+        headers=_headers(settings),
         follow_redirects=True,
     ) as client:
         response = await client.post(
-            graphql_url(),
+            graphql_url(settings),
             json={"query": query, "variables": variables},
         )
 
@@ -378,12 +370,19 @@ def _dedupe_characters(values: list[CharacterRecord]) -> list[CharacterRecord]:
     return result
 
 
-async def _all_characters(media_id: int) -> list[CharacterRecord]:
+async def _all_characters(
+    media_id: int,
+    settings: SourceSettings | None = None,
+) -> list[CharacterRecord]:
     result: list[CharacterRecord] = []
     page = 1
     has_next = True
-    while has_next and page <= _people_max_pages():
-        data = await _graphql(CHARACTERS_PAGE_QUERY, {"id": media_id, "page": page})
+    while has_next and page <= _people_max_pages(settings):
+        data = await _graphql(
+            CHARACTERS_PAGE_QUERY,
+            {"id": media_id, "page": page},
+            settings,
+        )
         connection = ((data.get("Media") or {}).get("characters") or {})
         result.extend(_characters_from_connection(connection))
         has_next = bool((connection.get("pageInfo") or {}).get("hasNextPage"))
@@ -403,12 +402,19 @@ def _voices_from_connection(connection: dict[str, Any] | None) -> list[PersonCre
     return result
 
 
-async def _all_staff(media_id: int) -> list[PersonCredit]:
+async def _all_staff(
+    media_id: int,
+    settings: SourceSettings | None = None,
+) -> list[PersonCredit]:
     result: list[PersonCredit] = []
     page = 1
     has_next = True
-    while has_next and page <= _people_max_pages():
-        data = await _graphql(STAFF_PAGE_QUERY, {"id": media_id, "page": page})
+    while has_next and page <= _people_max_pages(settings):
+        data = await _graphql(
+            STAFF_PAGE_QUERY,
+            {"id": media_id, "page": page},
+            settings,
+        )
         connection = ((data.get("Media") or {}).get("staff") or {})
         result.extend(_staff_from_connection(connection))
         has_next = bool((connection.get("pageInfo") or {}).get("hasNextPage"))
@@ -416,12 +422,19 @@ async def _all_staff(media_id: int) -> list[PersonCredit]:
     return _dedupe_people(result)
 
 
-async def _all_voices(media_id: int) -> list[PersonCredit]:
+async def _all_voices(
+    media_id: int,
+    settings: SourceSettings | None = None,
+) -> list[PersonCredit]:
     result: list[PersonCredit] = []
     page = 1
     has_next = True
-    while has_next and page <= _people_max_pages():
-        data = await _graphql(CHARACTERS_PAGE_QUERY, {"id": media_id, "page": page})
+    while has_next and page <= _people_max_pages(settings):
+        data = await _graphql(
+            CHARACTERS_PAGE_QUERY,
+            {"id": media_id, "page": page},
+            settings,
+        )
         connection = ((data.get("Media") or {}).get("characters") or {})
         result.extend(_voices_from_connection(connection))
         has_next = bool((connection.get("pageInfo") or {}).get("hasNextPage"))
@@ -557,6 +570,7 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
 async def _cached_people(
     media_id: str,
     section: str,
+    settings: SourceSettings | None = None,
 ) -> list[PersonCredit]:
     key = (media_id, section)
     now = time.monotonic()
@@ -567,13 +581,13 @@ async def _cached_people(
         _PEOPLE_CACHE.pop(key, None)
 
     if section == "staff":
-        people = await _all_staff(int(media_id))
+        people = await _all_staff(int(media_id), settings)
     elif section == "voices":
-        people = await _all_voices(int(media_id))
+        people = await _all_voices(int(media_id), settings)
     else:
         raise ValueError(f"Unsupported AniList people section: {section}")
 
-    ttl = _people_cache_ttl()
+    ttl = _people_cache_ttl(settings)
     if ttl > 0:
         _PEOPLE_CACHE[key] = (time.monotonic() + ttl, copy.deepcopy(people))
     return people
@@ -581,6 +595,9 @@ async def _cached_people(
 
 class AniListSource:
     name = "AniList"
+
+    def __init__(self, settings: SourceSettings | None = None) -> None:
+        self._settings = _settings(settings)
 
     async def get_details(
         self,
@@ -591,7 +608,11 @@ class AniListSource:
         if not mal_id.isdigit():
             return None
 
-        data = await _graphql(DETAIL_QUERY, {"idMal": int(mal_id)})
+        data = await _graphql(
+            DETAIL_QUERY,
+            {"idMal": int(mal_id)},
+            self._settings,
+        )
         raw = data.get("Media")
         if not raw:
             return None
@@ -607,7 +628,7 @@ class AniListSource:
         media_id = str(known_ids.get("anilist") or "").strip()
         if not str(mal_id).strip().isdigit() or not media_id.isdigit():
             return []
-        return await _cached_people(media_id, "staff")
+        return await _cached_people(media_id, "staff", self._settings)
 
     async def load_voices(
         self,
@@ -617,4 +638,4 @@ class AniListSource:
         media_id = str(known_ids.get("anilist") or "").strip()
         if not str(mal_id).strip().isdigit() or not media_id.isdigit():
             return []
-        return await _cached_people(media_id, "voices")
+        return await _cached_people(media_id, "voices", self._settings)

@@ -5,6 +5,7 @@ import logging
 from core.identity import AnimeIdentity
 from core.models import AnimeRecord, CharacterRecord, PersonCredit
 from core.people_loading import PeopleBatch
+from core.settings import AppSettings, SourceSettings
 from sources.anilist import _all_characters as _anilist_all_characters
 from sources.anilist import _cached_people as _anilist_cached_people
 from sources.anilist import _graphql as _anilist_graphql
@@ -58,13 +59,18 @@ class AniListIdentitySource:
 
     name = "AniList"
 
-    def __init__(self) -> None:
-        self._legacy = LegacyAniListSource()
+    def __init__(self, settings: SourceSettings | None = None) -> None:
+        self._settings = settings or AppSettings.from_env().sources
+        self._legacy = LegacyAniListSource(self._settings)
 
     async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
         anilist_id = str(identity.get("anilist") or "").strip()
         if anilist_id.isdigit():
-            data = await _anilist_graphql(ANILIST_BY_ID_QUERY, {"id": int(anilist_id)})
+            data = await _anilist_graphql(
+                ANILIST_BY_ID_QUERY,
+                {"id": int(anilist_id)},
+                self._settings,
+            )
             raw = data.get("Media")
             if not raw or str(raw.get("id") or "") != anilist_id:
                 return None
@@ -79,19 +85,19 @@ class AniListIdentitySource:
         media_id = str(identity.get("anilist") or "").strip()
         if not media_id.isdigit():
             return []
-        return await _anilist_all_characters(int(media_id))
+        return await _anilist_all_characters(int(media_id), self._settings)
 
     async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
         media_id = str(identity.get("anilist") or "").strip()
         if not media_id.isdigit():
             return []
-        return await _anilist_cached_people(media_id, "staff")
+        return await _anilist_cached_people(media_id, "staff", self._settings)
 
     async def load_voices(self, identity: AnimeIdentity) -> list[PersonCredit]:
         media_id = str(identity.get("anilist") or "").strip()
         if not media_id.isdigit():
             return []
-        return await _anilist_cached_people(media_id, "voices")
+        return await _anilist_cached_people(media_id, "voices", self._settings)
 
     async def load_staff_batch(
         self,
@@ -131,15 +137,18 @@ class ShikimoriIdentitySource:
 
     name = "Shikimori"
 
+    def __init__(self, settings: SourceSettings | None = None) -> None:
+        self._settings = settings or AppSettings.from_env().sources
+
     async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:
         anime_id = str(identity.get("shikimori") or "").strip()
         if not anime_id.isdigit():
             return None
 
-        raw = await _shikimori_get_raw(anime_id)
+        raw = await _shikimori_get_raw(anime_id, self._settings)
         if not raw or str(raw.get("id") or "") != anime_id:
             return None
-        record = _shikimori_record(raw)
+        record = _shikimori_record(raw, self._settings)
         logging.info(
             "Shikimori people for anime %s: staff=deferred, voices=deferred",
             anime_id,
@@ -150,13 +159,13 @@ class ShikimoriIdentitySource:
         anime_id = str(identity.get("shikimori") or "").strip()
         if not anime_id.isdigit():
             return []
-        return await _load_shikimori_characters(anime_id)
+        return await _load_shikimori_characters(anime_id, self._settings)
 
     async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
         anime_id = str(identity.get("shikimori") or "").strip()
         if not anime_id.isdigit():
             return []
-        raw = await _shikimori_get_staff_raw(anime_id)
+        raw = await _shikimori_get_staff_raw(anime_id, self._settings)
         if not raw or str(raw.get("id") or "") != anime_id:
             return []
         return _shikimori_credits(raw, voices=False)
@@ -165,7 +174,7 @@ class ShikimoriIdentitySource:
         anime_id = str(identity.get("shikimori") or "").strip()
         if not anime_id.isdigit():
             return []
-        return await _load_shikimori_voices(anime_id)
+        return await _load_shikimori_voices(anime_id, self._settings)
 
     async def load_staff_batch(
         self,
@@ -197,4 +206,5 @@ class ShikimoriIdentitySource:
             anime_id,
             cursor=cursor,
             portrait_limit=portrait_limit,
+            settings=self._settings,
         )

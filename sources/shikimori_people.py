@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
-import os
 import time
 from typing import Any
 
@@ -12,6 +11,7 @@ import httpx
 from core.canonicalization import voice_role_token
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord, CharacterRecord, PersonCredit
+from core.settings import AppSettings, SourceSettings
 from sources.shikimori import (
     ShikimoriSource as BaseShikimoriSource,
     _best_poster_url,
@@ -45,20 +45,16 @@ _CHARACTER_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _VOICE_CACHE: dict[str, tuple[float, list[PersonCredit]]] = {}
 
 
-def _cache_ttl_seconds() -> int:
-    raw = os.getenv("SHIKIMORI_PEOPLE_CACHE_TTL_SECONDS", "21600").strip()
-    try:
-        return max(0, int(raw))
-    except ValueError:
-        return 21600
+def _settings(settings: SourceSettings | None = None) -> SourceSettings:
+    return settings or AppSettings.from_env().sources
 
 
-def _rest_spacing_seconds() -> float:
-    raw = os.getenv("SHIKIMORI_REST_MIN_INTERVAL_SECONDS", "0.24").strip()
-    try:
-        return max(0.20, float(raw))
-    except ValueError:
-        return 0.24
+def _cache_ttl_seconds(settings: SourceSettings | None = None) -> int:
+    return max(0, int(_settings(settings).shikimori_people_cache_ttl_seconds))
+
+
+def _rest_spacing_seconds(settings: SourceSettings | None = None) -> float:
+    return max(0.20, _settings(settings).shikimori_rest_min_interval_seconds)
 
 
 def _clean_text(value: Any) -> str:
@@ -67,41 +63,35 @@ def _clean_text(value: Any) -> str:
     return " ".join(str(value).replace("\r", " ").split())
 
 
-def _absolute_shikimori_url(value: Any) -> str | None:
+def _absolute_shikimori_url(value: Any, settings: SourceSettings | None = None) -> str | None:
     url = _clean_text(value)
     if not url:
         return None
     if url.startswith("//"):
         return f"https:{url}"
     if url.startswith("/"):
-        return f"{site_url()}{url}"
+        return f"{site_url(settings)}{url}"
     return url
 
 
-def _best_rest_image_url(image: dict[str, Any]) -> str | None:
+def _best_rest_image_url(image: dict[str, Any], settings: SourceSettings | None = None) -> str | None:
     for field in ("original", "x96", "preview", "x48"):
-        value = _absolute_shikimori_url(image.get(field))
+        value = _absolute_shikimori_url(image.get(field), settings)
         if value:
             return value
     return None
 
 
-def _rest_person_credit(
-    person: dict[str, Any],
-    *,
-    character_name: str,
-) -> PersonCredit | None:
+def _rest_person_credit(person: dict[str, Any], *, character_name: str, settings: SourceSettings | None = None) -> PersonCredit | None:
     name = _clean_text(person.get("name"))
     russian = _clean_text(person.get("russian"))
     names = _dedupe([name, russian])
     if not names:
         return None
-
     preferred = name or russian
     person_id = _clean_text(person.get("id"))
     image = person.get("image") or {}
-    portrait = _best_rest_image_url(image) if isinstance(image, dict) else None
-
+    portrait = _best_rest_image_url(image, settings) if isinstance(image, dict) else None
     return PersonCredit(
         name=preferred,
         roles=[voice_role_token(character_name or None)],
@@ -111,75 +101,51 @@ def _rest_person_credit(
     )
 
 
-async def _rate_limited_get(
-    client: httpx.AsyncClient,
-    url: str,
-) -> httpx.Response:
+async def _rate_limited_get(client: httpx.AsyncClient, url: str, settings: SourceSettings | None = None) -> httpx.Response:
     global _NEXT_REST_REQUEST_AT
-
     async with _REST_RATE_LOCK:
         now = time.monotonic()
         delay = _NEXT_REST_REQUEST_AT - now
         if delay > 0:
             await asyncio.sleep(delay)
-        _NEXT_REST_REQUEST_AT = time.monotonic() + _rest_spacing_seconds()
-
+        _NEXT_REST_REQUEST_AT = time.monotonic() + _rest_spacing_seconds(settings)
     return await client.get(url)
 
 
-async def _rest_get_json(
-    client: httpx.AsyncClient,
-    path: str,
-) -> Any:
-    url = f"{site_url()}{path}"
-
+async def _rest_get_json(client: httpx.AsyncClient, path: str, settings: SourceSettings | None = None) -> Any:
+    url = f"{site_url(settings)}{path}"
     response: httpx.Response | None = None
     for attempt in range(3):
-        response = await _rate_limited_get(client, url)
+        response = await _rate_limited_get(client, url, settings)
         if response.status_code != 429:
             break
-
         retry_after = response.headers.get("Retry-After")
         try:
             delay = max(float(retry_after or "1.2"), 1.2)
         except ValueError:
             delay = 1.2
         await asyncio.sleep(delay * (attempt + 1))
-
     assert response is not None
     if response.is_error:
         preview = response.text.replace("\n", " ")[:800]
-        raise RuntimeError(
-            f"Shikimori REST HTTP {response.status_code} from {response.url}: {preview}"
-        )
-
+        raise RuntimeError(f"Shikimori REST HTTP {response.status_code} from {response.url}: {preview}")
     try:
         return response.json()
     except ValueError as exc:
         preview = response.text.replace("\n", " ")[:800]
-        raise RuntimeError(
-            f"Shikimori REST returned non-JSON response from {response.url}: {preview}"
-        ) from exc
+        raise RuntimeError(f"Shikimori REST returned non-JSON response from {response.url}: {preview}") from exc
 
 
-async def _rest_anime_roles(anime_id: str) -> list[dict[str, Any]]:
-    headers = {
-        "User-Agent": USER_AGENT,
-        "Accept": "application/json",
-    }
-    async with httpx.AsyncClient(
-        timeout=20.0,
-        headers=headers,
-        follow_redirects=True,
-    ) as client:
-        body = await _rest_get_json(client, f"/api/animes/{anime_id}/roles")
-
+async def _rest_anime_roles(anime_id: str, settings: SourceSettings | None = None) -> list[dict[str, Any]]:
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    async with httpx.AsyncClient(timeout=20.0, headers=headers, follow_redirects=True) as client:
+        body = await _rest_get_json(client, f"/api/animes/{anime_id}/roles", settings)
     if not isinstance(body, list):
         raise RuntimeError("Shikimori anime roles returned non-list JSON")
     return [item for item in body if isinstance(item, dict)]
 
 
-def _characters_from_roles(entries: list[dict[str, Any]]) -> list[CharacterRecord]:
+def _characters_from_roles(entries: list[dict[str, Any]], settings: SourceSettings | None = None) -> list[CharacterRecord]:
     result: list[CharacterRecord] = []
     seen: set[str] = set()
     role_map = {"main": "main", "supporting": "supporting", "background": "background"}
@@ -201,7 +167,7 @@ def _characters_from_roles(entries: list[dict[str, Any]]) -> list[CharacterRecor
         raw_role = _clean_text(raw_roles[0] if isinstance(raw_roles, list) and raw_roles else "")
         role = role_map.get(raw_role.casefold(), raw_role.casefold() or None)
         image = character.get("image") or {}
-        portrait = _best_rest_image_url(image) if isinstance(image, dict) else None
+        portrait = _best_rest_image_url(image, settings) if isinstance(image, dict) else None
         aliases = _dedupe([name, russian])
         result.append(CharacterRecord(
             name=preferred,
@@ -213,14 +179,14 @@ def _characters_from_roles(entries: list[dict[str, Any]]) -> list[CharacterRecor
     return result
 
 
-async def _load_shikimori_characters(anime_id: str) -> list[CharacterRecord]:
-    return _characters_from_roles(await _rest_anime_roles(anime_id))
+async def _load_shikimori_characters(anime_id: str, settings: SourceSettings | None = None) -> list[CharacterRecord]:
+    roles = await _rest_anime_roles(anime_id, settings)
+    return _characters_from_roles(roles, settings)
 
 
 def _character_ids_from_roles(entries: list[dict[str, Any]]) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
-
     for entry in entries:
         character = entry.get("character")
         if not isinstance(character, dict) or not character:
@@ -230,22 +196,16 @@ def _character_ids_from_roles(entries: list[dict[str, Any]]) -> list[str]:
             continue
         seen.add(character_id)
         result.append(character_id)
-
     return result
 
 
-async def _rest_character_details(
-    character_ids: list[str],
-) -> list[dict[str, Any]]:
-    """Load characters and their original Japanese ``seyu`` lists."""
+async def _rest_character_details(character_ids: list[str], settings: SourceSettings | None = None) -> list[dict[str, Any]]:
     if not character_ids:
         return []
-
-    ttl = _cache_ttl_seconds()
+    ttl = _cache_ttl_seconds(settings)
     now = time.monotonic()
     result_by_id: dict[str, dict[str, Any]] = {}
     missing: list[str] = []
-
     for character_id in character_ids:
         cached = _CHARACTER_CACHE.get(character_id)
         if cached is not None and cached[0] > now:
@@ -254,76 +214,36 @@ async def _rest_character_details(
             if cached is not None:
                 _CHARACTER_CACHE.pop(character_id, None)
             missing.append(character_id)
-
     if missing:
-        headers = {
-            "User-Agent": USER_AGENT,
-            "Accept": "application/json",
-        }
-        async with httpx.AsyncClient(
-            timeout=20.0,
-            headers=headers,
-            follow_redirects=True,
-        ) as client:
-            responses = await asyncio.gather(
-                *(
-                    _rest_get_json(client, f"/api/characters/{character_id}")
-                    for character_id in missing
-                ),
-                return_exceptions=True,
-            )
-
+        headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+        async with httpx.AsyncClient(timeout=20.0, headers=headers, follow_redirects=True) as client:
+            responses = await asyncio.gather(*(_rest_get_json(client, f"/api/characters/{character_id}", settings) for character_id in missing), return_exceptions=True)
         expires_at = time.monotonic() + ttl
         for character_id, response in zip(missing, responses):
             if isinstance(response, Exception):
-                logging.warning(
-                    "Could not load Shikimori character %s for seiyuu lookup: %s",
-                    character_id,
-                    response,
-                )
+                logging.warning("Could not load Shikimori character %s for seiyuu lookup: %s", character_id, response)
                 continue
             if isinstance(response, dict):
                 result_by_id[character_id] = response
                 if ttl > 0:
-                    _CHARACTER_CACHE[character_id] = (
-                        expires_at,
-                        copy.deepcopy(response),
-                    )
-
-    return [
-        result_by_id[character_id]
-        for character_id in character_ids
-        if character_id in result_by_id
-    ]
+                    _CHARACTER_CACHE[character_id] = (expires_at, copy.deepcopy(response))
+    return [result_by_id[character_id] for character_id in character_ids if character_id in result_by_id]
 
 
-def _voices_from_character_details(
-    characters: list[dict[str, Any]],
-) -> list[PersonCredit]:
+def _voices_from_character_details(characters: list[dict[str, Any]], settings: SourceSettings | None = None) -> list[PersonCredit]:
     result: list[PersonCredit] = []
     by_identity: dict[str, PersonCredit] = {}
-
     for character in characters:
-        character_name = (
-            _clean_text(character.get("name"))
-            or _clean_text(character.get("russian"))
-        )
-
+        character_name = _clean_text(character.get("name")) or _clean_text(character.get("russian"))
         seyu = character.get("seyu") or []
         if not isinstance(seyu, list):
             continue
-
         for raw_person in seyu:
             if not isinstance(raw_person, dict) or not raw_person:
                 continue
-
-            credit = _rest_person_credit(
-                raw_person,
-                character_name=character_name,
-            )
+            credit = _rest_person_credit(raw_person, character_name=character_name, settings=settings)
             if credit is None:
                 continue
-
             person_id = _clean_text(credit.external_ids.get("shikimori"))
             identity = person_id or credit.name.casefold()
             existing = by_identity.get(identity)
@@ -331,65 +251,44 @@ def _voices_from_character_details(
                 by_identity[identity] = credit
                 result.append(credit)
                 continue
-
             existing.roles = _dedupe([*existing.roles, *credit.roles])
             existing.aliases = _dedupe([*existing.aliases, *credit.aliases])
-            portraits = _dedupe([
-                *existing.portraits.get("Shikimori", []),
-                *credit.portraits.get("Shikimori", []),
-            ])
+            portraits = _dedupe([*existing.portraits.get("Shikimori", []), *credit.portraits.get("Shikimori", [])])
             if portraits:
                 existing.portraits["Shikimori"] = portraits
-
     return result
 
 
-def _rest_voice_credits(entries: list[dict[str, Any]]) -> list[PersonCredit]:
-    """Compatibility helper for the startup smoke test."""
+def _rest_voice_credits(entries: list[dict[str, Any]], settings: SourceSettings | None = None) -> list[PersonCredit]:
     characters: list[dict[str, Any]] = []
     for entry in entries:
         character = entry.get("character")
         person = entry.get("person")
-        if not isinstance(character, dict) or not character:
-            continue
-        if not isinstance(person, dict) or not person:
+        if not isinstance(character, dict) or not character or not isinstance(person, dict) or not person:
             continue
         converted = dict(character)
         converted["seyu"] = [person]
         characters.append(converted)
-    return _voices_from_character_details(characters)
+    return _voices_from_character_details(characters, settings)
 
 
 def _portrait_count(people: list[PersonCredit]) -> int:
     return sum(1 for person in people if person.portraits.get("Shikimori"))
 
 
-async def _refresh_people(people: list[PersonCredit]) -> None:
-    """Upgrade REST seiyuu with Japanese aliases and the best poster URL."""
-    ids = _dedupe([
-        _clean_text(person.external_ids.get("shikimori"))
-        for person in people
-        if _clean_text(person.external_ids.get("shikimori"))
-    ])
+async def _refresh_people(people: list[PersonCredit], settings: SourceSettings | None = None) -> None:
+    ids = _dedupe([_clean_text(person.external_ids.get("shikimori")) for person in people if _clean_text(person.external_ids.get("shikimori"))])
     if not ids:
         return
-
-    by_id = {
-        _clean_text(person.external_ids.get("shikimori")): person
-        for person in people
-        if _clean_text(person.external_ids.get("shikimori"))
-    }
-
+    by_id = {_clean_text(person.external_ids.get("shikimori")): person for person in people if _clean_text(person.external_ids.get("shikimori"))}
     for offset in range(0, len(ids), 50):
         batch = ids[offset:offset + 50]
-        data = await _graphql(PEOPLE_DETAILS_QUERY, {"ids": batch})
-
+        data = await _graphql(PEOPLE_DETAILS_QUERY, {"ids": batch}, settings)
         for raw_person in data.get("people") or []:
             person_id = _clean_text(raw_person.get("id"))
             credit = by_id.get(person_id)
             if credit is None:
                 continue
-
             name = _clean_text(raw_person.get("name"))
             russian = _clean_text(raw_person.get("russian"))
             japanese = _clean_text(raw_person.get("japanese"))
@@ -397,20 +296,15 @@ async def _refresh_people(people: list[PersonCredit]) -> None:
             preferred = name or credit.name or russian or japanese
             if preferred:
                 credit.name = preferred
-                credit.aliases = [
-                    item
-                    for item in names
-                    if item.casefold() != preferred.casefold()
-                ]
-
+                credit.aliases = [item for item in names if item.casefold() != preferred.casefold()]
             poster = raw_person.get("poster") or {}
             portrait = _best_poster_url(poster) if isinstance(poster, dict) else None
             if portrait:
                 credit.portraits["Shikimori"] = [portrait]
 
 
-async def _load_shikimori_voices(anime_id: str) -> list[PersonCredit]:
-    ttl = _cache_ttl_seconds()
+async def _load_shikimori_voices(anime_id: str, settings: SourceSettings | None = None) -> list[PersonCredit]:
+    ttl = _cache_ttl_seconds(settings)
     now = time.monotonic()
     cached = _VOICE_CACHE.get(anime_id)
     if cached is not None and cached[0] > now:
@@ -418,66 +312,32 @@ async def _load_shikimori_voices(anime_id: str) -> list[PersonCredit]:
         return copy.deepcopy(cached[1])
     if cached is not None:
         _VOICE_CACHE.pop(anime_id, None)
-
-    raw_roles = await _rest_anime_roles(anime_id)
+    raw_roles = await _rest_anime_roles(anime_id, settings)
     character_ids = _character_ids_from_roles(raw_roles)
-    characters = await _rest_character_details(character_ids)
-    voices = _voices_from_character_details(characters)
-
+    characters = await _rest_character_details(character_ids, settings)
+    voices = _voices_from_character_details(characters, settings)
     try:
-        await _refresh_people(voices)
+        await _refresh_people(voices, settings)
     except Exception:
-        logging.warning(
-            "Could not refresh Shikimori seiyuu people for anime %s",
-            anime_id,
-            exc_info=True,
-        )
-
-    logging.info(
-        "Shikimori seiyuu for anime %s: roles=%d, characters=%d/%d, voices=%d, portraits=%d",
-        anime_id,
-        len(raw_roles),
-        len(characters),
-        len(character_ids),
-        len(voices),
-        _portrait_count(voices),
-    )
-
+        logging.warning("Could not refresh Shikimori seiyuu people for anime %s", anime_id, exc_info=True)
+    logging.info("Shikimori seiyuu for anime %s: roles=%d, characters=%d/%d, voices=%d, portraits=%d", anime_id, len(raw_roles), len(characters), len(character_ids), len(voices), _portrait_count(voices))
     if ttl > 0:
-        _VOICE_CACHE[anime_id] = (
-            time.monotonic() + ttl,
-            copy.deepcopy(voices),
-        )
+        _VOICE_CACHE[anime_id] = (time.monotonic() + ttl, copy.deepcopy(voices))
     return voices
 
 
 class ShikimoriSource(BaseShikimoriSource):
-    """Shikimori metadata with on-demand staff and original Japanese seiyuu."""
-
-    async def get_details(
-        self,
-        mal_id: str,
-        known_ids: dict[str, str],
-    ) -> AnimeRecord | None:
+    async def get_details(self, mal_id: str, known_ids: dict[str, str]) -> AnimeRecord | None:
         record = await super().get_details(mal_id, known_ids)
         if record is None:
             return None
-
         anime_id = _clean_text(known_ids.get("shikimori") or record.source_id)
-        logging.info(
-            "Shikimori people for anime %s: staff=deferred, voices=deferred",
-            anime_id or "?",
-        )
+        logging.info("Shikimori people for anime %s: staff=deferred, voices=deferred", anime_id or "?")
         return record
 
-    async def load_voices(
-        self,
-        mal_id: str,
-        known_ids: dict[str, str],
-    ) -> list[PersonCredit]:
-        """Load original Japanese seiyuu only when the Telegram UI asks for them."""
+    async def load_voices(self, mal_id: str, known_ids: dict[str, str]) -> list[PersonCredit]:
         mal_id = _clean_text(mal_id)
         anime_id = _clean_text(known_ids.get("shikimori"))
         if not mal_id.isdigit() or not anime_id.isdigit():
             return []
-        return await _load_shikimori_voices(anime_id)
+        return await _load_shikimori_voices(anime_id, self.settings)

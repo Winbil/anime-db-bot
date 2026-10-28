@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import html
-import os
 import re
 from datetime import datetime
 from typing import Any
@@ -16,6 +15,7 @@ from core.canonicalization import (
 )
 from core.http_config import USER_AGENT
 from core.models import AnimeRecord, PersonCredit
+from core.settings import AppSettings, SourceSettings
 from localization import source_value_key
 
 DEFAULT_SHIKIMORI_GRAPHQL_URL = "https://shikimori.io/api/graphql"
@@ -117,18 +117,16 @@ _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _SEASON_RE = re.compile(r"^(?P<year>\d{4})[_\s-]+(?P<season>[a-z]+)$", re.IGNORECASE)
 
 
-def graphql_url() -> str:
-    return (
-        os.getenv("SHIKIMORI_API_URL", DEFAULT_SHIKIMORI_GRAPHQL_URL).strip()
-        or DEFAULT_SHIKIMORI_GRAPHQL_URL
-    )
+def _settings(settings: SourceSettings | None = None) -> SourceSettings:
+    return settings or AppSettings.from_env().sources
 
 
-def site_url() -> str:
-    return (
-        os.getenv("SHIKIMORI_SITE_URL", DEFAULT_SHIKIMORI_SITE_URL).strip().rstrip("/")
-        or DEFAULT_SHIKIMORI_SITE_URL
-    )
+def graphql_url(settings: SourceSettings | None = None) -> str:
+    return _settings(settings).shikimori_api_url or DEFAULT_SHIKIMORI_GRAPHQL_URL
+
+
+def site_url(settings: SourceSettings | None = None) -> str:
+    return _settings(settings).shikimori_site_url or DEFAULT_SHIKIMORI_SITE_URL
 
 
 def _clean_text(value: Any) -> str:
@@ -140,31 +138,20 @@ def _clean_text(value: Any) -> str:
 def _clean_description(value: Any) -> str:
     if value is None:
         return ""
-
     text_value = str(value).replace("\r", "")
     if not text_value:
         return ""
-
     text_value = html.unescape(text_value)
     text_value = _HTML_BREAK_RE.sub("\n", text_value)
     text_value = _BBCODE_BREAK_RE.sub("\n", text_value)
-
     for _ in range(6):
-        text_value, count = _BBCODE_WRAPPED_RE.subn(
-            lambda match: match.group("body"),
-            text_value,
-        )
+        text_value, count = _BBCODE_WRAPPED_RE.subn(lambda match: match.group("body"), text_value)
         if not count:
             break
-
     text_value = _BBCODE_DECORATION_RE.sub("", text_value)
     text_value = _BBCODE_REMAINING_RE.sub("", text_value)
     text_value = _HTML_TAG_RE.sub("", text_value)
-
-    lines = [
-        re.sub(r"[ \t]+", " ", line).strip()
-        for line in text_value.split("\n")
-    ]
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text_value.split("\n")]
     normalized: list[str] = []
     blank = False
     for line in lines:
@@ -174,7 +161,6 @@ def _clean_description(value: Any) -> str:
         elif normalized and not blank:
             normalized.append("")
             blank = True
-
     return "\n".join(normalized).strip()
 
 
@@ -195,11 +181,9 @@ def _format_date(value: dict[str, Any] | None) -> str | None:
         return None
     if value.get("date"):
         return str(value["date"])
-
     year, month, day = value.get("year"), value.get("month"), value.get("day")
     if not year:
         return None
-
     result = f"{year:04d}"
     if month:
         result += f"-{month:02d}"
@@ -227,12 +211,8 @@ def _int(value: Any) -> int | None:
 
 def _status_distribution(value: list[dict[str, Any]] | None) -> dict[str, int]:
     aliases = {
-        "watching": "watching",
-        "completed": "completed",
-        "on_hold": "on_hold",
-        "dropped": "dropped",
-        "planned": "planned",
-        "rewatching": "rewatching",
+        "watching": "watching", "completed": "completed", "on_hold": "on_hold",
+        "dropped": "dropped", "planned": "planned", "rewatching": "rewatching",
     }
     result: dict[str, int] = {}
     for item in value or []:
@@ -267,13 +247,7 @@ def _season(value: Any) -> tuple[str | None, int | None]:
 
 
 def _best_poster_url(poster: dict[str, Any]) -> str | None:
-    for field in (
-        "originalUrl",
-        "main2xUrl",
-        "mainUrl",
-        "preview2xUrl",
-        "previewUrl",
-    ):
+    for field in ("originalUrl", "main2xUrl", "mainUrl", "preview2xUrl", "previewUrl"):
         value = _clean_text(poster.get(field))
         if value:
             return value
@@ -287,7 +261,6 @@ def _person_credit(person: dict[str, Any], roles: list[str]) -> PersonCredit | N
     names = _dedupe([name, russian, japanese])
     if not names:
         return None
-
     preferred = name or russian or japanese
     source_id = str(person.get("id") or "").strip()
     poster = person.get("poster") or {}
@@ -305,51 +278,32 @@ def _is_any_voice_role(value: str) -> bool:
     return canonical_role_key(value) == "voice_actor"
 
 
-async def _graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    headers = {
-        "User-Agent": USER_AGENT,
-        "Accept": "application/json",
-    }
-
-    async with httpx.AsyncClient(
-        timeout=15.0,
-        headers=headers,
-        follow_redirects=True,
-    ) as client:
-        response = await client.post(
-            graphql_url(),
-            json={"query": query, "variables": variables},
-        )
-
+async def _graphql(query: str, variables: dict[str, Any], settings: SourceSettings | None = None) -> dict[str, Any]:
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    async with httpx.AsyncClient(timeout=15.0, headers=headers, follow_redirects=True) as client:
+        response = await client.post(graphql_url(settings), json={"query": query, "variables": variables})
     if response.is_error:
         preview = response.text.replace("\n", " ")[:800]
-        raise RuntimeError(
-            f"Shikimori HTTP {response.status_code} from {response.url}: {preview}"
-        )
-
+        raise RuntimeError(f"Shikimori HTTP {response.status_code} from {response.url}: {preview}")
     try:
         body = response.json()
     except ValueError as exc:
         preview = response.text.replace("\n", " ")[:800]
-        raise RuntimeError(
-            f"Shikimori returned non-JSON response from {response.url}: {preview}"
-        ) from exc
-
+        raise RuntimeError(f"Shikimori returned non-JSON response from {response.url}: {preview}") from exc
     if body.get("errors"):
         messages = [error.get("message", str(error)) for error in body["errors"]]
         raise RuntimeError("Shikimori GraphQL error: " + "; ".join(messages))
-
     return body.get("data", {})
 
 
-async def _get_raw(anime_id: str) -> dict[str, Any] | None:
-    data = await _graphql(BY_ID_QUERY, {"ids": anime_id})
+async def _get_raw(anime_id: str, settings: SourceSettings | None = None) -> dict[str, Any] | None:
+    data = await _graphql(BY_ID_QUERY, {"ids": anime_id}, settings)
     animes = data.get("animes", [])
     return animes[0] if animes else None
 
 
-async def _get_staff_raw(anime_id: str) -> dict[str, Any] | None:
-    data = await _graphql(STAFF_QUERY, {"ids": anime_id})
+async def _get_staff_raw(anime_id: str, settings: SourceSettings | None = None) -> dict[str, Any] | None:
+    data = await _graphql(STAFF_QUERY, {"ids": anime_id}, settings)
     animes = data.get("animes", [])
     return animes[0] if animes else None
 
@@ -357,72 +311,51 @@ async def _get_staff_raw(anime_id: str) -> dict[str, Any] | None:
 def _credits(raw: dict[str, Any], *, voices: bool) -> list[PersonCredit]:
     result: list[PersonCredit] = []
     seen: set[tuple[str, tuple[str, ...]]] = set()
-
     for entry in raw.get("personRoles") or []:
         person = entry.get("person") or {}
         all_roles = _dedupe(entry.get("rolesRu") or entry.get("rolesEn") or [])
-
         if voices:
             raw_roles = [role for role in all_roles if is_primary_voice_role(role)]
         else:
             raw_roles = [role for role in all_roles if not _is_any_voice_role(role)]
         roles = _dedupe([canonical_role_token(role) for role in raw_roles])
-
         if not roles:
             continue
-
         credit = _person_credit(person, roles)
         if credit is None:
             continue
-        key = (
-            credit.name.casefold(),
-            tuple(item.casefold() for item in credit.roles),
-        )
+        key = (credit.name.casefold(), tuple(item.casefold() for item in credit.roles))
         if key in seen:
             continue
         seen.add(key)
         result.append(credit)
-
     return result
 
 
-def _record(raw: dict[str, Any]) -> AnimeRecord:
+def _record(raw: dict[str, Any], settings: SourceSettings | None = None) -> AnimeRecord:
     russian = _clean_text(raw.get("russian"))
     romaji = _clean_text(raw.get("name"))
     english = _clean_text(raw.get("english"))
     japanese = _clean_text(raw.get("japanese"))
     licensed_ru = _clean_text(raw.get("licenseNameRu"))
-
-    titles = {
-        key: value
-        for key, value in {
-            "russian": russian,
-            "romaji": romaji,
-            "english": english,
-            "japanese": japanese,
-            "licensed_ru": licensed_ru,
-        }.items()
-        if value
-    }
-
+    titles = {key: value for key, value in {
+        "russian": russian, "romaji": romaji, "english": english,
+        "japanese": japanese, "licensed_ru": licensed_ru,
+    }.items() if value}
     external_ids = {"shikimori": str(raw.get("id") or "")}
     if raw.get("malId"):
         external_ids["mal"] = str(raw["malId"])
-
     url = _clean_text(raw.get("url"))
     if url.startswith("/"):
-        url = f"{site_url()}{url}"
-
+        url = f"{site_url(settings)}{url}"
     poster = raw.get("poster") or {}
     poster_url = _best_poster_url(poster) if isinstance(poster, dict) else None
-
     score: float | None = None
     try:
         if raw.get("score") not in (None, ""):
             score = float(raw["score"])
     except (TypeError, ValueError):
         pass
-
     description = _clean_description(raw.get("description"))
     kind_raw = raw.get("kind") or ""
     status_raw = raw.get("status") or ""
@@ -430,7 +363,6 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
     season, season_year = _season(raw.get("season"))
     status_distribution = _status_distribution(raw.get("statusesStats"))
     score_distribution = _score_distribution(raw.get("scoresStats"))
-
     return AnimeRecord(
         source="Shikimori",
         source_id=str(raw.get("id") or ""),
@@ -454,12 +386,7 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         scoring_users=sum(score_distribution.values()) if score_distribution else None,
         status_distribution=status_distribution,
         score_distribution=score_distribution,
-        genres=_dedupe(
-            [
-                canonical_genre_token(genre.get("name") or genre.get("russian") or "")
-                for genre in raw.get("genres") or []
-            ]
-        ),
+        genres=_dedupe([canonical_genre_token(genre.get("name") or genre.get("russian") or "") for genre in raw.get("genres") or []]),
         studios=_dedupe([studio.get("name", "") for studio in raw.get("studios") or []]),
         licensors=_dedupe(raw.get("licensors") or []),
         descriptions={"Shikimori": description} if description else {},
@@ -473,34 +400,31 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
 class ShikimoriSource:
     name = "Shikimori"
 
-    async def get_details(
-        self,
-        mal_id: str,
-        known_ids: dict[str, str],
-    ) -> AnimeRecord | None:
+    def __init__(self, settings: SourceSettings | None = None) -> None:
+        self._settings = _settings(settings)
+
+    @property
+    def settings(self) -> SourceSettings:
+        return self._settings
+
+    async def get_details(self, mal_id: str, known_ids: dict[str, str]) -> AnimeRecord | None:
         mal_id = str(mal_id).strip()
         shikimori_id = str(known_ids.get("shikimori") or "").strip()
         if not mal_id.isdigit() or not shikimori_id.isdigit():
             return None
-
-        raw = await _get_raw(shikimori_id)
+        raw = await _get_raw(shikimori_id, self._settings)
         if not raw:
             return None
         if str(raw.get("malId") or "") != mal_id:
             return None
-        return _record(raw)
+        return _record(raw, self._settings)
 
-    async def load_staff(
-        self,
-        mal_id: str,
-        known_ids: dict[str, str],
-    ) -> list[PersonCredit]:
+    async def load_staff(self, mal_id: str, known_ids: dict[str, str]) -> list[PersonCredit]:
         mal_id = str(mal_id).strip()
         shikimori_id = str(known_ids.get("shikimori") or "").strip()
         if not mal_id.isdigit() or not shikimori_id.isdigit():
             return []
-
-        raw = await _get_staff_raw(shikimori_id)
+        raw = await _get_staff_raw(shikimori_id, self._settings)
         if not raw or str(raw.get("malId") or "") != mal_id:
             return []
         return _credits(raw, voices=False)

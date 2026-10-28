@@ -4,7 +4,7 @@ import logging
 import time
 
 from core.people_loading import PeopleBatch
-from core.settings import AppSettings
+from core.settings import AppSettings, SourceSettings
 from sources.shikimori_people import (
     _cache_ttl_seconds,
     _character_ids_from_roles,
@@ -18,14 +18,21 @@ from sources.shikimori_people import (
 _ROLE_INDEX_CACHE: dict[str, tuple[float, list[str]]] = {}
 
 
-def _character_chunk_size() -> int:
+def _settings(settings: SourceSettings | None = None) -> SourceSettings:
+    return settings or AppSettings.from_env().sources
+
+
+def _character_chunk_size(settings: SourceSettings | None = None) -> int:
     return max(
         1,
-        min(AppSettings.from_env().sources.shikimori_people_character_batch_size, 25),
+        min(_settings(settings).shikimori_people_character_batch_size, 25),
     )
 
 
-async def _character_ids_for_anime(anime_id: str) -> list[str]:
+async def _character_ids_for_anime(
+    anime_id: str,
+    settings: SourceSettings | None = None,
+) -> list[str]:
     now = time.monotonic()
     cached = _ROLE_INDEX_CACHE.get(anime_id)
     if cached is not None and cached[0] > now:
@@ -33,9 +40,13 @@ async def _character_ids_for_anime(anime_id: str) -> list[str]:
     if cached is not None:
         _ROLE_INDEX_CACHE.pop(anime_id, None)
 
-    raw_roles = await _rest_anime_roles(anime_id)
+    raw_roles = (
+        await _rest_anime_roles(anime_id)
+        if settings is None
+        else await _rest_anime_roles(anime_id, settings)
+    )
     character_ids = _character_ids_from_roles(raw_roles)
-    ttl = _cache_ttl_seconds()
+    ttl = _cache_ttl_seconds(settings)
     if ttl > 0:
         _ROLE_INDEX_CACHE[anime_id] = (
             time.monotonic() + ttl,
@@ -49,6 +60,7 @@ async def load_shikimori_voices_batch(
     *,
     cursor: str | None = None,
     portrait_limit: int = 50,
+    settings: SourceSettings | None = None,
 ) -> PeopleBatch:
     """Load one bounded Shikimori seiyuu batch.
 
@@ -71,11 +83,15 @@ async def load_shikimori_voices_batch(
     except ValueError:
         index = 0
 
-    character_ids = await _character_ids_for_anime(anime_id)
+    character_ids = (
+        await _character_ids_for_anime(anime_id)
+        if settings is None
+        else await _character_ids_for_anime(anime_id, settings)
+    )
     if index >= len(character_ids):
         return PeopleBatch(complete=True)
 
-    chunk_size = _character_chunk_size()
+    chunk_size = _character_chunk_size(settings)
     characters: list[dict] = []
     people = []
 
@@ -83,16 +99,22 @@ async def load_shikimori_voices_batch(
         batch_ids = character_ids[index:index + chunk_size]
         if not batch_ids:
             break
-        characters.extend(await _rest_character_details(batch_ids))
+        details = (
+            await _rest_character_details(batch_ids)
+            if settings is None
+            else await _rest_character_details(batch_ids, settings)
+        )
+        characters.extend(details)
         index += len(batch_ids)
-        people = _voices_from_character_details(characters)
+        people = _voices_from_character_details(characters, settings)
         if _portrait_count(people) >= portrait_limit:
             break
 
-    # The REST character payload is the authority for original Japanese seiyuu.
-    # GraphQL enrichment only improves aliases/posters for this bounded batch.
     try:
-        await _refresh_people(people)
+        if settings is None:
+            await _refresh_people(people)
+        else:
+            await _refresh_people(people, settings)
     except Exception:
         logging.warning(
             "Could not refresh progressive Shikimori seiyuu batch for anime %s",

@@ -8,7 +8,7 @@ from core.http_client import http_request
 from core.identity import AnimeIdentity
 from core.models import CharacterRecord, EpisodePage, EpisodeRecord, PersonCredit, TrailerRecord
 from core.people_loading import PeopleBatch
-from core.settings import AppSettings
+from core.settings import AppSettings, SourceSettings
 from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
 from core.source_names import MAL_SOURCE_NAME
@@ -18,20 +18,24 @@ DEFAULT_JIKAN_API_URL = "http://127.0.0.1:8091"
 JIKAN_DISPLAY_NAME = MAL_SOURCE_NAME
 
 
-def _settings():
-    return AppSettings.from_env().sources
+def _settings(settings: SourceSettings | None = None) -> SourceSettings:
+    return settings or AppSettings.from_env().sources
 
 
-def api_url() -> str:
-    return _settings().jikan_api_url
+def api_url(settings: SourceSettings | None = None) -> str:
+    return _settings(settings).jikan_api_url
 
 
-def _timeout() -> float:
-    return _settings().jikan_request_timeout_seconds
+def _timeout(settings: SourceSettings | None = None) -> float:
+    return _settings(settings).jikan_request_timeout_seconds
 
 
-def _cache_ttl(name: str, default: int = 21600) -> float:
-    settings = _settings()
+def _cache_ttl(
+    name: str,
+    settings: SourceSettings | None = None,
+    default: int = 21600,
+) -> float:
+    settings = _settings(settings)
     if name == "JIKAN_PEOPLE_CACHE_TTL_SECONDS":
         return settings.jikan_people_cache_ttl_seconds
     if name == "JIKAN_SUPPLEMENT_CACHE_TTL_SECONDS":
@@ -142,14 +146,15 @@ async def _get(
     *,
     params: dict[str, object] | None = None,
     operation: str = "episodes",
+    settings: SourceSettings | None = None,
 ) -> dict[str, Any]:
     await wait_for_upstream("jikan", operation)
     response = await http_request(
         "jikan",
         "GET",
-        f"{api_url()}{path}",
+        f"{api_url(settings)}{path}",
         operation=operation,
-        timeout=_timeout(),
+        timeout=_timeout(settings),
         params=params,
     )
     try:
@@ -178,7 +183,8 @@ class JikanSource:
     source_key = SourceKey.MAL
     backend_key = "jikan"
 
-    def __init__(self) -> None:
+    def __init__(self, settings: SourceSettings | None = None) -> None:
+        self._settings = _settings(settings)
         self._supplement_cache: dict[str, tuple[float, dict[str, Any]]] = {}
         self._people_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
@@ -196,12 +202,12 @@ class JikanSource:
         operation: str,
         ttl_env: str,
     ) -> dict[str, Any]:
-        ttl = _cache_ttl(ttl_env)
+        ttl = _cache_ttl(ttl_env, self._settings)
         now = time.monotonic()
         cached = cache.get(mal_id)
         if cached is not None and ttl > 0 and now - cached[0] < ttl:
             return cached[1]
-        body = await _get(path, operation=operation)
+        body = await _get(path, operation=operation, settings=self._settings)
         raw = body.get("data")
         payload = raw if isinstance(raw, dict) else {}
         if ttl > 0:
@@ -307,7 +313,11 @@ class JikanSource:
         mal_id = self._mal_id(identity)
         if not mal_id:
             return []
-        body = await _get(f"/anime/{mal_id}/trailers", operation="trailers")
+        body = await _get(
+            f"/anime/{mal_id}/trailers",
+            operation="trailers",
+            settings=self._settings,
+        )
         result: list[TrailerRecord] = []
         seen: set[str] = set()
         for raw in body.get("data") or []:
@@ -335,7 +345,11 @@ class JikanSource:
         if not mal_id:
             return EpisodePage(items=[], page=max(1, int(page)), has_next=False)
         page = max(1, int(page))
-        body = await _get(f"/anime/{mal_id}/episodes", params={"page": page})
+        body = await _get(
+            f"/anime/{mal_id}/episodes",
+            params={"page": page},
+            settings=self._settings,
+        )
         items = [_episode(item) for item in body.get("data") or [] if isinstance(item, dict)]
         return EpisodePage(
             items=items,
@@ -349,7 +363,10 @@ class JikanSource:
         episode_number = int(episode_number)
         if not mal_id or episode_number <= 0:
             return None
-        body = await _get(f"/anime/{mal_id}/episodes/{episode_number}")
+        body = await _get(
+            f"/anime/{mal_id}/episodes/{episode_number}",
+            settings=self._settings,
+        )
         raw = body.get("data")
         if not isinstance(raw, dict):
             return None

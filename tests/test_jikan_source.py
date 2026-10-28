@@ -32,7 +32,10 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
         with patch("sources.jikan._get", new=AsyncMock(return_value=payload)) as getter:
             page = await source.load_episode_page(AnimeIdentity({"mal": "123"}), page=1)
 
-        getter.assert_awaited_once_with("/anime/123/episodes", params={"page": 1})
+        args, kwargs = getter.await_args
+        self.assertEqual(args, ("/anime/123/episodes",))
+        self.assertEqual(kwargs["params"], {"page": 1})
+        self.assertIs(kwargs["settings"], source._settings)
         self.assertEqual(source.source_key, "mal")
         self.assertEqual(source.backend_key, "jikan")
         self.assertEqual(page.items[0].source, "mal")
@@ -87,7 +90,10 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
         with patch("sources.jikan._get", new=AsyncMock(return_value=payload)) as getter:
             trailers = await source.load_trailers(AnimeIdentity({"mal": "123"}))
 
-        getter.assert_awaited_once_with("/anime/123/trailers", operation="trailers")
+        args, kwargs = getter.await_args
+        self.assertEqual(args, ("/anime/123/trailers",))
+        self.assertEqual(kwargs["operation"], "trailers")
+        self.assertIs(kwargs["settings"], source._settings)
         self.assertEqual(len(trailers), 1)
         self.assertEqual(trailers[0].source, "mal")
         self.assertEqual(trailers[0].backend, "jikan")
@@ -105,10 +111,10 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
         with patch("sources.jikan._get", new=AsyncMock(return_value=payload)) as getter:
             result = await source.load_metadata_supplement(AnimeIdentity({"mal": "123"}))
 
-        getter.assert_awaited_once_with(
-            "/anime/123/supplement",
-            operation="metadata",
-        )
+        args, kwargs = getter.await_args
+        self.assertEqual(args, ("/anime/123/supplement",))
+        self.assertEqual(kwargs["operation"], "metadata")
+        self.assertIs(kwargs["settings"], source._settings)
         self.assertEqual(result["licensors"], ["Sentai Filmworks", "Muse"])
         self.assertEqual(result["score_distribution"], {10: 120, 9: 80})
 
@@ -116,33 +122,10 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
         source = JikanSource()
         payload = {
             "data": {
-                "staff": [
-                    {
-                        "person": {
-                            "mal_id": 1,
-                            "name": "Director Person",
-                            "image_url": "https://example.invalid/director.jpg",
-                        },
-                        "roles": ["Director"],
-                    }
-                ],
+                "staff": [{"person": {"mal_id": 1, "name": "Director Person", "image_url": "https://example.invalid/director.jpg"}, "roles": ["Director"]}],
                 "voices": [
-                    {
-                        "person": {
-                            "mal_id": 2,
-                            "name": "Voice Person",
-                            "image_url": "https://example.invalid/voice.jpg",
-                        },
-                        "character": "Hero",
-                    },
-                    {
-                        "person": {
-                            "mal_id": 2,
-                            "name": "Voice Person",
-                            "image_url": "https://example.invalid/voice.jpg",
-                        },
-                        "character": "Other Hero",
-                    },
+                    {"person": {"mal_id": 2, "name": "Voice Person", "image_url": "https://example.invalid/voice.jpg"}, "character": "Hero"},
+                    {"person": {"mal_id": 2, "name": "Voice Person", "image_url": "https://example.invalid/voice.jpg"}, "character": "Other Hero"},
                 ],
             }
         }
@@ -154,10 +137,7 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(staff[0].roles, ["director"])
         self.assertEqual(staff[0].external_ids, {"mal": "1"})
         self.assertEqual(len(voices), 1)
-        self.assertEqual(
-            voices[0].roles,
-            ["voice_of::Hero", "voice_of::Other Hero"],
-        )
+        self.assertEqual(voices[0].roles, ["voice_of::Hero", "voice_of::Other Hero"])
         self.assertIn("MAL (MyAnimeList) / Jikan", voices[0].portraits)
 
 
