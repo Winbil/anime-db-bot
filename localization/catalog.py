@@ -59,7 +59,19 @@ def normalize_locale(locale: str | None) -> str:
 def locale_name(locale: str, *, display_locale: str | None = None) -> str:
     locale = normalize_locale(locale)
     display_locale = normalize_locale(display_locale or locale)
-    return text("locale_names", locale, locale=display_locale, default=locale.upper())
+
+    names = _locale_catalog(display_locale).get("locale_names", {})
+    if isinstance(names, dict):
+        value = names.get(locale)
+        if value is not None and str(value).strip():
+            return str(value)
+
+    meta = _locale_catalog(locale).get("meta", {})
+    if isinstance(meta, dict):
+        value = meta.get("name")
+        if value is not None and str(value).strip():
+            return str(value)
+    return locale.upper()
 
 
 def aliases(section: str) -> dict[str, str]:
