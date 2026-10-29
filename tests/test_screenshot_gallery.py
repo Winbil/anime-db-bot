@@ -9,6 +9,7 @@ from bots.telegram.card.features.screenshots import (
     screenshot_pages,
     screenshot_rich_message,
 )
+from bots.telegram.card.runtime.state import AnimeCardSession
 from core.models import AggregatedAnime
 
 
@@ -23,6 +24,13 @@ class ScreenshotGalleryTests(unittest.IsolatedAsyncioTestCase):
                     for index in range(1, count + 1)
                 ]
             },
+        )
+
+    def _session(self, count: int = 30) -> AnimeCardSession:
+        return AnimeCardSession(
+            anime=self._sample(count),
+            owner_user_id=1,
+            screenshots_loaded=True,
         )
 
     def test_large_gallery_is_bounded_to_eight_images_per_rich_page(self) -> None:
@@ -40,13 +48,13 @@ class ScreenshotGalleryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("screenshot-1.jpg", second)
 
     async def test_all_and_source_views_both_render_slideshow_immediately(self) -> None:
-        anime = self._sample(17)
+        session = self._session(17)
         message = AsyncMock()
 
         await edit_screenshots_view(
             message,
             "card-token",
-            anime,
+            session,
             source_key=None,
             page=0,
             locale="ru",
@@ -59,7 +67,7 @@ class ScreenshotGalleryTests(unittest.IsolatedAsyncioTestCase):
         await edit_screenshots_view(
             message,
             "card-token",
-            anime,
+            session,
             source_key="shikimori",
             page=0,
             locale="ru",
@@ -70,12 +78,12 @@ class ScreenshotGalleryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("screenshot-1.jpg", source_html)
 
     async def test_source_page_navigation_keeps_the_gallery(self) -> None:
-        anime = self._sample(17)
+        session = self._session(17)
         message = AsyncMock()
         await edit_screenshots_view(
             message,
             "card-token",
-            anime,
+            session,
             source_key="shikimori",
             page=1,
             locale="ru",

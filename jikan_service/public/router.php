@@ -163,6 +163,67 @@ if ($path === '/activity') {
     respond(['active' => file_exists(ACTIVE_LOCK)]);
 }
 
+if (preg_match('#^/anime/(\d+)/licensors$#', $path, $match)) {
+    $malId = (int) $match[1];
+    try {
+        $anime = withActivity(function () use ($malId) {
+            $client = new MalClient();
+            return $client->getAnime(new AnimeRequest($malId));
+        });
+
+        $licensors = [];
+        foreach ($anime->getLicensors() as $licensor) {
+            $name = trim($licensor->getName());
+            if ($name !== '') {
+                $licensors[] = $name;
+            }
+        }
+
+        respond([
+            'source' => 'mal',
+            'backend' => 'jikan',
+            'data' => [
+                'licensors' => array_values(array_unique($licensors)),
+            ],
+        ]);
+    } catch (Throwable $error) {
+        respond([
+            'error' => 'jikan_request_failed',
+            'type' => $error::class,
+            'message' => $error->getMessage(),
+        ], 502);
+    }
+}
+
+if (preg_match('#^/anime/(\d+)/popularity$#', $path, $match)) {
+    $malId = (int) $match[1];
+    try {
+        $stats = withActivity(function () use ($malId) {
+            $client = new MalClient();
+            return $client->getAnimeStats(new AnimeStatsRequest($malId));
+        });
+
+        $scoreDistribution = [];
+        foreach ($stats->getScores() as $score) {
+            $scoreDistribution[(string) $score->getScore()] = $score->getVotes();
+        }
+
+        respond([
+            'source' => 'mal',
+            'backend' => 'jikan',
+            'data' => [
+                'score_distribution' => $scoreDistribution,
+            ],
+        ]);
+    } catch (Throwable $error) {
+        respond([
+            'error' => 'jikan_request_failed',
+            'type' => $error::class,
+            'message' => $error->getMessage(),
+        ], 502);
+    }
+}
+
 if (preg_match('#^/anime/(\d+)/supplement$#', $path, $match)) {
     $malId = (int) $match[1];
     try {

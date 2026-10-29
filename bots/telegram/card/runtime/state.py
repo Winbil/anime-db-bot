@@ -24,6 +24,12 @@ class AnimeCardSession:
     characters_loaded: bool = False
     character_key_by_source: dict[str, str] = field(default_factory=dict)
     character_errors: dict[str, str] = field(default_factory=dict)
+    screenshots_loaded: bool = False
+    screenshot_errors: dict[str, str] = field(default_factory=dict)
+    popularity_loaded: bool = False
+    popularity_errors: dict[str, str] = field(default_factory=dict)
+    descriptions_loaded: bool = False
+    description_errors: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

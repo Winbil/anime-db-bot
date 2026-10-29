@@ -12,9 +12,11 @@ from core.identity import AnimeIdentity
 from core.models import (
     AnimeRecord,
     CharacterRecord,
+    DescriptionDetails,
     EpisodePage,
     EpisodeRecord,
     PersonCredit,
+    PopularityStats,
     SearchPage,
     TrailerRecord,
 )
@@ -187,6 +189,24 @@ class PeopleRetryingSourceProxy(RetryingSourceProxy):
             return []
         return await self._people_call("characters", lambda: loader(identity))
 
+    async def load_screenshots(self, identity: AnimeIdentity) -> list[str]:
+        loader = getattr(self._source, "load_screenshots", None)
+        if not callable(loader):
+            return []
+        return await self._people_call("screenshots", lambda: loader(identity))
+
+    async def load_popularity(self, identity: AnimeIdentity) -> PopularityStats:
+        loader = getattr(self._source, "load_popularity", None)
+        if not callable(loader):
+            return PopularityStats()
+        return await self._people_call("popularity", lambda: loader(identity))
+
+    async def load_description(self, identity: AnimeIdentity) -> DescriptionDetails:
+        loader = getattr(self._source, "load_description", None)
+        if not callable(loader):
+            return DescriptionDetails()
+        return await self._people_call("description", lambda: loader(identity))
+
     async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
         loader = getattr(self._source, "load_staff", None)
         if not callable(loader):
@@ -352,6 +372,9 @@ def resilient_source(
         callable(getattr(source, "load_characters", None))
         or callable(getattr(source, "load_staff", None))
         or callable(getattr(source, "load_voices", None))
+        or callable(getattr(source, "load_screenshots", None))
+        or callable(getattr(source, "load_popularity", None))
+        or callable(getattr(source, "load_description", None))
     ):
         return PeopleRetryingSourceProxy(source, health)
     return RetryingSourceProxy(source, health)

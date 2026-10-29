@@ -242,7 +242,10 @@
     "trailer_kind": "Type: {value}",
     "trailer_hosting": "Platform: {value}",
     "section_characters": "Characters",
-    "characters_button": "Characters"
+    "characters_button": "Characters",
+    "description_loading": "Loading descriptions…",
+    "popularity_loading": "Loading popularity statistics…",
+    "screenshots_loading": "Loading screenshots…"
   },
   "people": {
     "staff": "Staff and creators",

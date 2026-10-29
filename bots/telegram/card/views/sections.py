@@ -119,7 +119,9 @@ def anime_sections(
 ) -> dict[str, str]:
     description_text = text(
         "card",
-        "description_choose" if anime.descriptions else "description_empty",
+        "description_choose"
+        if anime.descriptions or anime.backgrounds_by_source
+        else "description_empty",
         locale=locale,
     )
     links_text = text(

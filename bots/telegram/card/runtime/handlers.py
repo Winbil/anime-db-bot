@@ -12,6 +12,8 @@ from bots.telegram.callbacks import (
     resolve_key_or_legacy_index,
 )
 from bots.telegram.card.features.characters import edit_characters_view
+from bots.telegram.card.features.descriptions import ensure_descriptions_loaded
+from bots.telegram.card.features.popularity import ensure_popularity_loaded
 from bots.telegram.card.ui.constants import SECTION_LABELS, SOURCE_SELECTABLE_SECTIONS
 from bots.telegram.card.features.episodes import edit_episode_detail, edit_episodes_view
 from bots.telegram.card.views.renderer import (
@@ -19,7 +21,10 @@ from bots.telegram.card.views.renderer import (
     edit_description_view,
     edit_source_section_view,
 )
-from bots.telegram.card.features.screenshots import edit_screenshots_view
+from bots.telegram.card.features.screenshots import (
+    edit_screenshots_view,
+    ensure_screenshots_loaded,
+)
 from bots.telegram.card.ui.selectors import (
     description_source_options,
     source_section_options,
@@ -110,6 +115,7 @@ def build_dispatcher(mode_name: str, state: TelegramCardState) -> Dispatcher:
             await callback.answer()
             return
 
+        await ensure_descriptions_loaded(callback.message, raw_session, locale=locale)
         options = description_source_options(anime)
         try:
             source_key = resolve_key_or_legacy_index(
@@ -160,6 +166,13 @@ def build_dispatcher(mode_name: str, state: TelegramCardState) -> Dispatcher:
             await callback.answer()
             return
 
+        if section == "popularity":
+            await ensure_popularity_loaded(callback.message, raw_session, locale=locale)
+        elif section == "screenshots":
+            await ensure_screenshots_loaded(
+                callback.message, raw_session, locale=locale
+            )
+
         options = source_section_options(anime, section)
         try:
             source_key = resolve_key_or_legacy_index(
@@ -176,7 +189,7 @@ def build_dispatcher(mode_name: str, state: TelegramCardState) -> Dispatcher:
             await edit_screenshots_view(
                 callback.message,
                 token,
-                anime,
+                raw_session,
                 source_key=source_key,
                 page=data.page,
                 locale=locale,
@@ -413,12 +426,18 @@ def build_dispatcher(mode_name: str, state: TelegramCardState) -> Dispatcher:
             await edit_screenshots_view(
                 callback.message,
                 token,
-                anime,
+                raw_session,
                 source_key=None,
                 page=data.page,
                 locale=locale,
             )
             return
+        if section == "popularity":
+            await ensure_popularity_loaded(callback.message, raw_session, locale=locale)
+        elif section == "description":
+            await ensure_descriptions_loaded(
+                callback.message, raw_session, locale=locale
+            )
 
         await edit_anime_view(
             callback.message,

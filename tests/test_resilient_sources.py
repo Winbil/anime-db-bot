@@ -20,6 +20,7 @@ class _FlakySource:
     def __init__(self) -> None:
         self.calls = 0
         self.staff_calls = 0
+        self.screenshot_calls = 0
         self.identities: list[AnimeIdentity] = []
 
     async def get_details(self, identity: AnimeIdentity):
@@ -33,6 +34,13 @@ class _FlakySource:
             external_ids=dict(identity.external_ids),
         )
 
+    async def load_screenshots(self, identity: AnimeIdentity):
+        self.screenshot_calls += 1
+        self.identities.append(identity.copy())
+        if self.screenshot_calls < 2:
+            raise httpx.ReadTimeout("temporary screenshot timeout")
+        return ["https://example.invalid/1.jpg"]
+
     async def load_staff(self, identity: AnimeIdentity):
         self.staff_calls += 1
         self.identities.append(identity.copy())
@@ -42,7 +50,9 @@ class _FlakySource:
 
 
 class ResilientSourceTests(unittest.IsolatedAsyncioTestCase):
-    async def test_transient_metadata_failure_is_retried_with_same_identity(self) -> None:
+    async def test_transient_metadata_failure_is_retried_with_same_identity(
+        self,
+    ) -> None:
         source = _FlakySource()
         proxy = RetryingSourceProxy(source)
         identity = AnimeIdentity({"anilist": "999"})
@@ -53,6 +63,17 @@ class ResilientSourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(record)
         self.assertEqual(source.calls, 3)
         self.assertTrue(all(item.get("anilist") == "999" for item in source.identities))
+
+    async def test_lazy_metadata_capability_is_retried(self) -> None:
+        source = _FlakySource()
+        proxy = PeopleRetryingSourceProxy(source)
+        identity = AnimeIdentity({"anilist": "999"})
+
+        with patch("sources.runtime.resilient.asyncio.sleep", new=AsyncMock()):
+            screenshots = await proxy.load_screenshots(identity)
+
+        self.assertEqual(source.screenshot_calls, 2)
+        self.assertEqual(screenshots, ["https://example.invalid/1.jpg"])
 
     async def test_lazy_staff_delegates_identity_and_is_retried(self) -> None:
         source = _FlakySource()

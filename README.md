@@ -23,7 +23,7 @@ The project is designed around explicit boundaries between **search**, **identit
 - **Source-independent identity** — `AnimeIdentity` stores peer external IDs; there is no global primary database ID.
 - **Conservative cross-ID mapping** — runtime mapping is direct-only and conflict-aware, with provenance and manual audited overrides.
 - **Aggregated metadata cards** — values from successful metadata sources are normalized and merged while source-specific provenance is preserved.
-- **Lazy heavy sections** — people, portraits, characters, trailers, and episodes are fetched on demand.
+- **Lazy heavy sections** — people/portraits, characters, screenshots, detailed popularity, descriptions/backgrounds, trailers, and episodes are fetched on demand.
 - **Shared resilience layer** — typed source errors, retries, circuit breakers, half-open recovery, rate limits, and shared HTTP lifecycle.
 - **Persistent platform-scoped settings** — user locale, known users, and moderation state are stored in SQLite.
 - **Three UI languages** — English is the default/fallback locale; Russian and Japanese are fully selectable in `/settings`.
@@ -31,14 +31,14 @@ The project is designed around explicit boundaries between **search**, **identit
 
 ## Source capabilities
 
-| Source | Search | Metadata | People | Characters | Trailers | Episodes |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: |
-| Shikimori | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| AniDB | — | ✓ | ✓ | ✓ | — | ✓ |
+| Source | Search | Metadata | People | Characters | Trailers | Episodes | Screenshots | Popularity | Description |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Shikimori | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
+| MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
+| AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
+| AniDB | — | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ |
 
-AniDB is optional and is enabled only when `ANIDB_CLIENT` is configured. Jikan is **not** a separate identity database: it is a local MAL backend used for data that is not available through the official MAL API.
+AniDB is optional and is enabled only when `ANIDB_CLIENT` is configured. Jikan is **not** a separate identity database: it is a local MAL backend used for data that is not available through the official MAL API. Its main-card licensors and lazy popularity statistics use separate local endpoints, so score-distribution scraping is not on the initial card path.
 
 ## How it works
 
@@ -108,6 +108,9 @@ The main card stays metadata-first. The following sections are loaded only when 
 - staff and creators;
 - original Japanese voice actors;
 - characters and portraits;
+- screenshots;
+- detailed popularity/ranking distributions;
+- descriptions and source background text;
 - trailers/promos;
 - episodes.
 
@@ -280,7 +283,7 @@ Personal Telegram limits are scoped per `(platform, user_id)`. Administrators ma
 anime-db-bot/
 ├── bots/telegram/
 │   ├── card/            # card runtime, feature handlers, UI primitives and views
-│   │   ├── features/    # characters, episodes, screenshots, trailers
+│   │   ├── features/    # characters, descriptions, episodes, popularity, screenshots, trailers
 │   │   ├── runtime/     # handlers, session state and card service wiring
 │   │   ├── ui/          # callbacks-facing keyboards, selectors and constants
 │   │   └── views/       # renderers and section presentation

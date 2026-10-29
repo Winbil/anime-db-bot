@@ -17,6 +17,11 @@ from services.media.episodes import EpisodeService
 from services.identity.resolver import IdentityResolver
 from services.identity.aggregator import AnimeAggregator
 from services.media.people import PeopleProgressService
+from services.media.sections import (
+    DescriptionService,
+    PopularityService,
+    ScreenshotService,
+)
 from services.runtime.rate_limits import (
     PersonalRateLimiter,
     UpstreamRateLimiter,
@@ -57,6 +62,9 @@ class AppContext:
     character_service: CharacterService
     episode_service: EpisodeService
     trailer_service: TrailerService
+    screenshot_service: ScreenshotService
+    popularity_service: PopularityService
+    description_service: DescriptionService
     people_progress_service: PeopleProgressService
     direct_lookup: DirectIdLookupService
 
@@ -103,6 +111,9 @@ class AppContext:
             trailer_service=TrailerService(
                 get_trailer_sources(settings.sources, source_health)
             ),
+            screenshot_service=ScreenshotService(sources),
+            popularity_service=PopularityService(sources),
+            description_service=DescriptionService(sources),
             people_progress_service=PeopleProgressService(
                 sources,
                 aggregator,

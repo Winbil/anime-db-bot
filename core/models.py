@@ -135,6 +135,17 @@ class PopularityRanking:
 
 
 @dataclass(slots=True)
+class DescriptionDetails:
+    """Lazy source-scoped long-form description payload."""
+
+    description: str | None = None
+    background: str | None = None
+
+    def has_data(self) -> bool:
+        return bool((self.description or "").strip() or (self.background or "").strip())
+
+
+@dataclass(slots=True)
 class PopularityStats:
     """Audience/popularity statistics belonging to exactly one source."""
 
@@ -322,6 +333,7 @@ class AggregatedAnime:
     screenshots_by_source: dict[str, list[str]] = field(default_factory=dict)
 
     descriptions: dict[str, str] = field(default_factory=dict)
+    backgrounds_by_source: dict[str, str] = field(default_factory=dict)
     background: str | None = None
     posters: list[str] = field(default_factory=list)
     urls: dict[str, str] = field(default_factory=dict)

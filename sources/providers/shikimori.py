@@ -15,7 +15,13 @@ from core.canonicalization import (
 from core.http_client import http_request
 from core.identity import AnimeIdentity
 from core.http_config import USER_AGENT
-from core.models import AnimeRecord, CharacterRecord, PersonCredit
+from core.models import (
+    AnimeRecord,
+    CharacterRecord,
+    DescriptionDetails,
+    PersonCredit,
+    PopularityStats,
+)
 from core.people_loading import PeopleBatch
 from core.settings import SourceSettings, get_settings
 from core.temporal import PartialDate, parse_datetime, parse_partial_date
@@ -38,8 +44,6 @@ DETAIL_FIELDS = """
     licenseNameRu
     kind
     score
-    statusesStats { status count }
-    scoresStats { score count }
     status
     rating
     season
@@ -53,18 +57,12 @@ DETAIL_FIELDS = """
     genres { id name russian kind }
     studios { id name }
     licensors
-    description
     poster {
       originalUrl
       main2xUrl
       mainUrl
       preview2xUrl
       previewUrl
-    }
-    screenshots {
-      originalUrl
-      x332Url
-      x166Url
     }
     url
 """
@@ -106,6 +104,34 @@ query AnimeStaff($ids: String!) {{
 {PERSON_ROLES_FIELDS}
   }}
 }}
+"""
+
+SCREENSHOTS_QUERY = """
+query AnimeScreenshots($ids: String!) {
+  animes(ids: $ids, limit: 1) {
+    id
+    screenshots { originalUrl x332Url x166Url }
+  }
+}
+"""
+
+POPULARITY_QUERY = """
+query AnimePopularity($ids: String!) {
+  animes(ids: $ids, limit: 1) {
+    id
+    statusesStats { status count }
+    scoresStats { score count }
+  }
+}
+"""
+
+DESCRIPTION_QUERY = """
+query AnimeDescription($ids: String!) {
+  animes(ids: $ids, limit: 1) {
+    id
+    description
+  }
+}
 """
 
 _BBCODE_WRAPPED_RE = re.compile(
@@ -414,13 +440,10 @@ def _record(raw: dict[str, Any], settings: SourceSettings | None = None) -> Anim
             score = float(raw["score"])
     except (TypeError, ValueError):
         pass
-    description = _clean_description(raw.get("description"))
     kind_raw = raw.get("kind") or ""
     status_raw = raw.get("status") or ""
     rating_raw = raw.get("rating") or ""
     season, season_year = _season(raw.get("season"))
-    status_distribution = _status_distribution(raw.get("statusesStats"))
-    score_distribution = _score_distribution(raw.get("scoresStats"))
     return AnimeRecord(
         source="Shikimori",
         source_id=str(raw.get("id") or ""),
@@ -446,10 +469,6 @@ def _record(raw: dict[str, Any], settings: SourceSettings | None = None) -> Anim
         released_on=_format_date(raw.get("releasedOn")),
         next_episode_at=_format_datetime(raw.get("nextEpisodeAt")),
         score=score,
-        list_users=sum(status_distribution.values()) if status_distribution else None,
-        scoring_users=sum(score_distribution.values()) if score_distribution else None,
-        status_distribution=status_distribution,
-        score_distribution=score_distribution,
         genres=_dedupe(
             [
                 canonical_genre_token(genre.get("name") or genre.get("russian") or "")
@@ -460,9 +479,7 @@ def _record(raw: dict[str, Any], settings: SourceSettings | None = None) -> Anim
             [studio.get("name", "") for studio in raw.get("studios") or []]
         ),
         licensors=_dedupe(raw.get("licensors") or []),
-        descriptions={"Shikimori": description} if description else {},
         posters=[poster_url] if poster_url else [],
-        screenshots=_screenshot_urls(raw.get("screenshots"), settings),
         urls={"Shikimori": url} if url else {},
         staff=[],
         voices=[],
@@ -504,6 +521,62 @@ class ShikimoriSource:
             anime_id,
         )
         return record
+
+    async def load_screenshots(self, identity: AnimeIdentity) -> list[str]:
+        anime_id = self._anime_id(identity)
+        if not anime_id.isdigit():
+            return []
+        data = await _graphql(
+            SCREENSHOTS_QUERY,
+            {"ids": anime_id},
+            self._settings,
+            operation="screenshots",
+        )
+        animes = data.get("animes") or []
+        raw = animes[0] if animes else None
+        if not raw or str(raw.get("id") or "") != anime_id:
+            return []
+        return _screenshot_urls(raw.get("screenshots"), self._settings)
+
+    async def load_popularity(self, identity: AnimeIdentity) -> PopularityStats:
+        anime_id = self._anime_id(identity)
+        if not anime_id.isdigit():
+            return PopularityStats()
+        data = await _graphql(
+            POPULARITY_QUERY,
+            {"ids": anime_id},
+            self._settings,
+            operation="popularity",
+        )
+        animes = data.get("animes") or []
+        raw = animes[0] if animes else None
+        if not raw or str(raw.get("id") or "") != anime_id:
+            return PopularityStats()
+        statuses = _status_distribution(raw.get("statusesStats"))
+        scores = _score_distribution(raw.get("scoresStats"))
+        return PopularityStats(
+            list_users=sum(statuses.values()) if statuses else None,
+            scoring_users=sum(scores.values()) if scores else None,
+            status_distribution=statuses,
+            score_distribution=scores,
+        )
+
+    async def load_description(self, identity: AnimeIdentity) -> DescriptionDetails:
+        anime_id = self._anime_id(identity)
+        if not anime_id.isdigit():
+            return DescriptionDetails()
+        data = await _graphql(
+            DESCRIPTION_QUERY,
+            {"ids": anime_id},
+            self._settings,
+            operation="description",
+        )
+        animes = data.get("animes") or []
+        raw = animes[0] if animes else None
+        if not raw or str(raw.get("id") or "") != anime_id:
+            return DescriptionDetails()
+        description = _clean_description(raw.get("description"))
+        return DescriptionDetails(description=description or None)
 
     async def load_characters(self, identity: AnimeIdentity) -> list[CharacterRecord]:
         anime_id = self._anime_id(identity)

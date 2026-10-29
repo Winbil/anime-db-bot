@@ -11,7 +11,14 @@ from core.canonicalization import canonical_role_token, voice_role_token
 from core.http_client import http_request
 from core.http_config import USER_AGENT
 from core.identity import AnimeIdentity
-from core.models import AnimeRecord, CharacterRecord, EpisodePage, EpisodeRecord, PersonCredit
+from core.models import (
+    AnimeRecord,
+    CharacterRecord,
+    DescriptionDetails,
+    EpisodePage,
+    EpisodeRecord,
+    PersonCredit,
+)
 from core.people_loading import PeopleBatch
 from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse
@@ -70,14 +77,22 @@ def _text(element: ET.Element | None) -> str:
 
 def _int(value: Any) -> int | None:
     try:
-        return int(str(value).strip()) if value is not None and str(value).strip() else None
+        return (
+            int(str(value).strip())
+            if value is not None and str(value).strip()
+            else None
+        )
     except (TypeError, ValueError):
         return None
 
 
 def _float(value: Any) -> float | None:
     try:
-        return float(str(value).strip()) if value is not None and str(value).strip() else None
+        return (
+            float(str(value).strip())
+            if value is not None and str(value).strip()
+            else None
+        )
     except (TypeError, ValueError):
         return None
 
@@ -136,7 +151,9 @@ def _title_data(root: ET.Element) -> tuple[dict[str, str], list[str]]:
         value = _text(element)
         if not value:
             continue
-        lang = _clean(element.attrib.get(_XML_LANG) or element.attrib.get("lang")).casefold()
+        lang = _clean(
+            element.attrib.get(_XML_LANG) or element.attrib.get("lang")
+        ).casefold()
         kind = _clean(element.attrib.get("type")).casefold()
         key: str | None = None
         if kind == "main" and lang == "x-jat":
@@ -152,7 +169,9 @@ def _title_data(root: ET.Element) -> tuple[dict[str, str], list[str]]:
         else:
             aliases.append(value)
     chosen = {value.casefold() for value in titles.values()}
-    return titles, [value for value in _dedupe(aliases) if value.casefold() not in chosen]
+    return titles, [
+        value for value in _dedupe(aliases) if value.casefold() not in chosen
+    ]
 
 
 def _resource_ids(root: ET.Element) -> dict[str, str]:
@@ -187,11 +206,13 @@ def _staff(root: ET.Element) -> list[PersonCredit]:
             continue
         seen.add(key)
         role = canonical_role_token(role_raw) if role_raw else ""
-        result.append(PersonCredit(
-            name=name,
-            roles=[role] if role else [],
-            external_ids={"anidb": person_id} if person_id else {},
-        ))
+        result.append(
+            PersonCredit(
+                name=name,
+                roles=[role] if role else [],
+                external_ids={"anidb": person_id} if person_id else {},
+            )
+        )
     return result
 
 
@@ -208,12 +229,14 @@ def _characters(root: ET.Element) -> list[CharacterRecord]:
             continue
         seen.add(key)
         portrait = _image_url(_text(character.find("picture")))
-        result.append(CharacterRecord(
-            name=name,
-            role=_character_role(character.attrib.get("type")),
-            external_ids={"anidb": character_id} if character_id else {},
-            portraits={ANIDB_SOURCE_NAME: [portrait]} if portrait else {},
-        ))
+        result.append(
+            CharacterRecord(
+                name=name,
+                role=_character_role(character.attrib.get("type")),
+                external_ids={"anidb": character_id} if character_id else {},
+                portraits={ANIDB_SOURCE_NAME: [portrait]} if portrait else {},
+            )
+        )
     return result
 
 
@@ -255,7 +278,9 @@ def _episodes(root: ET.Element) -> list[EpisodeRecord]:
         titles: dict[str, str] = {}
         for title in episode.findall("title"):
             value = _text(title)
-            lang = _clean(title.attrib.get(_XML_LANG) or title.attrib.get("lang")).casefold()
+            lang = _clean(
+                title.attrib.get(_XML_LANG) or title.attrib.get("lang")
+            ).casefold()
             key = {"en": "english", "ja": "japanese", "x-jat": "romaji"}.get(lang)
             if key and value and key not in titles:
                 titles[key] = value
@@ -263,19 +288,21 @@ def _episodes(root: ET.Element) -> list[EpisodeRecord]:
         rating = episode.find("rating")
         score = _float(_text(rating)) if rating is not None else None
         length = _int(_text(episode.find("length")))
-        urls = {
-            "AniDB": f"https://anidb.net/episode/{episode_id}"
-        } if episode_id else {}
-        result.append(EpisodeRecord(
-            number=number,
-            source="anidb",
-            backend="anidb",
-            titles=titles,
-            aired_at=parse_partial_date(_text(episode.find("airdate"))),
-            duration_seconds=length * 60 if length and length > 0 else None,
-            score=score,
-            urls=urls,
-        ))
+        urls = (
+            {"AniDB": f"https://anidb.net/episode/{episode_id}"} if episode_id else {}
+        )
+        result.append(
+            EpisodeRecord(
+                number=number,
+                source="anidb",
+                backend="anidb",
+                titles=titles,
+                aired_at=parse_partial_date(_text(episode.find("airdate"))),
+                duration_seconds=length * 60 if length and length > 0 else None,
+                score=score,
+                urls=urls,
+            )
+        )
     result.sort(key=lambda item: item.number)
     return result
 
@@ -290,6 +317,7 @@ async def _write_atomic(path: Path, data: bytes) -> None:
         temporary = path.with_suffix(path.suffix + ".tmp")
         temporary.write_bytes(data)
         temporary.replace(path)
+
     await asyncio.to_thread(write)
 
 
@@ -392,7 +420,6 @@ class AniDBSource:
         permanent = root.find("./ratings/permanent")
         score = _float(_text(permanent)) if permanent is not None else None
         picture = _image_url(_text(root.find("picture")))
-        description = _text(root.find("description"))
         restricted = _clean(root.attrib.get("restricted")) in {"1", "true", "yes"}
         return AnimeRecord(
             source=ANIDB_SOURCE_NAME,
@@ -406,12 +433,18 @@ class AniDBSource:
             aired_on=parse_partial_date(_text(root.find("startdate"))),
             released_on=parse_partial_date(_text(root.find("enddate"))),
             score=score,
-            descriptions={ANIDB_SOURCE_NAME: description} if description else {},
             posters=[picture] if picture else [],
             urls={"AniDB": f"https://anidb.net/anime/{aid}"},
             staff=_staff(root),
             voices=_voices(root),
         )
+
+    async def load_description(self, identity: AnimeIdentity) -> DescriptionDetails:
+        root = await self._load_root(identity)
+        if root is None:
+            return DescriptionDetails()
+        description = _text(root.find("description"))
+        return DescriptionDetails(description=description or None)
 
     async def load_characters(self, identity: AnimeIdentity) -> list[CharacterRecord]:
         root = await self._load_root(identity)
@@ -463,7 +496,7 @@ class AniDBSource:
         values = _episodes(root)
         page_size = 100
         start = (page - 1) * page_size
-        items = values[start:start + page_size]
+        items = values[start : start + page_size]
         last_page = max(1, math.ceil(len(values) / page_size))
         return EpisodePage(
             items=items,

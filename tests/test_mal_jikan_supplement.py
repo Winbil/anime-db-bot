@@ -20,19 +20,18 @@ class MALJikanSupplementTests(unittest.IsolatedAsyncioTestCase):
             "id": 123,
             "title": "Example",
             "alternative_titles": {"en": "Example EN", "ja": "例"},
-            "statistics": {"status": {"watching": 10, "completed": 20}},
         }
 
     async def test_jikan_fills_fields_missing_from_official_mal_api(self) -> None:
         source = MALSource()
         source._jikan.load_metadata_supplement = AsyncMock(
-            return_value={
-                "licensors": ["Sentai Filmworks"],
-                "score_distribution": {10: 100, 9: 50},
-            }
+            return_value={"licensors": ["Sentai Filmworks"]}
         )
 
-        with patch("sources.providers.mal._get_raw", new=AsyncMock(return_value=self._official_payload())):
+        with patch(
+            "sources.providers.mal._get_raw",
+            new=AsyncMock(return_value=self._official_payload()),
+        ):
             record = await source.get_details(AnimeIdentity({"mal": "123"}))
 
         self.assertIsNotNone(record)
@@ -41,8 +40,29 @@ class MALJikanSupplementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record.source, JIKAN_DISPLAY_NAME)
         self.assertEqual(record.identity.external_ids, {"mal": "123"})
         self.assertEqual(record.licensors, ["Sentai Filmworks"])
-        self.assertEqual(record.score_distribution, {10: 100, 9: 50})
-        self.assertEqual(record.status_distribution, {"watching": 10, "completed": 20})
+        self.assertEqual(record.score_distribution, {})
+        self.assertEqual(record.status_distribution, {})
+
+    async def test_jikan_score_distribution_is_loaded_only_with_popularity(
+        self,
+    ) -> None:
+        source = MALSource()
+        source._jikan.load_popularity_supplement = AsyncMock(
+            return_value={10: 100, 9: 50}
+        )
+        payload = {
+            "rank": 1,
+            "statistics": {"status": {"watching": 10, "completed": 20}},
+        }
+        with patch(
+            "sources.providers.mal._get_raw", new=AsyncMock(return_value=payload)
+        ):
+            stats = await source.load_popularity(AnimeIdentity({"mal": "123"}))
+
+        self.assertEqual(stats.rank, 1)
+        self.assertEqual(stats.status_distribution, {"watching": 10, "completed": 20})
+        self.assertEqual(stats.score_distribution, {10: 100, 9: 50})
+        source._jikan.load_popularity_supplement.assert_awaited_once()
 
     async def test_jikan_failure_does_not_break_official_mal_metadata(self) -> None:
         source = MALSource()
@@ -50,12 +70,18 @@ class MALJikanSupplementTests(unittest.IsolatedAsyncioTestCase):
             side_effect=RuntimeError("local parser unavailable")
         )
 
-        with patch("sources.providers.mal._get_raw", new=AsyncMock(return_value=self._official_payload())):
+        with patch(
+            "sources.providers.mal._get_raw",
+            new=AsyncMock(return_value=self._official_payload()),
+        ):
             record = await source.get_details(AnimeIdentity({"mal": "123"}))
 
         self.assertIsNotNone(record)
         assert record is not None
-        self.assertEqual(record.title if hasattr(record, "title") else record.titles["romaji"], "Example")
+        self.assertEqual(
+            record.title if hasattr(record, "title") else record.titles["romaji"],
+            "Example",
+        )
         self.assertEqual(record.licensors, [])
         self.assertEqual(record.score_distribution, {})
 
