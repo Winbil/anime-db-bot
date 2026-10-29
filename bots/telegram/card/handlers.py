@@ -19,6 +19,7 @@ from bots.telegram.card.renderer import (
     edit_description_view,
     edit_source_section_view,
 )
+from bots.telegram.card.screenshots import edit_screenshots_view
 from bots.telegram.card.selectors import (
     description_source_options,
     source_section_options,
@@ -171,6 +172,16 @@ def build_dispatcher(mode_name: str, state: TelegramCardState) -> Dispatcher:
             return
 
         await callback.answer()
+        if section == "screenshots":
+            await edit_screenshots_view(
+                callback.message,
+                token,
+                anime,
+                source_key=source_key,
+                page=data.page,
+                locale=locale,
+            )
+            return
         await edit_source_section_view(
             callback.message,
             token,
@@ -395,6 +406,16 @@ def build_dispatcher(mode_name: str, state: TelegramCardState) -> Dispatcher:
                 raw_session,
                 source_key=None,
                 page=0,
+                locale=locale,
+            )
+            return
+        if section == "screenshots":
+            await edit_screenshots_view(
+                callback.message,
+                token,
+                anime,
+                source_key=None,
+                page=data.page,
                 locale=locale,
             )
             return
