@@ -20,7 +20,7 @@ from core.models import (
     SearchPage,
     TrailerRecord,
 )
-from core.people_loading import PeopleBatch
+from core.people_loading import PeopleBatch, PeopleManifest, without_portraits
 from core.source_errors import SourceError, SourceUnavailable, normalize_source_error
 from services.runtime.source_health import SourceHealthRegistry
 
@@ -218,6 +218,44 @@ class PeopleRetryingSourceProxy(RetryingSourceProxy):
         if not callable(loader):
             return []
         return await self._people_call("voices", lambda: loader(identity))
+
+    async def load_staff_manifest(self, identity: AnimeIdentity) -> PeopleManifest:
+        loader = getattr(self._source, "load_staff_manifest", None)
+        if not callable(loader):
+            people = await self.load_staff(identity)
+            return PeopleManifest(
+                people=without_portraits(people), portrait_pool=people
+            )
+        return await self._people_call("staff manifest", lambda: loader(identity))
+
+    async def load_voices_manifest(self, identity: AnimeIdentity) -> PeopleManifest:
+        loader = getattr(self._source, "load_voices_manifest", None)
+        if not callable(loader):
+            people = await self.load_voices(identity)
+            return PeopleManifest(
+                people=without_portraits(people), portrait_pool=people
+            )
+        return await self._people_call("voices manifest", lambda: loader(identity))
+
+    async def load_staff_portraits(
+        self, identity: AnimeIdentity, people: list[PersonCredit]
+    ) -> list[PersonCredit]:
+        loader = getattr(self._source, "load_staff_portraits", None)
+        if not callable(loader):
+            return []
+        return await self._people_call(
+            "staff portraits", lambda: loader(identity, people)
+        )
+
+    async def load_voices_portraits(
+        self, identity: AnimeIdentity, people: list[PersonCredit]
+    ) -> list[PersonCredit]:
+        loader = getattr(self._source, "load_voices_portraits", None)
+        if not callable(loader):
+            return []
+        return await self._people_call(
+            "voices portraits", lambda: loader(identity, people)
+        )
 
     async def load_staff_batch(
         self,

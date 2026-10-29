@@ -15,7 +15,7 @@
 
 `anime-db-bot` searches multiple anime databases, resolves confirmed cross-database identities, and builds one source-independent card without treating any external database as the canonical source of truth.
 
-The project is designed around explicit boundaries between **search**, **identity**, **mappings**, **metadata sources**, **aggregation**, **localization**, and **platform UI**. Expensive data such as staff portraits, characters, trailers, and episodes is loaded lazily only when the user opens the corresponding section.
+The project is designed around explicit boundaries between **search**, **identity**, **mappings**, **metadata sources**, **aggregation**, **localization**, and **platform UI**. People use a prefetched lightweight ID/name/role manifest for exact totals, while portraits are enriched in bounded global batches; other expensive data such as characters, trailers, and episodes stays lazy.
 
 ## Highlights
 
@@ -23,7 +23,7 @@ The project is designed around explicit boundaries between **search**, **identit
 - **Source-independent identity** — `AnimeIdentity` stores peer external IDs; there is no global primary database ID.
 - **Conservative cross-ID mapping** — runtime mapping is direct-only and conflict-aware, with provenance and manual audited overrides.
 - **Aggregated metadata cards** — values from successful metadata sources are normalized and merged while source-specific provenance is preserved.
-- **Lazy heavy sections** — people/portraits, characters, screenshots, detailed popularity, descriptions/backgrounds, trailers, and episodes are fetched on demand.
+- **Manifest + lazy enrichment** — staff/seiyuu IDs, names, and roles are prefetched as a lightweight exact roster; portraits are enriched in global batches (50 by default), while characters, screenshots, detailed popularity, descriptions/backgrounds, trailers, and episodes remain lazy.
 - **Shared resilience layer** — typed source errors, retries, circuit breakers, half-open recovery, rate limits, and shared HTTP lifecycle.
 - **Persistent platform-scoped settings** — user locale, known users, and moderation state are stored in SQLite.
 - **Three UI languages** — English is the default/fallback locale; Russian and Japanese are fully selectable in `/settings`.

@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from aiogram.types import Message
 
 from bots.telegram.card.runtime.state import TelegramCardState
 from core.models import AggregatedAnime
-from core.people import all_people
 from localization import text
-from services.runtime.app_context import get_app_context
 from services.media.people import PeopleLoadProgress, SourceLoadProgress
+from services.runtime.app_context import get_app_context
+
+_BACKGROUND_PEOPLE_PREFETCH_TASKS: set[asyncio.Task[None]] = set()
 
 
 def progress_key(token: str, section: str) -> str:
@@ -40,10 +42,8 @@ def scope_has_running(progress: PeopleLoadProgress, source: str | None) -> bool:
     return _service().scope_has_running(progress, source)
 
 
-async def settle_started_batches(
-    progress: PeopleLoadProgress, source: str | None = None
-) -> None:
-    await _service().settle_started_batches(progress, source)
+def scope_manifest_complete(progress: PeopleLoadProgress, source: str | None) -> bool:
+    return _service().scope_manifest_complete(progress, source)
 
 
 def scope_total_hint(
@@ -53,6 +53,51 @@ def scope_total_hint(
     source: str | None,
 ) -> int | None:
     return _service().scope_total_hint(anime, section, progress, source)
+
+
+async def settle_started_batches(
+    progress: PeopleLoadProgress, source: str | None = None
+) -> None:
+    await _service().settle_started_batches(progress, source)
+
+
+def _track_prefetch(task: asyncio.Task[None]) -> None:
+    _BACKGROUND_PEOPLE_PREFETCH_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_PEOPLE_PREFETCH_TASKS.discard)
+
+
+async def _prefetch_section(
+    anime: AggregatedAnime,
+    section: str,
+    progress: PeopleLoadProgress,
+) -> None:
+    try:
+        await _service().prefetch(anime, section, progress)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logging.exception("People manifest prefetch failed for %s", section)
+
+
+def start_people_prefetch(
+    state: TelegramCardState,
+    token: str,
+    anime: AggregatedAnime,
+) -> None:
+    """Start lightweight staff/voice manifests before the user opens the sections."""
+    service = _service()
+    for section in ("staff", "voices"):
+        key = progress_key(token, section)
+        progress = state.people_loads.get(key)
+        if progress is None:
+            progress = service.build_progress(anime, section)
+            state.people_loads[key] = progress
+        if not progress.sources:
+            continue
+        service.start_manifest_loads(anime, section, progress)
+        _track_prefetch(
+            asyncio.create_task(_prefetch_section(anime, section, progress))
+        )
 
 
 async def ensure_lazy_people(
@@ -68,7 +113,6 @@ async def ensure_lazy_people(
 ) -> PeopleLoadProgress:
     key = progress_key(token, section)
     progress = state.people_loads.get(key)
-    created = progress is None
     service = _service()
     if progress is None:
         progress = service.build_progress(anime, section)
@@ -76,20 +120,18 @@ async def ensure_lazy_people(
     if not progress.sources:
         return progress
 
-    if created:
-        if not all_people(anime, section):
-            loading_key = "loading_staff" if section == "staff" else "loading_voices"
-            try:
-                await message.edit_text(
-                    text=text("people", loading_key, locale=locale),
-                    reply_markup=None,
-                )
-            except Exception:
-                logging.debug(
-                    "Could not show progressive people loading state",
-                    exc_info=True,
-                )
-        service.start_initial_batches(anime, section, progress)
+    if not service.scope_manifest_complete(progress, None):
+        loading_key = "loading_staff" if section == "staff" else "loading_voices"
+        try:
+            await message.edit_text(
+                text=text("people", loading_key, locale=locale),
+                reply_markup=None,
+            )
+        except Exception:
+            logging.debug(
+                "Could not show people manifest loading state",
+                exc_info=True,
+            )
 
     return await service.ensure(
         anime,
@@ -108,7 +150,9 @@ __all__ = [
     "progress_key",
     "scope_has_more",
     "scope_has_running",
+    "scope_manifest_complete",
     "scope_total_hint",
     "settle_started_batches",
     "source_names",
+    "start_people_prefetch",
 ]

@@ -15,7 +15,7 @@
 
 `anime-db-bot` は複数のアニメデータベースを検索し、確認済みの cross-database identity を解決して、特定の外部データベースを唯一の正解とせずに 1 つの統合カードを生成します。
 
-設計上、**search**、**identity**、**mappings**、**metadata sources**、**aggregation**、**localization**、**platform UI** は明確に分離されています。スタッフのポートレート、キャラクター、トレーラー、エピソードなど重いデータは、ユーザーが該当セクションを開いたときだけ遅延読み込みされます。
+設計上、**search**、**identity**、**mappings**、**metadata sources**、**aggregation**、**localization**、**platform UI** は明確に分離されています。staff/seiyuu は ID・名前・役割だけの軽量 manifest を先に取得して正確な total を確定し、portrait は global batch（既定 50 件）で段階的に enrichment します。
 
 ## 主な特徴
 
@@ -23,7 +23,7 @@
 - **Source-independent identity** — `AnimeIdentity` は外部 ID を対等な関連として保持し、グローバルな primary ID を持ちません。
 - **保守的な cross-ID mapping** — runtime mapping は direct-only / conflict-aware で、provenance と監査可能な manual override を保持します。
 - **統合 metadata card** — 成功した metadata source の値を正規化・統合しつつ、source provenance を維持します。
-- **Lazy sections** — people/portraits、characters、screenshots、detailed popularity、descriptions/background、trailers、episodes は必要になった時だけ取得します。
+- **Manifest + lazy enrichment** — staff/seiyuu の ID・名前・役割を軽量 manifest として prefetch し、portrait は global batch（既定 50 件）で追加します。characters、screenshots、detailed popularity、descriptions/background、trailers、episodes は引き続き lazy です。
 - **共通 resilience layer** — typed source errors、retry、circuit breaker、half-open recovery、rate limits、shared HTTP lifecycle。
 - **永続化された platform-scoped settings** — user locale、known users、moderation state を SQLite に保存します。
 - **3 言語 UI** — English が default/fallback、Russian と Japanese は `/settings` から選択できます。

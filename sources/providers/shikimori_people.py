@@ -6,10 +6,16 @@ import logging
 import time
 from typing import Any
 
-from core.canonicalization import voice_role_token
+from core.canonicalization import (
+    VOICE_OF_PREFIX,
+    normalize_key,
+    person_identity_keys,
+    voice_role_token,
+)
 from core.http_client import http_request
 from core.http_config import USER_AGENT
 from core.models import CharacterRecord, PersonCredit
+from core.people_loading import PeopleManifest, without_portraits
 from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse
 from sources.providers.shikimori_people_runtime import ShikimoriPeopleRuntime
@@ -437,3 +443,118 @@ async def _load_shikimori_voices(
     if ttl > 0:
         runtime.voice_cache.set(anime_id, copy.deepcopy(voices), ttl_seconds=ttl)
     return voices
+
+
+async def load_shikimori_voice_manifest(
+    anime_id: str,
+    settings: SourceSettings | None = None,
+    runtime: ShikimoriPeopleRuntime | None = None,
+) -> PeopleManifest:
+    """Use Shikimori as voice portrait enrichment, not roster authority.
+
+    Shikimori exposes voice actors on a character, not as an anime-specific
+    person-role edge. A full character crawl can therefore include actors from
+    other adaptations of the same character and inflate the anime roster. The
+    exact roster is built from anime-scoped providers; Shikimori enriches that
+    verified roster in bounded portrait batches.
+    """
+    del anime_id, settings, runtime
+    return PeopleManifest(portrait_only=True)
+
+
+def _voice_character_keys(people: list[PersonCredit]) -> set[str]:
+    result: set[str] = set()
+    for person in people:
+        for role in person.roles:
+            cleaned = str(role or "").strip()
+            if not cleaned.startswith(VOICE_OF_PREFIX):
+                continue
+            key = normalize_key(cleaned.removeprefix(VOICE_OF_PREFIX))
+            if key:
+                result.add(key)
+    return result
+
+
+def _matching_character_ids(
+    roles: list[dict[str, Any]],
+    character_keys: set[str],
+) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for entry in roles:
+        raw = entry.get("character")
+        if not isinstance(raw, dict) or not raw:
+            continue
+        names = {
+            normalize_key(_clean_text(raw.get("name"))),
+            normalize_key(_clean_text(raw.get("russian"))),
+        }
+        if not (character_keys & {name for name in names if name}):
+            continue
+        character_id = _clean_text(raw.get("id"))
+        if character_id and character_id not in seen:
+            seen.add(character_id)
+            result.append(character_id)
+    return result
+
+
+def _merge_shikimori_candidate(
+    target: PersonCredit, candidate: PersonCredit
+) -> PersonCredit:
+    enriched = copy.deepcopy(target)
+    names = _dedupe(
+        [enriched.name, *enriched.aliases, candidate.name, *candidate.aliases]
+    )
+    if names:
+        enriched.name = names[0]
+        enriched.aliases = [
+            name for name in names[1:] if name.casefold() != enriched.name.casefold()
+        ]
+    enriched.external_ids.update(candidate.external_ids)
+    for source, urls in candidate.portraits.items():
+        values = _dedupe([*enriched.portraits.get(source, []), *urls])
+        if values:
+            enriched.portraits[source] = values
+    return enriched
+
+
+async def load_shikimori_voice_portraits(
+    anime_id: str,
+    people: list[PersonCredit],
+    settings: SourceSettings | None = None,
+    runtime: ShikimoriPeopleRuntime | None = None,
+) -> list[PersonCredit]:
+    """Match one verified voice batch to Shikimori and add its portraits."""
+    anime_id = str(anime_id or "").strip()
+    if not anime_id.isdigit() or not people:
+        return []
+    character_keys = _voice_character_keys(people)
+    if not character_keys:
+        return []
+
+    runtime = runtime or ShikimoriPeopleRuntime()
+    roles = await _rest_anime_roles(anime_id, settings)
+    character_ids = _matching_character_ids(roles, character_keys)
+    if not character_ids:
+        return []
+    characters = await _rest_character_details(character_ids, settings, runtime)
+    candidates = _voices_from_character_details(characters, settings)
+
+    candidate_keys = [
+        (candidate, person_identity_keys([candidate.name, *candidate.aliases]))
+        for candidate in candidates
+    ]
+    result: list[PersonCredit] = []
+    for target in people:
+        keys = person_identity_keys([target.name, *target.aliases])
+        match = next(
+            (
+                candidate
+                for candidate, candidate_names in candidate_keys
+                if keys & candidate_names
+            ),
+            None,
+        )
+        if match is not None:
+            result.append(_merge_shikimori_candidate(target, match))
+    return result

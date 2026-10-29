@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from aiogram.types import (
@@ -34,12 +33,6 @@ from bots.telegram.people.loading import (
     scope_has_more as _scope_has_more,
 )
 from bots.telegram.people.loading import (
-    scope_has_running as _scope_has_running,
-)
-from bots.telegram.people.loading import (
-    settle_started_batches as _settle_started_batches,
-)
-from bots.telegram.people.loading import (
     scope_total_hint as _scope_total_hint,
 )
 from bots.telegram.people.loading import (
@@ -59,14 +52,6 @@ from localization import text
 from services.users.settings import get_user_locale
 
 
-_BACKGROUND_PEOPLE_REFRESH_TASKS: set[asyncio.Task[None]] = set()
-
-
-def _track_background_refresh(task: asyncio.Task[None]) -> None:
-    _BACKGROUND_PEOPLE_REFRESH_TASKS.add(task)
-    task.add_done_callback(_BACKGROUND_PEOPLE_REFRESH_TASKS.discard)
-
-
 async def _render_people_view(
     state: TelegramCardState,
     message: Message,
@@ -78,7 +63,6 @@ async def _render_people_view(
     progress: _PeopleLoadProgress,
     *,
     locale: str,
-    initial_loading: bool,
 ) -> None:
     sources = _source_names(anime, section, progress)
     source: str | None = None
@@ -114,7 +98,6 @@ async def _render_people_view(
         locale=locale,
         source_names=sources,
         has_more=_scope_has_more(progress, source),
-        initial_loading=initial_loading,
         first_page=first_page,
     )
 
@@ -132,42 +115,6 @@ async def _render_people_view(
             reply_markup=keyboard,
             locale=locale,
         )
-
-
-async def _refresh_people_after_initial_batches(
-    state: TelegramCardState,
-    message: Message,
-    token: str,
-    anime: AggregatedAnime,
-    section: str,
-    source_key: str | None,
-    page: int,
-    progress: _PeopleLoadProgress,
-    revision: int,
-    *,
-    locale: str,
-) -> None:
-    try:
-        await _settle_started_batches(progress, None)
-        current = state.people_loads.get(_progress_key(token, section))
-        if current is not progress or progress.view_revision != revision:
-            return
-        await _render_people_view(
-            state,
-            message,
-            token,
-            anime,
-            section,
-            source_key,
-            page,
-            progress,
-            locale=locale,
-            initial_loading=False,
-        )
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logging.exception("Could not refresh people view after initial batches")
 
 
 async def _edit_people_view(
@@ -204,10 +151,6 @@ async def _edit_people_view(
         source=source,
         requested_page=int(page),
     )
-    progress.view_revision += 1
-    revision = progress.view_revision
-    initial_loading = existing_progress is None and _scope_has_running(progress, None)
-
     await _render_people_view(
         state,
         message,
@@ -218,26 +161,7 @@ async def _edit_people_view(
         page,
         progress,
         locale=locale,
-        initial_loading=initial_loading,
     )
-
-    if initial_loading:
-        _track_background_refresh(
-            asyncio.create_task(
-                _refresh_people_after_initial_batches(
-                    state,
-                    message,
-                    token,
-                    anime,
-                    section,
-                    source_key,
-                    page,
-                    progress,
-                    revision,
-                    locale=locale,
-                )
-            )
-        )
 
 
 def _parse_people_callback(raw: str) -> tuple[str, str, str | None, int] | None:
