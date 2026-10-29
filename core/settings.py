@@ -133,7 +133,8 @@ class SourceSettings:
     anidb_cache_dir: Path
     anidb_cache_ttl_seconds: float
     anisearch_api_url: str
-    anisearch_api_token: str
+    anisearch_app_id: str
+    anisearch_app_secret: str
     anisearch_request_timeout_seconds: float
     anisearch_cache_ttl_seconds: float
     skipdb_api_url: str
@@ -365,7 +366,8 @@ class AppSettings:
                     "ANISEARCH_API_URL",
                     "https://api.anisearch.com",
                 ).rstrip("/"),
-                anisearch_api_token=_raw(values, "ANISEARCH_API_TOKEN"),
+                anisearch_app_id=_raw(values, "ANISEARCH_APP_ID"),
+                anisearch_app_secret=_raw(values, "ANISEARCH_APP_SECRET"),
                 anisearch_request_timeout_seconds=_float(
                     values,
                     "ANISEARCH_REQUEST_TIMEOUT_SECONDS",

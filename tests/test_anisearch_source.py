@@ -256,7 +256,6 @@ class AniSearchSourceTests(unittest.IsolatedAsyncioTestCase):
         self.settings = AppSettings.from_env(
             {
                 "ANISEARCH_API_URL": "https://api.anisearch.test",
-                "ANISEARCH_API_TOKEN": "",
                 "ANISEARCH_CACHE_TTL_SECONDS": "0",
             }
         ).sources
@@ -345,6 +344,31 @@ class AniSearchSourceTests(unittest.IsolatedAsyncioTestCase):
             )
 
         request.assert_not_awaited()
+
+    async def test_read_only_database_request_never_sends_oauth_credentials(
+        self,
+    ) -> None:
+        settings = AppSettings.from_env(
+            {
+                "ANISEARCH_API_URL": "https://api.anisearch.test",
+                "ANISEARCH_APP_ID": "app-id",
+                "ANISEARCH_APP_SECRET": "app-secret",
+            }
+        ).sources
+        response = unittest.mock.Mock()
+        response.json.return_value = {"results": [_payload()]}
+        request = AsyncMock(return_value=response)
+        anisearch._LAST_NETWORK_REQUEST_AT = 0.0
+        with (
+            patch("sources.providers.anisearch.http_request", request),
+            patch("sources.providers.anisearch.wait_for_upstream", AsyncMock()),
+        ):
+            payload = await anisearch._paced_request(
+                "/v1/anime/5048/full", operation="full", settings=settings
+            )
+        self.assertIn("results", payload)
+        kwargs = request.await_args.kwargs
+        self.assertNotIn("headers", kwargs)
 
     async def test_missing_anisearch_identity_never_calls_network(self) -> None:
         loader = AsyncMock(return_value=_payload())
