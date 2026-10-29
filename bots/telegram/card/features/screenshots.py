@@ -8,11 +8,11 @@ from aiogram.types import InputRichMessage, Message
 from bots.telegram.callbacks import resolve_key_or_legacy_index
 from bots.telegram.card.runtime.state import AnimeCardSession
 from bots.telegram.card.ui.keyboards import navigation_keyboard, source_section_keyboard
-from bots.telegram.card.views.renderer import edit_standard_text
 from bots.telegram.card.ui.selectors import (
     ordered_mapping_items,
     source_section_options,
 )
+from bots.telegram.card.views.renderer import edit_standard_text
 from core.models import AggregatedAnime
 from localization import text
 from services.runtime.app_context import get_app_context
@@ -176,6 +176,7 @@ async def edit_screenshots_view(
             page,
             len(pages),
             locale=locale,
+            pagination_first=True,
         )
     else:
         keyboard = source_section_keyboard(
@@ -186,6 +187,7 @@ async def edit_screenshots_view(
             page,
             len(pages),
             locale=locale,
+            pagination_first=True,
         )
 
     try:

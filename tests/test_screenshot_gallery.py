@@ -92,6 +92,45 @@ class ScreenshotGalleryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("screenshot-9.jpg", html)
         self.assertNotIn("screenshot-1.jpg", html)
 
+    async def test_all_screenshots_put_pagination_above_sources(self) -> None:
+        session = self._session(17)
+        message = AsyncMock()
+
+        await edit_screenshots_view(
+            message,
+            "card-token",
+            session,
+            source_key=None,
+            page=0,
+            locale="ru",
+        )
+
+        keyboard = message.edit_text.await_args.kwargs["reply_markup"]
+        self.assertEqual(
+            [button.text for button in keyboard.inline_keyboard[0]], ["1/3", "▶️"]
+        )
+        self.assertIn("Все скриншоты", keyboard.inline_keyboard[1][0].text)
+
+    async def test_source_screenshots_put_pagination_above_sources(self) -> None:
+        session = self._session(17)
+        message = AsyncMock()
+
+        await edit_screenshots_view(
+            message,
+            "card-token",
+            session,
+            source_key="shikimori",
+            page=1,
+            locale="ru",
+        )
+
+        keyboard = message.edit_text.await_args.kwargs["reply_markup"]
+        self.assertEqual(
+            [button.text for button in keyboard.inline_keyboard[0]],
+            ["◀️", "2/3", "▶️"],
+        )
+        self.assertIn("Все скриншоты", keyboard.inline_keyboard[1][0].text)
+
 
 if __name__ == "__main__":
     unittest.main()
