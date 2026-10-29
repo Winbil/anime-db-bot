@@ -27,7 +27,7 @@
 - **共通 resilience layer** — typed source errors、retry、circuit breaker、half-open recovery、rate limits、shared HTTP lifecycle。
 - **永続化された platform-scoped settings** — user locale、known users、moderation state を SQLite に保存します。
 - **3 言語 UI** — English が default/fallback、Russian と Japanese は `/settings` から選択できます。
-- **Production-oriented checks** — Python 3.11–3.14 + experimental 3.15 probe、Ruff、formatter、mypy scope、coverage gate、ShellCheck。
+- **Production-oriented checks** — Python 3.11–3.14、Ruff、formatter、mypy scope、coverage gate、ShellCheck。
 
 ## Source capabilities
 
@@ -329,7 +329,7 @@ Manual directional override は `accept` / `reject`、author/reason/timestamp、
 .venv/bin/python -m pip check
 ```
 
-GitHub Actions では Python 3.11 / 3.12 / 3.13 / 3.14 の成功を必須とし、Python 3.15 は aiogram が対応するまで experimental compatibility probe として実行します。Quality job では Ruff、typed foundation formatter check、mypy、full test suite + coverage gate `>=70%`、ShellCheck も実行します。
+GitHub Actions では Python 3.11 / 3.12 / 3.13 / 3.14 の成功を必須とします。Quality job では Ruff、typed foundation formatter check、mypy、full test suite + coverage gate `>=70%`、ShellCheck も実行します。
 
 ## Contributing
 

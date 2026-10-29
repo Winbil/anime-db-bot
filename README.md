@@ -27,7 +27,7 @@ The project is designed around explicit boundaries between **search**, **identit
 - **Shared resilience layer** — typed source errors, retries, circuit breakers, half-open recovery, rate limits, and shared HTTP lifecycle.
 - **Persistent platform-scoped settings** — user locale, known users, and moderation state are stored in SQLite.
 - **Three UI languages** — English is the default/fallback locale; Russian and Japanese are fully selectable in `/settings`.
-- **Production-oriented checks** — Python 3.11–3.14 CI + experimental 3.15 probe, Ruff, formatter checks, mypy scope, coverage gate, and ShellCheck.
+- **Production-oriented checks** — Python 3.11–3.14 CI, Ruff, formatter checks, mypy scope, coverage gate, and ShellCheck.
 
 ## Source capabilities
 
@@ -348,7 +348,7 @@ Useful direct commands:
 .venv/bin/python -m pip check
 ```
 
-GitHub Actions requires Python 3.11, 3.12, 3.13, and 3.14 to pass; Python 3.15 runs as an experimental compatibility probe until the aiogram dependency supports it. The quality job additionally runs Ruff correctness checks, formatter checks for the typed foundation, mypy for the typed foundation, full tests with a coverage gate of at least 70%, and ShellCheck for shell scripts.
+GitHub Actions requires Python 3.11, 3.12, 3.13, and 3.14 to pass. The quality job additionally runs Ruff correctness checks, formatter checks for the typed foundation, mypy for the typed foundation, full tests with a coverage gate of at least 70%, and ShellCheck for shell scripts.
 
 ## Contributing
 
