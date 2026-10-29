@@ -7,9 +7,9 @@ from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message, TelegramObject
 
 from localization import text
-from services.access_control import is_telegram_admin
-from services.rate_limits import PersonalRateLimiter, get_personal_rate_limiter
-from services.user_settings import get_user_locale
+from services.users.access_control import is_telegram_admin
+from services.runtime.rate_limits import PersonalRateLimiter, get_personal_rate_limiter
+from services.users.settings import get_user_locale
 
 
 def _notice(locale: str, retry_after: int) -> str:

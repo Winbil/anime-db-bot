@@ -4,7 +4,7 @@ from core.capabilities import SourceCapability
 from core.contracts import AnimeSearchProvider
 from core.settings import SourceSettings
 from core.source_keys import SourceKey
-from sources.catalog import (
+from sources.runtime.catalog import (
     get_search_provider_map,
     get_search_providers,
     source_keys_with,

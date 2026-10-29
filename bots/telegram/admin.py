@@ -21,9 +21,9 @@ from mappings.resolver import (
     list_mapping_overrides,
     set_mapping_override,
 )
-from services.access_control import is_telegram_admin
-from services.bans import BanRecord, ban_user, get_active_ban, unban_user
-from services.user_settings import (
+from services.users.access_control import is_telegram_admin
+from services.users.bans import BanRecord, ban_user, get_active_ban, unban_user
+from services.users.settings import (
     get_user_locale,
     list_platform_user_ids,
     touch_platform_user,

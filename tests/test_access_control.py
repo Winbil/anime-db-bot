@@ -4,7 +4,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from services.access_control import (
+from services.users.access_control import (
     UserRole,
     is_admin,
     is_telegram_admin,

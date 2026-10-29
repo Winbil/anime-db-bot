@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 from core.identity import AnimeIdentity
 from core.models import PersonCredit
-from sources.anilist import AniListSource, BY_ID_QUERY, DETAIL_QUERY
+from sources.providers.anilist import AniListSource, BY_ID_QUERY, DETAIL_QUERY
 
 
 class AniListLazyPeopleTests(unittest.IsolatedAsyncioTestCase):
@@ -43,7 +43,7 @@ class AniListLazyPeopleTests(unittest.IsolatedAsyncioTestCase):
         }
 
         with patch(
-            "sources.anilist.graphql_request", new=AsyncMock(return_value=payload)
+            "sources.providers.anilist.graphql_request", new=AsyncMock(return_value=payload)
         ) as graphql:
             record = await AniListSource().get_details(AnimeIdentity({"mal": "37430"}))
 
@@ -61,7 +61,7 @@ class AniListLazyPeopleTests(unittest.IsolatedAsyncioTestCase):
         second = AniListSource()
 
         with patch(
-            "sources.anilist._all_staff",
+            "sources.providers.anilist._all_staff",
             new=AsyncMock(return_value=people),
         ) as load_staff:
             first_result = await first.load_staff(identity)
@@ -99,7 +99,7 @@ class AniListLazyPeopleTests(unittest.IsolatedAsyncioTestCase):
             }
         }
         with patch(
-            "sources.anilist.graphql_request", new=AsyncMock(return_value=payload)
+            "sources.providers.anilist.graphql_request", new=AsyncMock(return_value=payload)
         ) as graphql:
             record = await AniListSource().get_details(
                 AnimeIdentity({"anilist": "101280"})

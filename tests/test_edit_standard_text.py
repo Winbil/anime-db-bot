@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from bots.telegram.card.renderer import edit_standard_text
+from bots.telegram.card.views.renderer import edit_standard_text
 
 
 class EditStandardTextTests(unittest.IsolatedAsyncioTestCase):
@@ -11,7 +11,7 @@ class EditStandardTextTests(unittest.IsolatedAsyncioTestCase):
         message = AsyncMock()
         keyboard = object()
         with patch(
-            "bots.telegram.card.renderer.split_text",
+            "bots.telegram.card.views.renderer.split_text",
             return_value=["first", "second", "third"],
         ):
             await edit_standard_text(

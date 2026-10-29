@@ -4,7 +4,7 @@ import os
 import unittest
 
 from core.models import SearchCandidate, SearchPage
-from services.search import SearchService
+from services.search.service import SearchService
 
 
 class FakeProvider:

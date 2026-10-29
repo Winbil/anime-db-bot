@@ -6,7 +6,7 @@ from core.http_client import http_request
 from core.models import SearchCandidate, SearchPage
 from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse
-from services.rate_limits import wait_for_upstream
+from services.runtime.rate_limits import wait_for_upstream
 
 SHIKIMORI_MAX_PAGE_SIZE = 50
 

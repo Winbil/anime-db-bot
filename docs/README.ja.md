@@ -262,20 +262,36 @@ Personal Telegram limit は `(platform, user_id)` ごとに独立しています
 
 ```text
 anime-db-bot/
-├── bots/telegram/      # Telegram transport, handlers, card/search UI
-├── core/               # contracts, models, identity, settings, HTTP, errors
-├── localization/       # locale catalogs and canonical localization data
-├── mappings/           # cross-ID database, importers, resolver, updater
-├── search/             # search providers and registry
-├── services/           # application services and AppContext composition
-├── sources/            # metadata/lazy capability adapters
-├── tests/              # unit, integration, wiring and regression tests
-├── jikan_service/      # local Jikan/MAL supplement service
-├── scripts/            # setup, checks and maintenance helpers
-└── deploy/systemd/     # optional maintenance units
+├── bots/telegram/
+│   ├── card/            # card runtime, feature handlers, UI primitives, views
+│   │   ├── features/    # characters, episodes, screenshots, trailers
+│   │   ├── runtime/     # handlers, session state, card service wiring
+│   │   ├── ui/          # keyboards, selectors, constants
+│   │   └── views/       # renderers and section presentation
+│   ├── people/          # lazy people loading, portraits, views
+│   ├── search/          # Telegram search handlers/UI
+│   └── transports/      # official / self-hosted Bot API transports
+├── core/                # contracts, models, identity, settings, HTTP, errors
+├── localization/        # locale catalogs and canonical localization data
+├── mappings/            # cross-ID database, importers, resolver, updater
+├── search/              # provider-facing search adapters and registry
+├── services/
+│   ├── aggregation/     # metadata aggregation and merge policy
+│   ├── identity/        # direct lookup and cross-source identity resolution
+│   ├── media/           # characters, episodes, people, trailers
+│   ├── runtime/         # AppContext, source health, rate-limit runtime policy
+│   ├── search/          # search orchestration and query expansion
+│   └── users/           # access control, bans, persistent user settings
+├── sources/
+│   ├── providers/       # MAL, AniList, Shikimori, AniDB, Jikan adapters
+│   └── runtime/         # source catalog, registries, resilience wrappers
+├── tests/               # unit, integration, wiring, regression tests
+├── jikan_service/       # local Jikan/MAL supplement service
+├── scripts/             # setup, checks, maintenance helpers
+└── deploy/systemd/      # optional maintenance units
 ```
 
-`services/app_context.py` は application composition root です。Production runtime dependency は import-time singleton として作るのではなく、ここで lifecycle ownership を管理します。
+`services/runtime/app_context.py` は application composition root です。Production runtime dependency は import-time singleton として作るのではなく、ここで lifecycle ownership を管理します。
 
 詳細: [`docs/app-context.md`](app-context.md)
 

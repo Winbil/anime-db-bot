@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock
 
-from bots.telegram.card.screenshots import (
+from bots.telegram.card.features.screenshots import (
     SCREENSHOTS_PER_PAGE,
     edit_screenshots_view,
     screenshot_pages,

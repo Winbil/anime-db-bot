@@ -272,20 +272,36 @@ Personal Telegram limits are scoped per `(platform, user_id)`. Administrators ma
 
 ```text
 anime-db-bot/
-├── bots/telegram/      # Telegram transport, handlers, card/search UI
-├── core/               # contracts, models, identity, settings, HTTP, errors
-├── localization/       # locale catalogs and canonical localization data
-├── mappings/           # cross-ID database, importers, resolver, updater
-├── search/             # search providers and registry
-├── services/           # application services and AppContext composition
-├── sources/            # metadata/lazy capability adapters
-├── tests/              # unit, integration, wiring and regression tests
-├── jikan_service/      # local Jikan/MAL supplement service
-├── scripts/            # setup, checks and maintenance helpers
-└── deploy/systemd/     # optional maintenance units
+├── bots/telegram/
+│   ├── card/            # card runtime, feature handlers, UI primitives and views
+│   │   ├── features/    # characters, episodes, screenshots, trailers
+│   │   ├── runtime/     # handlers, session state and card service wiring
+│   │   ├── ui/          # callbacks-facing keyboards, selectors and constants
+│   │   └── views/       # renderers and section presentation
+│   ├── people/          # lazy people loading, portraits and views
+│   ├── search/          # Telegram search handlers/UI
+│   └── transports/      # official and self-hosted Bot API transports
+├── core/                # contracts, models, identity, settings, HTTP, errors
+├── localization/        # locale catalogs and canonical localization data
+├── mappings/            # cross-ID database, importers, resolver, updater
+├── search/              # provider-facing search adapters and registry
+├── services/
+│   ├── aggregation/     # metadata aggregation and merge policy
+│   ├── identity/        # direct lookup and cross-source identity resolution
+│   ├── media/           # characters, episodes, people and trailers
+│   ├── runtime/         # AppContext, source health and rate-limit runtime policy
+│   ├── search/          # search orchestration and query expansion
+│   └── users/           # access control, bans and persistent user settings
+├── sources/
+│   ├── providers/       # MAL, AniList, Shikimori, AniDB and Jikan adapters
+│   └── runtime/         # source catalog, registries and resilience wrappers
+├── tests/               # unit, integration, wiring and regression tests
+├── jikan_service/       # local Jikan/MAL supplement service
+├── scripts/             # setup, checks and maintenance helpers
+└── deploy/systemd/      # optional maintenance units
 ```
 
-`services/app_context.py` is the application composition root. Production runtime dependencies should be owned there rather than created as import-time service singletons.
+`services/runtime/app_context.py` is the application composition root. Production runtime dependencies should be owned there rather than created as import-time service singletons.
 
 More detail: [`docs/app-context.md`](docs/app-context.md).
 

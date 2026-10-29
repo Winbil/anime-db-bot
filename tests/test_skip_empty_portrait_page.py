@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from bots.telegram.card.characters import _keyboard as character_keyboard
-from bots.telegram.card.characters import _page_text as character_page_text
-from bots.telegram.card.state import AnimeCardSession
-from bots.telegram.people_portraits import _keyboard as people_keyboard
-from bots.telegram.people_portraits import _page_text as people_page_text
+from bots.telegram.card.features.characters import _keyboard as character_keyboard
+from bots.telegram.card.features.characters import _page_text as character_page_text
+from bots.telegram.card.runtime.state import AnimeCardSession
+from bots.telegram.people.portraits import _keyboard as people_keyboard
+from bots.telegram.people.portraits import _page_text as people_page_text
 from core.models import AggregatedAnime, CharacterRecord, PersonCredit
 
 

@@ -6,7 +6,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from services.user_settings import SQLiteUserSettingsStore
+from services.users.settings import SQLiteUserSettingsStore
 
 
 class UserSettingsStoreTests(unittest.TestCase):

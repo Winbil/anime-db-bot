@@ -8,7 +8,7 @@ import httpx
 
 from core.settings import get_settings
 from core.source_errors import SourceInvalidResponse
-from sources import anidb, anilist, shikimori_people
+from sources.providers import anidb, anilist, shikimori_people
 
 
 def _response(
@@ -33,7 +33,7 @@ class SharedHttpSourceTests(unittest.IsolatedAsyncioTestCase):
     async def test_anilist_invalid_json_is_typed_and_operation_scoped(self) -> None:
         response = _response(200, text="not-json")
         with patch(
-            "sources.anilist.http_request",
+            "sources.providers.anilist.http_request",
             new=AsyncMock(return_value=response),
         ) as request:
             with self.assertRaises(SourceInvalidResponse) as raised:
@@ -52,11 +52,11 @@ class SharedHttpSourceTests(unittest.IsolatedAsyncioTestCase):
         success = _response(200, json_data={"id": 1})
         with (
             patch(
-                "sources.shikimori_people._rate_limited_get",
+                "sources.providers.shikimori_people._rate_limited_get",
                 new=AsyncMock(side_effect=[limited, success]),
             ) as getter,
             patch(
-                "sources.shikimori_people.asyncio.sleep",
+                "sources.providers.shikimori_people.asyncio.sleep",
                 new=AsyncMock(),
             ) as sleeper,
         ):
@@ -71,7 +71,7 @@ class SharedHttpSourceTests(unittest.IsolatedAsyncioTestCase):
         response = _response(200, text='<anime id="1"><titles /></anime>')
         with (
             patch(
-                "sources.anidb.http_request",
+                "sources.providers.anidb.http_request",
                 new=AsyncMock(return_value=response),
             ) as request,
             patch.object(anidb, "_MIN_REQUEST_INTERVAL_SECONDS", 0.0),

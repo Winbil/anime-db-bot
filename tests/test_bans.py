@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from services.bans import SQLiteBanStore
+from services.users.bans import SQLiteBanStore
 
 
 class BanStoreTests(unittest.TestCase):

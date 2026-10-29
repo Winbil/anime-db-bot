@@ -6,17 +6,17 @@ import unittest
 from aiogram.types import InputRichMessage
 
 from bots.telegram.bot import _CallbackRoutingMiddleware, select_transport
-from bots.telegram.card import handlers as card_handlers
-from bots.telegram.card import state as card_state_module
-from bots.telegram.card.constants import SOURCE_SELECTABLE_SECTIONS
-from bots.telegram.card.state import TelegramCardState
-from bots.telegram.card.selectors import source_section_sources
-from bots.telegram import people_loading as people_loading_module
-from bots.telegram.people_portraits import (
+from bots.telegram.card.runtime import handlers as card_handlers
+from bots.telegram.card.runtime import state as card_state_module
+from bots.telegram.card.ui.constants import SOURCE_SELECTABLE_SECTIONS
+from bots.telegram.card.runtime.state import TelegramCardState
+from bots.telegram.card.ui.selectors import source_section_sources
+from bots.telegram.people import loading as people_loading_module
+from bots.telegram.people.portraits import (
     _sources_with_portraits,
     handle_people_callback,
 )
-from bots.telegram.search_ui import register_search_handlers
+from bots.telegram.search.handlers import register_search_handlers
 from bots.telegram.transports.official import OfficialTelegramTransport
 from bots.telegram.transports.tgapi import LocalTelegramTransport
 from core.canonicalization import (
@@ -41,14 +41,14 @@ from search.providers.anilist import AniListSearchProvider
 from search.providers.mal import MALSearchProvider
 from search.providers.shikimori import ShikimoriSearchProvider
 from search.registry import get_search_provider_map, get_search_providers
-from services.aggregator import AnimeAggregator, _merge_people
-from services.people_progress import PeopleLoadProgress
-from services.search import SearchService
-from sources.anilist import AniListSource
-from sources.mal import MALSource
-from sources.registry import get_sources
-from sources.shikimori import ShikimoriSource
-from sources.shikimori_people import _rest_voice_credits
+from services.aggregation.service import AnimeAggregator, _merge_people
+from services.media.people import PeopleLoadProgress
+from services.search.service import SearchService
+from sources.providers.anilist import AniListSource
+from sources.providers.mal import MALSource
+from sources.runtime.registry import get_sources
+from sources.providers.shikimori import ShikimoriSource
+from sources.providers.shikimori_people import _rest_voice_credits
 
 
 class StartupWiringTests(unittest.TestCase):

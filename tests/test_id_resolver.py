@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 from core.identity import AnimeIdentity
 from core.models import SearchCandidate, SearchPage
 from mappings.resolver import MappingResolver
-from services.id_resolver import IdentityResolver
+from services.identity.resolver import IdentityResolver
 
 
 class IdentityResolverTests(unittest.IsolatedAsyncioTestCase):

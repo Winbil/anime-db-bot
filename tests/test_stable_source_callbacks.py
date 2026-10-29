@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from bots.telegram.card.keyboards import (
+from bots.telegram.card.ui.keyboards import (
     description_selection_rows,
     source_section_selection_rows,
 )
-from bots.telegram.people_views import _keyboard as people_keyboard
+from bots.telegram.people.views import _keyboard as people_keyboard
 from core.models import AggregatedAnime, PersonCredit
 
 

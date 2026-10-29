@@ -6,11 +6,11 @@ from unittest.mock import patch
 
 from aiogram import Dispatcher
 
-from bots.telegram import search_ui
+from bots.telegram.search import handlers as search_ui
 from core.models import SearchCandidate
 from search.registry import get_search_provider_map, get_search_providers
-from services.direct_lookup import DirectIdLookupService
-from services.search import SearchService
+from services.identity.direct_lookup import DirectIdLookupService
+from services.search.service import SearchService
 
 
 class DummyDirectSource:

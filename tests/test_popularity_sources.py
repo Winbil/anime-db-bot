@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from sources.anilist import _record as anilist_record
-from sources.mal import _record as mal_record
-from sources.shikimori import _record as shikimori_record
+from sources.providers.anilist import _record as anilist_record
+from sources.providers.mal import _record as mal_record
+from sources.providers.shikimori import _record as shikimori_record
 
 
 class PopularitySourceParsingTests(unittest.TestCase):

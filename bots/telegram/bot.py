@@ -7,12 +7,12 @@ from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message
 
 from bots.telegram.admin import TelegramModerationMiddleware, register_admin_handlers
-from bots.telegram.card.handlers import build_dispatcher
-from bots.telegram.card.service import aggregate_and_send
-from bots.telegram.card.state import TelegramCardState
-from bots.telegram.people_portraits import handle_people_callback
+from bots.telegram.card.runtime.handlers import build_dispatcher
+from bots.telegram.card.runtime.service import aggregate_and_send
+from bots.telegram.card.runtime.state import TelegramCardState
+from bots.telegram.people.portraits import handle_people_callback
 from bots.telegram.rate_limit import TelegramRateLimitMiddleware
-from bots.telegram.search_ui import register_search_handlers
+from bots.telegram.search.handlers import register_search_handlers
 from bots.telegram.transports import TelegramTransport
 from bots.telegram.transports.official import OfficialTelegramTransport
 from bots.telegram.transports.tgapi import LocalTelegramTransport
@@ -21,9 +21,9 @@ from core.models import SearchCandidate
 from core.settings import TelegramSettings, get_settings
 from localization import text
 from mappings.runtime import periodic_mapping_updates
-from services.access_control import telegram_admin_ids
-from services.app_context import AppContext, activate_app_context
-from services.user_settings import get_user_locale
+from services.users.access_control import telegram_admin_ids
+from services.runtime.app_context import AppContext, activate_app_context
+from services.users.settings import get_user_locale
 
 
 def select_transport(settings: TelegramSettings | None = None) -> TelegramTransport:

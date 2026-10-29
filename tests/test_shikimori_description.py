@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from sources.shikimori import _clean_description, _record
+from sources.providers.shikimori import _clean_description, _record
 
 
 class ShikimoriDescriptionTests(unittest.TestCase):

@@ -5,7 +5,7 @@ import unittest
 from core.capabilities import SourceCapability
 from core.source_keys import SourceKey, normalize_source_key
 from search.registry import DEFAULT_SEARCH_PROVIDER_KEYS
-from sources.catalog import (
+from sources.runtime.catalog import (
     SOURCE_CATALOG,
     descriptor_for,
     get_episode_sources,

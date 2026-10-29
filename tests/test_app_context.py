@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import unittest
 
-from bots.telegram.card import service as card_service
-from services import bans as bans_service
-from services import rate_limits as rate_limits_service
-from services import user_settings as user_settings_service
+from bots.telegram.card.runtime import service as card_service
+from services.users import bans as bans_service
+from services.runtime import rate_limits as rate_limits_service
+from services.users import settings as user_settings_service
 from core.settings import AppSettings
 from mappings import database as mapping_database_module
 from mappings import resolver as mapping_resolver_module
-from services.app_context import AppContext, activate_app_context, get_app_context
-from services.bans import get_ban_store
-from services.rate_limits import get_personal_rate_limiter, get_upstream_rate_limiter
-from services.user_settings import get_user_settings_store
+from services.runtime.app_context import AppContext, activate_app_context, get_app_context
+from services.users.bans import get_ban_store
+from services.runtime.rate_limits import get_personal_rate_limiter, get_upstream_rate_limiter
+from services.users.settings import get_user_settings_store
 
 
 class AppContextTests(unittest.IsolatedAsyncioTestCase):

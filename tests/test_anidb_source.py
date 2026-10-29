@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from core.identity import AnimeIdentity
 from core.settings import AppSettings
-from sources.anidb import AniDBSource
+from sources.providers.anidb import AniDBSource
 
 
 ANIDB_XML = '''<?xml version="1.0" encoding="UTF-8"?>
