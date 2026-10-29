@@ -1,8 +1,31 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 
 from core.models import PersonCredit
+
+
+@dataclass(slots=True)
+class PeopleManifest:
+    """Complete lightweight people index plus an optional local portrait pool.
+
+    ``people`` intentionally contains no portraits. ``portrait_pool`` may keep
+    source-returned rich records in memory when an upstream API cannot separate
+    identity/role metadata from portrait URLs. The Telegram/session layer never
+    exposes that pool until a bounded portrait batch is requested.
+    """
+
+    people: list[PersonCredit] = field(default_factory=list)
+    portrait_pool: list[PersonCredit] = field(default_factory=list)
+    portrait_only: bool = False
+
+
+def without_portraits(values: list[PersonCredit]) -> list[PersonCredit]:
+    result = copy.deepcopy(values)
+    for person in result:
+        person.portraits = {}
+    return result
 
 
 @dataclass(slots=True)

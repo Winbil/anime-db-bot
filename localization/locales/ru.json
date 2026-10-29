@@ -255,7 +255,6 @@
     "roles": "Роли: {roles}",
     "portraits": "Портреты: {sources}",
     "shown": "Показано {shown}/{total}",
-    "shown_loading": "Показано {shown} • загружается…",
     "loading_staff": "Загружаю авторов, команду и портреты…",
     "loading_voices": "Загружаю сэйю и портреты…",
     "source_unavailable": "Источник больше недоступен. Вернись в карточку и открой раздел снова."

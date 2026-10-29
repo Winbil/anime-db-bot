@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.identity import AnimeIdentity
+from core.people_loading import PeopleManifest, without_portraits
 from core.models import (
     AnimeRecord,
     CharacterRecord,
@@ -73,6 +74,46 @@ class PeopleRateLimitedSourceProxy(RateLimitedSourceProxy):
             return []
         await wait_for_upstream(self.source_key, "people")
         return await loader(identity)
+
+    async def load_staff_manifest(self, identity: AnimeIdentity) -> PeopleManifest:
+        loader = getattr(self._source, "load_staff_manifest", None)
+        if callable(loader):
+            await wait_for_upstream(self.source_key, "people")
+            return await loader(identity)
+        people = await self.load_staff(identity)
+        return PeopleManifest(
+            people=without_portraits(people),
+            portrait_pool=people,
+        )
+
+    async def load_voices_manifest(self, identity: AnimeIdentity) -> PeopleManifest:
+        loader = getattr(self._source, "load_voices_manifest", None)
+        if callable(loader):
+            await wait_for_upstream(self.source_key, "people")
+            return await loader(identity)
+        people = await self.load_voices(identity)
+        return PeopleManifest(
+            people=without_portraits(people),
+            portrait_pool=people,
+        )
+
+    async def load_staff_portraits(
+        self, identity: AnimeIdentity, people: list[PersonCredit]
+    ) -> list[PersonCredit]:
+        loader = getattr(self._source, "load_staff_portraits", None)
+        if not callable(loader):
+            return []
+        await wait_for_upstream(self.source_key, "people")
+        return await loader(identity, people)
+
+    async def load_voices_portraits(
+        self, identity: AnimeIdentity, people: list[PersonCredit]
+    ) -> list[PersonCredit]:
+        loader = getattr(self._source, "load_voices_portraits", None)
+        if not callable(loader):
+            return []
+        await wait_for_upstream(self.source_key, "people")
+        return await loader(identity, people)
 
     async def load_staff_batch(
         self,

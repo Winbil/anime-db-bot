@@ -255,7 +255,6 @@
     "roles": "Roles: {roles}",
     "portraits": "Portraits: {sources}",
     "shown": "Shown {shown}/{total}",
-    "shown_loading": "Shown {shown} • loading…",
     "loading_staff": "Loading staff, creators and portraits…",
     "loading_voices": "Loading voice actors and portraits…",
     "source_unavailable": "This source is no longer available. Go back to the card and open the section again."

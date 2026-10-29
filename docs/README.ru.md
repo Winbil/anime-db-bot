@@ -15,7 +15,7 @@
 
 `anime-db-bot` ищет аниме сразу в нескольких базах, разрешает подтверждённые cross-ID связи и собирает единую карточку, не назначая ни одну внешнюю базу главным источником истины.
 
-Архитектура разделяет **поиск**, **identity**, **mappings**, **metadata sources**, **aggregation**, **localization** и **platform UI**. Тяжёлые данные — портреты, персонажи, трейлеры и эпизоды — загружаются лениво только после соответствующего действия пользователя.
+Архитектура разделяет **поиск**, **identity**, **mappings**, **metadata sources**, **aggregation**, **localization** и **platform UI**. Для staff/сэйю заранее в фоне строится лёгкий manifest из ID, имени и роли с точным total, а портреты обогащаются отдельными глобальными batch по 50; остальные тяжёлые данные остаются lazy.
 
 ## Возможности
 
@@ -23,7 +23,7 @@
 - **Source-independent identity** — `AnimeIdentity` хранит равноправные external IDs без глобального primary ID.
 - **Консервативный cross-ID mapping** — runtime mapping direct-only, conflict-aware, с provenance и аудируемыми manual overrides.
 - **Агрегированная карточка** — данные успешных metadata sources нормализуются и объединяются с сохранением provenance.
-- **Lazy-разделы** — люди/портреты, персонажи, скриншоты, подробная популярность, описания/background, трейлеры и эпизоды загружаются по требованию.
+- **Manifest + lazy enrichment** — для staff/сэйю лёгкие ID/имена/роли prefetched для точного roster, портреты догружаются глобальными batch (по умолчанию 50), а персонажи, скриншоты, подробная популярность, descriptions/background, трейлеры и эпизоды остаются lazy.
 - **Общий resilience layer** — typed source errors, retry, circuit breaker, half-open recovery, rate limits и shared HTTP lifecycle.
 - **Persistent platform-scoped settings** — locale, known users и moderation state хранятся в SQLite.
 - **Три языка UI** — английский является default/fallback, русский и японский выбираются через `/settings`.

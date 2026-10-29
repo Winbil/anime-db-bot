@@ -22,7 +22,7 @@ from core.models import (
     PersonCredit,
     PopularityStats,
 )
-from core.people_loading import PeopleBatch
+from core.people_loading import PeopleBatch, PeopleManifest
 from core.settings import SourceSettings, get_settings
 from core.temporal import PartialDate, parse_datetime, parse_partial_date
 from core.source_errors import SourceInvalidResponse
@@ -603,6 +603,30 @@ class ShikimoriSource:
 
         return await _load_shikimori_voices(
             anime_id, self._settings, self._people_runtime
+        )
+
+    async def load_voices_manifest(self, identity: AnimeIdentity) -> PeopleManifest:
+        anime_id = self._anime_id(identity)
+        if not anime_id.isdigit():
+            return PeopleManifest()
+        from sources.providers.shikimori_people import load_shikimori_voice_manifest
+
+        return await load_shikimori_voice_manifest(
+            anime_id, self._settings, self._people_runtime
+        )
+
+    async def load_voices_portraits(
+        self,
+        identity: AnimeIdentity,
+        people: list[PersonCredit],
+    ) -> list[PersonCredit]:
+        anime_id = self._anime_id(identity)
+        if not anime_id.isdigit():
+            return []
+        from sources.providers.shikimori_people import load_shikimori_voice_portraits
+
+        return await load_shikimori_voice_portraits(
+            anime_id, people, self._settings, self._people_runtime
         )
 
     async def load_staff_batch(
