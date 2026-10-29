@@ -27,7 +27,7 @@
 - **Общий resilience layer** — typed source errors, retry, circuit breaker, half-open recovery, rate limits и shared HTTP lifecycle.
 - **Persistent platform-scoped settings** — locale, known users и moderation state хранятся в SQLite.
 - **Три языка UI** — английский является default/fallback, русский и японский выбираются через `/settings`.
-- **Production-oriented CI** — Python 3.11–3.14 + experimental 3.15 probe, Ruff, formatter, mypy scope, coverage gate и ShellCheck.
+- **Production-oriented CI** — Python 3.11–3.14, Ruff, formatter, mypy scope, coverage gate и ShellCheck.
 
 ## Возможности источников
 
@@ -329,7 +329,7 @@ Manual directional overrides поддерживают `accept`/`reject`, author/
 .venv/bin/python -m pip check
 ```
 
-GitHub Actions требует успешное прохождение Python 3.11, 3.12, 3.13 и 3.14; Python 3.15 запускается как experimental compatibility probe, пока его не поддерживает зависимость aiogram. Quality job также запускает Ruff, formatter check typed foundation, mypy typed foundation, полный suite с coverage gate `>=70%` и ShellCheck.
+GitHub Actions требует успешное прохождение Python 3.11, 3.12, 3.13 и 3.14. Quality job также запускает Ruff, formatter check typed foundation, mypy typed foundation, полный suite с coverage gate `>=70%` и ShellCheck.
 
 ## Участие в разработке
 
