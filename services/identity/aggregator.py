@@ -10,14 +10,12 @@ from core.models import (
     AggregatedAnime,
     AnimeRecord,
     PersonCredit,
-    PopularityStats,
     SearchCandidate,
 )
 from core.score_summary import consensus_score, normalize_source_scores
 from localization import canonicalize_domain_value
 from services.aggregation.merge import (
     AggregationMergeSupport,
-    _best_text,
     _clean,
     _consensus_domain,
     _consensus_datetime,
@@ -29,7 +27,6 @@ from services.aggregation.merge import (
     _merge_broadcasts,
     _merge_people,
     _merge_season,
-    _merge_source_text,
     _merge_studios,
 )
 from services.identity.resolver import IdentityResolver
@@ -159,14 +156,11 @@ class AnimeAggregator(AggregationMergeSupport):
         titles: dict[str, str] = {}
         synonyms: list[str] = [candidate.title, *candidate.aliases]
         scores = dict(candidate.scores)
-        descriptions: dict[str, str] = {}
         urls: dict[str, str] = {}
-        background_values: list[str] = []
         titles_by_source: dict[str, dict[str, str]] = {}
         synonyms_by_source: dict[str, list[str]] = {}
         staff_by_source: dict[str, list[PersonCredit]] = {}
         voices_by_source: dict[str, list[PersonCredit]] = {}
-        screenshots_by_source: dict[str, list[str]] = {}
 
         for record in records:
             source_titles = {
@@ -190,10 +184,6 @@ class AnimeAggregator(AggregationMergeSupport):
             if source_voices:
                 voices_by_source[record.source] = source_voices
 
-            source_screenshots = _dedupe_strings(record.screenshots)
-            if source_screenshots:
-                screenshots_by_source[record.source] = source_screenshots
-
             for key, value in source_titles.items():
                 existing = titles.get(key)
                 if existing is None:
@@ -207,8 +197,6 @@ class AnimeAggregator(AggregationMergeSupport):
             if record.score is not None:
                 scores[record.source] = float(record.score)
 
-            _merge_source_text(descriptions, record.descriptions)
-            background_values.extend(record.backgrounds)
             urls.update(record.urls)
 
         chosen_titles = {value.casefold() for value in titles.values() if value}
@@ -242,21 +230,6 @@ class AnimeAggregator(AggregationMergeSupport):
                 if _clean(value)
             ]
         )
-        popularity_by_source: dict[str, PopularityStats] = {}
-        for record in records:
-            stats = PopularityStats(
-                rank=record.rank,
-                popularity_rank=record.popularity_rank,
-                list_users=record.list_users,
-                scoring_users=record.scoring_users,
-                favorites=record.favorites,
-                status_distribution=dict(record.status_distribution),
-                score_distribution=dict(record.score_distribution),
-                rankings=list(record.rankings),
-            )
-            if stats.has_data():
-                popularity_by_source[record.source] = stats
-
         scores = normalize_source_scores(scores)
 
         return AggregatedAnime(
@@ -282,7 +255,6 @@ class AnimeAggregator(AggregationMergeSupport):
             scores=scores,
             score_average=consensus_score(scores.values()),
             score_sources_count=len(scores),
-            popularity_by_source=popularity_by_source,
             genres=canonical_genres,
             studios=_merge_studios(records),
             licensors=_dedupe_strings(
@@ -294,9 +266,6 @@ class AnimeAggregator(AggregationMergeSupport):
             synonyms_by_source=synonyms_by_source,
             staff_by_source=staff_by_source,
             voices_by_source=voices_by_source,
-            screenshots_by_source=screenshots_by_source,
-            descriptions=descriptions,
-            background=_best_text(background_values),
             posters=_dedupe_strings(
                 [value for record in records for value in record.posters]
             ),

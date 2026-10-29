@@ -8,7 +8,9 @@ from sources.providers.jikan import JikanSource
 
 
 class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
-    async def test_jikan_uses_existing_mal_identity_without_new_identity_key(self) -> None:
+    async def test_jikan_uses_existing_mal_identity_without_new_identity_key(
+        self,
+    ) -> None:
         source = JikanSource()
         payload = {
             "page": 1,
@@ -29,7 +31,9 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        with patch("sources.providers.jikan._get", new=AsyncMock(return_value=payload)) as getter:
+        with patch(
+            "sources.providers.jikan._get", new=AsyncMock(return_value=payload)
+        ) as getter:
             page = await source.load_episode_page(AnimeIdentity({"mal": "123"}), page=1)
 
         args, kwargs = getter.await_args
@@ -87,7 +91,9 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
                 }
             ]
         }
-        with patch("sources.providers.jikan._get", new=AsyncMock(return_value=payload)) as getter:
+        with patch(
+            "sources.providers.jikan._get", new=AsyncMock(return_value=payload)
+        ) as getter:
             trailers = await source.load_trailers(AnimeIdentity({"mal": "123"}))
 
         args, kwargs = getter.await_args
@@ -105,35 +111,84 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
         payload = {
             "data": {
                 "licensors": ["Sentai Filmworks", "Sentai Filmworks", "Muse"],
-                "score_distribution": {"10": 120, "9": 80, "0": 999},
             }
         }
-        with patch("sources.providers.jikan._get", new=AsyncMock(return_value=payload)) as getter:
-            result = await source.load_metadata_supplement(AnimeIdentity({"mal": "123"}))
+        with patch(
+            "sources.providers.jikan._get", new=AsyncMock(return_value=payload)
+        ) as getter:
+            result = await source.load_metadata_supplement(
+                AnimeIdentity({"mal": "123"})
+            )
 
         args, kwargs = getter.await_args
-        self.assertEqual(args, ("/anime/123/supplement",))
+        self.assertEqual(args, ("/anime/123/licensors",))
         self.assertEqual(kwargs["operation"], "metadata")
         self.assertIs(kwargs["settings"], source._settings)
         self.assertEqual(result["licensors"], ["Sentai Filmworks", "Muse"])
-        self.assertEqual(result["score_distribution"], {10: 120, 9: 80})
+        self.assertNotIn("score_distribution", result)
+
+    async def test_popularity_supplement_uses_separate_lazy_endpoint(self) -> None:
+        source = JikanSource()
+        payload = {
+            "data": {
+                "score_distribution": {"10": 120, "9": 80, "0": 999},
+            }
+        }
+        with patch(
+            "sources.providers.jikan._get", new=AsyncMock(return_value=payload)
+        ) as getter:
+            result = await source.load_popularity_supplement(
+                AnimeIdentity({"mal": "123"})
+            )
+
+        args, kwargs = getter.await_args
+        self.assertEqual(args, ("/anime/123/popularity",))
+        self.assertEqual(kwargs["operation"], "popularity")
+        self.assertEqual(result, {10: 120, 9: 80})
 
     async def test_people_payload_maps_staff_and_japanese_voice_roles(self) -> None:
         source = JikanSource()
         payload = {
             "data": {
-                "staff": [{"person": {"mal_id": 1, "name": "Director Person", "image_url": "https://example.invalid/director.jpg"}, "roles": ["Director"]}],
+                "staff": [
+                    {
+                        "person": {
+                            "mal_id": 1,
+                            "name": "Director Person",
+                            "image_url": "https://example.invalid/director.jpg",
+                        },
+                        "roles": ["Director"],
+                    }
+                ],
                 "voices": [
-                    {"person": {"mal_id": 2, "name": "Voice Person", "image_url": "https://example.invalid/voice.jpg"}, "character": "Hero"},
-                    {"person": {"mal_id": 2, "name": "Voice Person", "image_url": "https://example.invalid/voice.jpg"}, "character": "Other Hero"},
+                    {
+                        "person": {
+                            "mal_id": 2,
+                            "name": "Voice Person",
+                            "image_url": "https://example.invalid/voice.jpg",
+                        },
+                        "character": "Hero",
+                    },
+                    {
+                        "person": {
+                            "mal_id": 2,
+                            "name": "Voice Person",
+                            "image_url": "https://example.invalid/voice.jpg",
+                        },
+                        "character": "Other Hero",
+                    },
                 ],
             }
         }
-        with patch("sources.providers.jikan._get", new=AsyncMock(return_value=payload)) as getter:
+        with patch(
+            "sources.providers.jikan._get", new=AsyncMock(return_value=payload)
+        ) as getter:
             staff = await source.load_staff(AnimeIdentity({"mal": "123"}))
             voices = await source.load_voices(AnimeIdentity({"mal": "123"}))
 
-        self.assertEqual(getter.await_count, 1, "staff/voices should share the people cache")
+        self.assertEqual(
+            getter.await_count, 1, "staff/voices should share the people cache"
+        )
         self.assertEqual(staff[0].roles, ["director"])
         self.assertEqual(staff[0].external_ids, {"mal": "1"})
         self.assertEqual(len(voices), 1)

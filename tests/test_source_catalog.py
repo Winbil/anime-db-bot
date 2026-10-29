@@ -41,6 +41,21 @@ class SourceCatalogTests(unittest.TestCase):
         self.assertTrue(descriptor.supports(SourceCapability.EPISODES))
         self.assertFalse(descriptor.supports(SourceCapability.SEARCH))
 
+    def test_lazy_section_capabilities_are_declared(self) -> None:
+        shikimori = descriptor_for(SourceKey.SHIKIMORI)
+        mal = descriptor_for(SourceKey.MAL)
+        anilist = descriptor_for(SourceKey.ANILIST)
+        anidb = descriptor_for(SourceKey.ANIDB)
+
+        self.assertTrue(shikimori.supports(SourceCapability.SCREENSHOTS))
+        self.assertTrue(shikimori.supports(SourceCapability.POPULARITY))
+        self.assertTrue(shikimori.supports(SourceCapability.DESCRIPTION))
+        self.assertTrue(mal.supports(SourceCapability.POPULARITY))
+        self.assertTrue(mal.supports(SourceCapability.DESCRIPTION))
+        self.assertTrue(anilist.supports(SourceCapability.POPULARITY))
+        self.assertTrue(anilist.supports(SourceCapability.DESCRIPTION))
+        self.assertTrue(anidb.supports(SourceCapability.DESCRIPTION))
+
     def test_declared_runtime_capabilities_have_factories(self) -> None:
         for registration in SOURCE_CATALOG:
             with self.subTest(source=registration.key):

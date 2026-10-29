@@ -62,9 +62,10 @@ def source_section_sources(anime: AggregatedAnime, section: str) -> list[str]:
 
 
 def description_sources(anime: AggregatedAnime) -> list[str]:
-    return [
-        source for source, _ in ordered_mapping_items(anime.descriptions, anime.sources)
-    ]
+    available = set(anime.descriptions) | set(anime.backgrounds_by_source)
+    ordered = [source for source in anime.sources if source in available]
+    ordered.extend(sorted(available - set(ordered)))
+    return ordered
 
 
 def source_options(source_names: list[str]) -> list[tuple[str, str]]:

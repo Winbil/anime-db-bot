@@ -3,7 +3,13 @@ from __future__ import annotations
 from typing import Any
 
 from core.identity import AnimeIdentity
-from core.models import AnimeRecord, CharacterRecord, PersonCredit
+from core.models import (
+    AnimeRecord,
+    CharacterRecord,
+    DescriptionDetails,
+    PersonCredit,
+    PopularityStats,
+)
 from services.runtime.rate_limits import wait_for_upstream
 
 
@@ -31,6 +37,27 @@ class PeopleRateLimitedSourceProxy(RateLimitedSourceProxy):
         if not callable(loader):
             return []
         await wait_for_upstream(self.source_key, "people")
+        return await loader(identity)
+
+    async def load_screenshots(self, identity: AnimeIdentity) -> list[str]:
+        loader = getattr(self._source, "load_screenshots", None)
+        if not callable(loader):
+            return []
+        await wait_for_upstream(self.source_key, "metadata")
+        return await loader(identity)
+
+    async def load_popularity(self, identity: AnimeIdentity) -> PopularityStats:
+        loader = getattr(self._source, "load_popularity", None)
+        if not callable(loader):
+            return PopularityStats()
+        await wait_for_upstream(self.source_key, "metadata")
+        return await loader(identity)
+
+    async def load_description(self, identity: AnimeIdentity) -> DescriptionDetails:
+        loader = getattr(self._source, "load_description", None)
+        if not callable(loader):
+            return DescriptionDetails()
+        await wait_for_upstream(self.source_key, "metadata")
         return await loader(identity)
 
     async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
@@ -91,6 +118,9 @@ def rate_limited_source(source: Any, source_key: str) -> RateLimitedSourceProxy:
             "load_voices",
             "load_staff_batch",
             "load_voices_batch",
+            "load_screenshots",
+            "load_popularity",
+            "load_description",
         )
     )
     proxy_type = PeopleRateLimitedSourceProxy if has_people else RateLimitedSourceProxy

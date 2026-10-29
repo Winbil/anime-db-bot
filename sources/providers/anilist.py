@@ -15,7 +15,14 @@ from core.canonicalization import (
 from core.http_client import http_request
 from core.identity import AnimeIdentity
 from core.http_config import USER_AGENT
-from core.models import AnimeRecord, CharacterRecord, PersonCredit, PopularityRanking
+from core.models import (
+    AnimeRecord,
+    CharacterRecord,
+    DescriptionDetails,
+    PersonCredit,
+    PopularityRanking,
+    PopularityStats,
+)
 from core.people_loading import PeopleBatch
 from core.settings import SourceSettings, get_settings
 from core.temporal import PartialDate, parse_partial_date
@@ -36,7 +43,6 @@ query AnimeDetails($idMal: Int!) {
     synonyms
     format
     status
-    description(asHtml: false)
     startDate { year month day }
     endDate { year month day }
     season
@@ -44,13 +50,6 @@ query AnimeDetails($idMal: Int!) {
     episodes
     duration
     averageScore
-    popularity
-    favourites
-    rankings { rank type year season allTime }
-    stats {
-      statusDistribution { status amount }
-      scoreDistribution { score amount }
-    }
     genres
     isAdult
     coverImage { extraLarge large medium }
@@ -70,7 +69,6 @@ query AnimeDetailsById($id: Int!) {
     synonyms
     format
     status
-    description(asHtml: false)
     startDate { year month day }
     endDate { year month day }
     season
@@ -78,6 +76,20 @@ query AnimeDetailsById($id: Int!) {
     episodes
     duration
     averageScore
+    genres
+    isAdult
+    coverImage { extraLarge large medium }
+    siteUrl
+    nextAiringEpisode { airingAt episode }
+    studios { nodes { name } }
+  }
+}
+"""
+
+POPULARITY_QUERY = """
+query AnimePopularity($id: Int!) {
+  Media(id: $id, type: ANIME) {
+    id
     popularity
     favourites
     rankings { rank type year season allTime }
@@ -85,12 +97,15 @@ query AnimeDetailsById($id: Int!) {
       statusDistribution { status amount }
       scoreDistribution { score amount }
     }
-    genres
-    isAdult
-    coverImage { extraLarge large medium }
-    siteUrl
-    nextAiringEpisode { airingAt episode }
-    studios { nodes { name } }
+  }
+}
+"""
+
+DESCRIPTION_QUERY = """
+query AnimeDescription($id: Int!) {
+  Media(id: $id, type: ANIME) {
+    id
+    description(asHtml: false)
   }
 }
 """
@@ -572,26 +587,10 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
     else:
         episodes_aired = None
 
-    description = _clean_description(raw.get("description"))
     site_url = _clean_text(raw.get("siteUrl"))
     format_raw = raw.get("format") or ""
     status_raw = raw.get("status") or ""
     season, season_year = _season(raw.get("season"), raw.get("seasonYear"))
-    status_distribution = _status_distribution(raw.get("stats"))
-    score_distribution = _score_distribution(raw.get("stats"))
-    rankings = _rankings(raw.get("rankings"))
-    all_time_rank = next(
-        (item.rank for item in rankings if item.kind == "rated" and item.all_time),
-        None,
-    )
-    all_time_popularity = next(
-        (item.rank for item in rankings if item.kind == "popular" and item.all_time),
-        None,
-    )
-    list_users = _int(raw.get("popularity"))
-    if list_users is None and status_distribution:
-        list_users = sum(status_distribution.values())
-    scoring_users = sum(score_distribution.values()) if score_distribution else None
 
     return AnimeRecord(
         source="AniList",
@@ -619,14 +618,6 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         released_on=_format_date(raw.get("endDate")),
         next_episode_at=_format_timestamp(next_airing.get("airingAt")),
         score=_score(raw.get("averageScore")),
-        rank=all_time_rank,
-        popularity_rank=all_time_popularity,
-        list_users=list_users,
-        scoring_users=scoring_users,
-        favorites=_int(raw.get("favourites")),
-        status_distribution=status_distribution,
-        score_distribution=score_distribution,
-        rankings=rankings,
         genres=_dedupe(
             [canonical_genre_token(value) for value in raw.get("genres") or []]
         ),
@@ -636,7 +627,6 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
                 for node in ((raw.get("studios") or {}).get("nodes") or [])
             ]
         ),
-        descriptions={"AniList": description} if description else {},
         posters=[poster] if poster else [],
         urls={"AniList": site_url} if site_url else {},
     )
@@ -703,6 +693,65 @@ class AniListSource:
         if not raw or str(raw.get("idMal") or "") != mal_id:
             return None
         return _record(raw)
+
+    async def load_popularity(self, identity: AnimeIdentity) -> PopularityStats:
+        media_id = str(identity.get(SourceKey.ANILIST) or "").strip()
+        if not media_id.isdigit():
+            return PopularityStats()
+        data = await graphql_request(
+            POPULARITY_QUERY,
+            {"id": int(media_id)},
+            self._settings,
+            operation="popularity",
+        )
+        raw = data.get("Media") or {}
+        if str(raw.get("id") or "") != media_id:
+            return PopularityStats()
+        status_distribution = _status_distribution(raw.get("stats"))
+        score_distribution = _score_distribution(raw.get("stats"))
+        rankings = _rankings(raw.get("rankings"))
+        all_time_rank = next(
+            (item.rank for item in rankings if item.kind == "rated" and item.all_time),
+            None,
+        )
+        all_time_popularity = next(
+            (
+                item.rank
+                for item in rankings
+                if item.kind == "popular" and item.all_time
+            ),
+            None,
+        )
+        list_users = _int(raw.get("popularity"))
+        if list_users is None and status_distribution:
+            list_users = sum(status_distribution.values())
+        scoring_users = sum(score_distribution.values()) if score_distribution else None
+        return PopularityStats(
+            rank=all_time_rank,
+            popularity_rank=all_time_popularity,
+            list_users=list_users,
+            scoring_users=scoring_users,
+            favorites=_int(raw.get("favourites")),
+            status_distribution=status_distribution,
+            score_distribution=score_distribution,
+            rankings=rankings,
+        )
+
+    async def load_description(self, identity: AnimeIdentity) -> DescriptionDetails:
+        media_id = str(identity.get(SourceKey.ANILIST) or "").strip()
+        if not media_id.isdigit():
+            return DescriptionDetails()
+        data = await graphql_request(
+            DESCRIPTION_QUERY,
+            {"id": int(media_id)},
+            self._settings,
+            operation="description",
+        )
+        raw = data.get("Media") or {}
+        if str(raw.get("id") or "") != media_id:
+            return DescriptionDetails()
+        description = _clean_description(raw.get("description"))
+        return DescriptionDetails(description=description or None)
 
     async def load_characters(self, identity: AnimeIdentity) -> list[CharacterRecord]:
         media_id = str(identity.get(SourceKey.ANILIST) or "").strip()

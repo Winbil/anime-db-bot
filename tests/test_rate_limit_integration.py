@@ -8,7 +8,10 @@ from bots.telegram.rate_limit import TelegramRateLimitMiddleware
 from core.identity import AnimeIdentity
 from core.people_loading import PeopleBatch
 from services.runtime.rate_limits import PersonalRateLimiter, RateLimitDecision
-from sources.runtime.rate_limited import PeopleRateLimitedSourceProxy, RateLimitedSourceProxy
+from sources.runtime.rate_limited import (
+    PeopleRateLimitedSourceProxy,
+    RateLimitedSourceProxy,
+)
 
 
 class TelegramRateLimitMiddlewareTests(unittest.IsolatedAsyncioTestCase):
@@ -56,6 +59,7 @@ class _PeopleSource:
         self.load_voices = AsyncMock(return_value=[])
         self.load_staff_batch = AsyncMock(return_value=PeopleBatch(complete=True))
         self.load_voices_batch = AsyncMock(return_value=PeopleBatch(complete=True))
+        self.load_screenshots = AsyncMock(return_value=[])
 
 
 class RateLimitedSourceProxyTests(unittest.IsolatedAsyncioTestCase):
@@ -64,7 +68,9 @@ class RateLimitedSourceProxyTests(unittest.IsolatedAsyncioTestCase):
         proxy = RateLimitedSourceProxy(source, "anilist")
         identity = AnimeIdentity.from_mapping({"anilist": "1"})
 
-        with patch("sources.runtime.rate_limited.wait_for_upstream", new=AsyncMock()) as wait:
+        with patch(
+            "sources.runtime.rate_limited.wait_for_upstream", new=AsyncMock()
+        ) as wait:
             await proxy.get_details(identity)
 
         wait.assert_awaited_once_with("anilist", "metadata")
@@ -75,18 +81,35 @@ class RateLimitedSourceProxyTests(unittest.IsolatedAsyncioTestCase):
         proxy = PeopleRateLimitedSourceProxy(source, "shikimori")
         identity = AnimeIdentity.from_mapping({"shikimori": "1"})
 
-        with patch("sources.runtime.rate_limited.wait_for_upstream", new=AsyncMock()) as wait:
+        with patch(
+            "sources.runtime.rate_limited.wait_for_upstream", new=AsyncMock()
+        ) as wait:
             await proxy.load_characters(identity)
 
         wait.assert_awaited_once_with("shikimori", "people")
         source.load_characters.assert_awaited_once_with(identity)
+
+    async def test_lazy_metadata_capability_uses_metadata_bucket(self) -> None:
+        source = _PeopleSource()
+        proxy = PeopleRateLimitedSourceProxy(source, "shikimori")
+        identity = AnimeIdentity.from_mapping({"shikimori": "1"})
+
+        with patch(
+            "sources.runtime.rate_limited.wait_for_upstream", new=AsyncMock()
+        ) as wait:
+            await proxy.load_screenshots(identity)
+
+        wait.assert_awaited_once_with("shikimori", "metadata")
+        source.load_screenshots.assert_awaited_once_with(identity)
 
     async def test_people_batch_proxy_preserves_portrait_limit(self) -> None:
         source = _PeopleSource()
         proxy = PeopleRateLimitedSourceProxy(source, "shikimori")
         identity = AnimeIdentity.from_mapping({"shikimori": "1"})
 
-        with patch("sources.runtime.rate_limited.wait_for_upstream", new=AsyncMock()) as wait:
+        with patch(
+            "sources.runtime.rate_limited.wait_for_upstream", new=AsyncMock()
+        ) as wait:
             await proxy.load_voices_batch(
                 identity,
                 cursor="8",

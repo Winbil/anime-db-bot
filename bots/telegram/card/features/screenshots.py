@@ -6,6 +6,7 @@ import logging
 from aiogram.types import InputRichMessage, Message
 
 from bots.telegram.callbacks import resolve_key_or_legacy_index
+from bots.telegram.card.runtime.state import AnimeCardSession
 from bots.telegram.card.ui.keyboards import navigation_keyboard, source_section_keyboard
 from bots.telegram.card.views.renderer import edit_standard_text
 from bots.telegram.card.ui.selectors import (
@@ -14,6 +15,7 @@ from bots.telegram.card.ui.selectors import (
 )
 from core.models import AggregatedAnime
 from localization import text
+from services.runtime.app_context import get_app_context
 
 logger = logging.getLogger(__name__)
 
@@ -117,15 +119,45 @@ def screenshot_text(
     return "\n".join(lines)
 
 
+async def ensure_screenshots_loaded(
+    message: Message,
+    session: AnimeCardSession,
+    *,
+    locale: str,
+) -> None:
+    if session.screenshots_loaded:
+        return
+    try:
+        await message.edit_text(
+            text=text("card", "screenshots_loading", locale=locale),
+            reply_markup=None,
+        )
+    except Exception:
+        logger.debug("Could not show screenshot loading state", exc_info=True)
+
+    result = await get_app_context().screenshot_service.load(session.anime.identity)
+    session.anime.screenshots_by_source = result.by_source
+    session.screenshot_errors = result.errors
+    session.screenshots_loaded = True
+
+
 async def edit_screenshots_view(
     message: Message,
     token: str,
-    anime: AggregatedAnime,
+    session: AnimeCardSession,
     *,
     source_key: str | None,
     page: int,
     locale: str,
 ) -> None:
+    try:
+        await ensure_screenshots_loaded(message, session, locale=locale)
+    except Exception:
+        logger.exception("Could not load screenshots")
+        session.screenshots_loaded = True
+        session.screenshot_errors = {"screenshots": "load failed"}
+
+    anime = session.anime
     source: str | None = None
     resolved_source_key: str | None = None
     if source_key is not None:

@@ -23,7 +23,7 @@
 - **Source-independent identity** — `AnimeIdentity` は外部 ID を対等な関連として保持し、グローバルな primary ID を持ちません。
 - **保守的な cross-ID mapping** — runtime mapping は direct-only / conflict-aware で、provenance と監査可能な manual override を保持します。
 - **統合 metadata card** — 成功した metadata source の値を正規化・統合しつつ、source provenance を維持します。
-- **Lazy sections** — people、portraits、characters、trailers、episodes は必要になった時だけ取得します。
+- **Lazy sections** — people/portraits、characters、screenshots、detailed popularity、descriptions/background、trailers、episodes は必要になった時だけ取得します。
 - **共通 resilience layer** — typed source errors、retry、circuit breaker、half-open recovery、rate limits、shared HTTP lifecycle。
 - **永続化された platform-scoped settings** — user locale、known users、moderation state を SQLite に保存します。
 - **3 言語 UI** — English が default/fallback、Russian と Japanese は `/settings` から選択できます。
@@ -31,14 +31,14 @@
 
 ## Source capabilities
 
-| Source | Search | Metadata | People | Characters | Trailers | Episodes |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: |
-| Shikimori | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| AniDB | — | ✓ | ✓ | ✓ | — | ✓ |
+| Source | Search | Metadata | People | Characters | Trailers | Episodes | Screenshots | Popularity | Description |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Shikimori | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
+| MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
+| AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
+| AniDB | — | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ |
 
-AniDB は optional で、`ANIDB_CLIENT` が設定されている場合のみ有効になります。Jikan は**独立した identity database ではありません**。公式 MAL API に存在しないデータを補うためのローカル MAL backend です。
+AniDB は optional で、`ANIDB_CLIENT` が設定されている場合のみ有効になります。Jikan は**独立した identity database ではありません**。公式 MAL API に存在しないデータを補うためのローカル MAL backend です。Main-card licensors と lazy popularity statistics は別々の local endpoint を使うため、score distribution の取得は initial card path から外れています。
 
 ## 仕組み
 
@@ -108,6 +108,9 @@ Hard cap によって upstream quota を保護します。最終件数を保証�
 - staff / creators;
 - オリジナルの日本語 voice actors;
 - characters / portraits;
+- screenshots;
+- detailed popularity / ranking statistics;
+- descriptions / source background;
 - trailers / promos;
 - episodes.
 
@@ -270,7 +273,7 @@ Personal Telegram limit は `(platform, user_id)` ごとに独立しています
 anime-db-bot/
 ├── bots/telegram/
 │   ├── card/            # card runtime, feature handlers, UI primitives, views
-│   │   ├── features/    # characters, episodes, screenshots, trailers
+│   │   ├── features/    # characters, descriptions, episodes, popularity, screenshots, trailers
 │   │   ├── runtime/     # handlers, session state, card service wiring
 │   │   ├── ui/          # keyboards, selectors, constants
 │   │   └── views/       # renderers and section presentation

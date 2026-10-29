@@ -191,7 +191,7 @@ class AggregatorIdentityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(candidate.external_ids, {"mal": "123"})
         self.assertEqual(anime.external_ids["shikimori"], "456")
 
-    async def test_screenshots_remain_source_scoped_and_deduplicated(self) -> None:
+    async def test_initial_aggregation_defers_screenshots(self) -> None:
         source = _ScreenshotSource()
 
         async def no_external_enrichment(
@@ -209,15 +209,9 @@ class AggregatorIdentityTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        self.assertEqual(
-            anime.screenshots_by_source["Shikimori"],
-            [
-                "https://example.invalid/1.jpg",
-                "https://example.invalid/2.jpg",
-            ],
-        )
+        self.assertEqual(anime.screenshots_by_source, {})
 
-    async def test_popularity_statistics_remain_source_scoped(self) -> None:
+    async def test_initial_aggregation_defers_popularity_statistics(self) -> None:
         first = _PopularitySource("FirstDB", list_users=1000, scoring_users=700)
         second = _PopularitySource("SecondDB", list_users=250, scoring_users=120)
 
@@ -236,10 +230,7 @@ class AggregatorIdentityTests(unittest.IsolatedAsyncioTestCase):
 
         anime = await aggregator.aggregate(candidate)
 
-        self.assertEqual(anime.popularity_by_source["FirstDB"].list_users, 1000)
-        self.assertEqual(anime.popularity_by_source["SecondDB"].list_users, 250)
-        self.assertEqual(anime.popularity_by_source["FirstDB"].scoring_users, 700)
-        self.assertEqual(anime.popularity_by_source["SecondDB"].scoring_users, 120)
+        self.assertEqual(anime.popularity_by_source, {})
 
     async def test_new_id_from_first_source_enables_second_pass_source(self) -> None:
         bridge = _AniListBridgeSource()

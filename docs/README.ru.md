@@ -23,7 +23,7 @@
 - **Source-independent identity** — `AnimeIdentity` хранит равноправные external IDs без глобального primary ID.
 - **Консервативный cross-ID mapping** — runtime mapping direct-only, conflict-aware, с provenance и аудируемыми manual overrides.
 - **Агрегированная карточка** — данные успешных metadata sources нормализуются и объединяются с сохранением provenance.
-- **Lazy-разделы** — люди, портреты, персонажи, трейлеры и эпизоды загружаются по требованию.
+- **Lazy-разделы** — люди/портреты, персонажи, скриншоты, подробная популярность, описания/background, трейлеры и эпизоды загружаются по требованию.
 - **Общий resilience layer** — typed source errors, retry, circuit breaker, half-open recovery, rate limits и shared HTTP lifecycle.
 - **Persistent platform-scoped settings** — locale, known users и moderation state хранятся в SQLite.
 - **Три языка UI** — английский является default/fallback, русский и японский выбираются через `/settings`.
@@ -31,14 +31,14 @@
 
 ## Возможности источников
 
-| Источник | Поиск | Metadata | Люди | Персонажи | Трейлеры | Эпизоды |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: |
-| Shikimori | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| AniDB | — | ✓ | ✓ | ✓ | — | ✓ |
+| Источник | Поиск | Metadata | Люди | Персонажи | Трейлеры | Эпизоды | Скриншоты | Популярность | Описание |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Shikimori | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
+| MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
+| AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
+| AniDB | — | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ |
 
-AniDB опционален и включается только при настроенном `ANIDB_CLIENT`. Jikan **не является отдельной identity-базой**: это локальный backend MAL для данных, которых нет в официальном MAL API.
+AniDB опционален и включается только при настроенном `ANIDB_CLIENT`. Jikan **не является отдельной identity-базой**: это локальный backend MAL для данных, которых нет в официальном MAL API. Licensors для main card и lazy popularity statistics теперь используют разные local endpoints, поэтому score distribution больше не парсится на initial card path.
 
 ## Как это работает
 
@@ -108,6 +108,9 @@ Hard caps защищают upstream quotas. Если бот не может до
 - staff и creators;
 - оригинальные японские voice actors;
 - characters и portraits;
+- screenshots;
+- подробная popularity/ranking statistics;
+- descriptions и source background;
 - trailers/promos;
 - episodes.
 

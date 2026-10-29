@@ -13,6 +13,9 @@ class SourceCapability(StrEnum):
     CHARACTERS = "characters"
     TRAILERS = "trailers"
     EPISODES = "episodes"
+    SCREENSHOTS = "screenshots"
+    POPULARITY = "popularity"
+    DESCRIPTION = "description"
 
 
 @dataclass(frozen=True, slots=True)

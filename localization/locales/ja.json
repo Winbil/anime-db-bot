@@ -242,7 +242,10 @@
     "trailer_kind": "種別: {value}",
     "trailer_hosting": "プラットフォーム: {value}",
     "section_characters": "キャラクター",
-    "characters_button": "キャラクター"
+    "characters_button": "キャラクター",
+    "description_loading": "説明を読み込み中…",
+    "popularity_loading": "人気統計を読み込み中…",
+    "screenshots_loading": "スクリーンショットを読み込み中…"
   },
   "people": {
     "staff": "スタッフ・制作陣",

@@ -196,8 +196,11 @@ class JikanSource:
 
     def __init__(self, settings: SourceSettings | None = None) -> None:
         self._settings = _settings(settings)
-        self._supplement_cache = BoundedTTLCache[str, dict[str, Any]](
-            max_entries=1000, name="jikan_supplement"
+        self._licensors_cache = BoundedTTLCache[str, dict[str, Any]](
+            max_entries=1000, name="jikan_licensors"
+        )
+        self._popularity_cache = BoundedTTLCache[str, dict[str, Any]](
+            max_entries=1000, name="jikan_popularity"
         )
         self._people_cache = BoundedTTLCache[str, dict[str, Any]](
             max_entries=1000, name="jikan_people"
@@ -229,18 +232,35 @@ class JikanSource:
         return payload
 
     async def load_metadata_supplement(self, identity: AnimeIdentity) -> dict[str, Any]:
+        """Load only metadata required by the main card."""
         mal_id = self._mal_id(identity)
         if not mal_id:
             return {}
         raw = await self._cached_payload(
-            self._supplement_cache,
+            self._licensors_cache,
             mal_id,
-            path=f"/anime/{mal_id}/supplement",
+            path=f"/anime/{mal_id}/licensors",
             operation="metadata",
             ttl_env="JIKAN_SUPPLEMENT_CACHE_TTL_SECONDS",
         )
         licensors = _dedupe(
             [value for value in raw.get("licensors") or [] if isinstance(value, str)]
+        )
+        return {"licensors": licensors}
+
+    async def load_popularity_supplement(
+        self, identity: AnimeIdentity
+    ) -> dict[int, int]:
+        """Load score distribution only when the popularity section is opened."""
+        mal_id = self._mal_id(identity)
+        if not mal_id:
+            return {}
+        raw = await self._cached_payload(
+            self._popularity_cache,
+            mal_id,
+            path=f"/anime/{mal_id}/popularity",
+            operation="popularity",
+            ttl_env="JIKAN_SUPPLEMENT_CACHE_TTL_SECONDS",
         )
         distribution: dict[int, int] = {}
         for raw_score, raw_votes in (raw.get("score_distribution") or {}).items():
@@ -253,7 +273,7 @@ class JikanSource:
                 and votes >= 0
             ):
                 distribution[score] = votes
-        return {"licensors": licensors, "score_distribution": distribution}
+        return distribution
 
     async def _load_people_payload(self, identity: AnimeIdentity) -> dict[str, Any]:
         mal_id = self._mal_id(identity)

@@ -242,7 +242,10 @@
     "trailer_kind": "Тип: {value}",
     "trailer_hosting": "Площадка: {value}",
     "section_characters": "Персонажи",
-    "characters_button": "Персонажи"
+    "characters_button": "Персонажи",
+    "description_loading": "Загружаю описания…",
+    "popularity_loading": "Загружаю статистику популярности…",
+    "screenshots_loading": "Загружаю скриншоты…"
   },
   "people": {
     "staff": "Авторы и команда",
