@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -67,6 +68,17 @@ class SourceHealthRegistry:
             return False
         if state.circuit_open_until > now:
             remaining = state.circuit_open_until - now
+            logging.warning(
+                "Source circuit blocked a call",
+                extra={
+                    "event": "source_health",
+                    "source": key,
+                    "operation": operation,
+                    "state": "open",
+                    "outcome": "blocked",
+                    "retry_after": round(remaining, 3),
+                },
+            )
             raise SourceCircuitOpen(
                 f"{source} circuit is open for another {remaining:.1f}s",
                 source=source,
@@ -76,6 +88,16 @@ class SourceHealthRegistry:
             )
         if state.circuit_open_until:
             if state.probe_in_flight:
+                logging.warning(
+                    "Source half-open probe already running",
+                    extra={
+                        "event": "source_health",
+                        "source": key,
+                        "operation": operation,
+                        "state": "half_open",
+                        "outcome": "blocked",
+                    },
+                )
                 raise SourceCircuitOpen(
                     f"{source} circuit is half-open; recovery probe is already running",
                     source=source,
@@ -83,17 +105,42 @@ class SourceHealthRegistry:
                     transient=True,
                 )
             state.probe_in_flight = True
+            logging.info(
+                "Source circuit entered half-open probe",
+                extra={
+                    "event": "source_health",
+                    "source": key,
+                    "operation": operation,
+                    "state": "half_open",
+                    "outcome": "probe",
+                },
+            )
             return True
         return False
 
     def record_success(self, source: str) -> None:
         key = self._key(source)
         state = self._states.setdefault(key, _MutableHealth())
+        previous_state = (
+            "open"
+            if state.circuit_open_until > self._clock()
+            else ("half_open" if state.circuit_open_until else "closed")
+        )
         state.consecutive_failures = 0
         state.circuit_open_until = 0.0
         state.last_error = None
         state.last_success_at = self._clock()
         state.probe_in_flight = False
+        if previous_state != "closed":
+            logging.info(
+                "Source circuit recovered",
+                extra={
+                    "event": "source_health",
+                    "source": key,
+                    "state": "closed",
+                    "outcome": "recovered",
+                },
+            )
 
     def record_failure(self, source: str, error: SourceError) -> None:
         key = self._key(source)
@@ -104,6 +151,17 @@ class SourceHealthRegistry:
         if not error.transient:
             state.consecutive_failures = 0
             state.circuit_open_until = 0.0
+            logging.debug(
+                "Non-transient source failure recorded",
+                extra={
+                    "event": "source_health",
+                    "source": key,
+                    "operation": error.info.operation,
+                    "state": "closed",
+                    "outcome": "non_transient_failure",
+                    "error_type": type(error).__name__,
+                },
+            )
             return
 
         state.consecutive_failures += 1
@@ -118,6 +176,18 @@ class SourceHealthRegistry:
         if state.consecutive_failures >= self.failure_threshold:
             cooldown = max(self.cooldown_seconds, float(error.retry_after or 0.0))
             state.circuit_open_until = self._clock() + cooldown
+            logging.warning(
+                "Source circuit opened",
+                extra={
+                    "event": "source_health",
+                    "source": key,
+                    "operation": error.info.operation,
+                    "state": "open",
+                    "outcome": "opened",
+                    "retry_after": round(cooldown, 3),
+                    "error_type": type(error).__name__,
+                },
+            )
 
     def release_probe(self, source: str) -> None:
         """Release an abandoned half-open probe without pretending it succeeded."""
@@ -138,6 +208,10 @@ class SourceHealthRegistry:
             probe_in_flight=state.probe_in_flight,
             observed_at=self._clock(),
         )
+
+    def snapshots(self) -> tuple[SourceHealthSnapshot, ...]:
+        """Return current states without exposing stored exception text to callers."""
+        return tuple(self.snapshot(source) for source in sorted(self._states))
 
     def reset(self) -> None:
         self._states.clear()

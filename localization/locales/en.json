@@ -113,7 +113,15 @@
     "mapping_confirm_owner": "This confirmation belongs to another administrator.",
     "mapping_cancelled": "Change cancelled.",
     "mapping_delete_missing": "That mapping override no longer exists.",
-    "mapping_mutation_failed": "Could not apply the change: {error}"
+    "mapping_mutation_failed": "Could not apply the change: {error}",
+    "source_health_title": "Source health states: {count}",
+    "source_health_empty": "No source health state has been recorded yet.",
+    "source_health_line": "{source}: {state}; failures={failures}; probe={probe}",
+    "source_health_state_closed": "closed",
+    "source_health_state_open": "open",
+    "source_health_state_half_open": "half-open",
+    "source_health_probe_yes": "yes",
+    "source_health_probe_no": "no"
   },
   "rate_limit": {
     "too_many_requests": "Error: Too Many Requests\nToo many requests. Try again in {seconds} seconds."

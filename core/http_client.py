@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import logging
+import time
 from contextvars import ContextVar
 from typing import Any, Iterator
 
@@ -46,6 +48,7 @@ class HttpClientPool:
         allowed_statuses: set[int] | frozenset[int] = frozenset(),
         **kwargs: Any,
     ) -> httpx.Response:
+        started = time.monotonic()
         try:
             response = await self._client(profile).request(
                 method,
@@ -54,17 +57,54 @@ class HttpClientPool:
                 **kwargs,
             )
         except Exception as exc:
-            raise normalize_source_error(
+            error = normalize_source_error(
                 exc,
                 source=profile,
                 operation=operation,
-            ) from exc
+            )
+            logging.warning(
+                "Source HTTP request failed",
+                extra={
+                    "event": "source_http_request",
+                    "source": profile,
+                    "operation": operation,
+                    "outcome": "error",
+                    "error_type": type(error).__name__,
+                    "duration_ms": round((time.monotonic() - started) * 1000, 3),
+                },
+            )
+            raise error from exc
+        duration_ms = round((time.monotonic() - started) * 1000, 3)
         if response.is_error and response.status_code not in allowed_statuses:
-            raise error_for_response(
+            error = error_for_response(
                 response,
                 source=profile,
                 operation=operation,
             )
+            logging.warning(
+                "Source HTTP request returned an error",
+                extra={
+                    "event": "source_http_request",
+                    "source": profile,
+                    "operation": operation,
+                    "outcome": "error",
+                    "error_type": type(error).__name__,
+                    "status_code": response.status_code,
+                    "duration_ms": duration_ms,
+                },
+            )
+            raise error
+        logging.info(
+            "Source HTTP request completed",
+            extra={
+                "event": "source_http_request",
+                "source": profile,
+                "operation": operation,
+                "outcome": "success",
+                "status_code": response.status_code,
+                "duration_ms": duration_ms,
+            },
+        )
         return response
 
     async def aclose(self) -> None:

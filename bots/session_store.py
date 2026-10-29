@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Iterator, MutableMapping
 from typing import Generic, TypeVar
@@ -23,20 +24,30 @@ class ExpiringSessionStore(MutableMapping[str, T], Generic[T]):
         *,
         max_entries: int,
         ttl_seconds: int | None = None,
+        name: str = "session",
     ) -> None:
         self._max_entries = max(1, int(max_entries))
+        self._name = str(name or "session").strip().casefold() or "session"
         self._ttl_seconds = max(1, int(ttl_seconds or session_ttl_seconds()))
         self._items: dict[str, tuple[float, T]] = {}
 
     def _prune(self) -> None:
         now = time.monotonic()
         expired = [
-            key
-            for key, (expires_at, _) in self._items.items()
-            if expires_at <= now
+            key for key, (expires_at, _) in self._items.items() if expires_at <= now
         ]
         for key in expired:
             self._items.pop(key, None)
+        if expired:
+            logging.debug(
+                "Session entries expired",
+                extra={
+                    "event": "session_expire",
+                    "cache": self._name,
+                    "evicted": len(expired),
+                    "size": len(self._items),
+                },
+            )
 
     def __getitem__(self, key: str) -> T:
         self._prune()
@@ -48,8 +59,20 @@ class ExpiringSessionStore(MutableMapping[str, T], Generic[T]):
         self._prune()
         self._items.pop(key, None)
         self._items[key] = (time.monotonic() + self._ttl_seconds, value)
+        evicted = 0
         while len(self._items) > self._max_entries:
             self._items.pop(next(iter(self._items)), None)
+            evicted += 1
+        if evicted:
+            logging.info(
+                "Session capacity eviction",
+                extra={
+                    "event": "session_eviction",
+                    "cache": self._name,
+                    "evicted": evicted,
+                    "size": len(self._items),
+                },
+            )
 
     def __delitem__(self, key: str) -> None:
         del self._items[key]

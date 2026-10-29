@@ -675,7 +675,7 @@ class AniListSource:
     def __init__(self, settings: SourceSettings | None = None) -> None:
         self._settings = _settings(settings)
         self._people_cache = BoundedTTLCache[tuple[str, str], list[PersonCredit]](
-            max_entries=1000
+            max_entries=1000, name="anilist_people"
         )
 
     async def get_details(self, identity: AnimeIdentity) -> AnimeRecord | None:

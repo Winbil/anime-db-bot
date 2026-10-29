@@ -101,14 +101,18 @@ class SearchUiState:
     def create(cls, input_ttl_seconds: int) -> "SearchUiState":
         input_ttl = max(60, int(input_ttl_seconds))
         return cls(
-            sessions=ExpiringSessionStore(max_entries=MAX_SEARCH_SESSIONS),
+            sessions=ExpiringSessionStore(
+                max_entries=MAX_SEARCH_SESSIONS, name="search_results"
+            ),
             scope_sessions=ExpiringSessionStore(
                 max_entries=MAX_SCOPE_SESSIONS,
                 ttl_seconds=input_ttl,
+                name="search_scope",
             ),
             pending_inputs=ExpiringSessionStore(
                 max_entries=MAX_PENDING_INPUTS,
                 ttl_seconds=input_ttl,
+                name="search_input",
             ),
         )
 
