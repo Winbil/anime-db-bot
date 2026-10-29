@@ -29,6 +29,7 @@ class SourceLoadProgress:
 @dataclass(slots=True)
 class PeopleLoadProgress:
     sources: dict[str, SourceLoadProgress] = field(default_factory=dict)
+    view_revision: int = 0
 
 
 class PeopleProgressService:
@@ -93,6 +94,13 @@ class PeopleProgressService:
         return any(
             not item.complete or item.task is not None
             for item in self._scope_progresses(progress, source)
+        )
+
+    def scope_has_running(
+        self, progress: PeopleLoadProgress, source: str | None
+    ) -> bool:
+        return any(
+            item.task is not None for item in self._scope_progresses(progress, source)
         )
 
     @staticmethod
