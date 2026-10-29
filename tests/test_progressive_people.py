@@ -203,9 +203,7 @@ class ProgressivePeopleKeyboardTests(unittest.TestCase):
         navigation = keyboard.inline_keyboard[0]
         callbacks = [button.callback_data for button in navigation]
         self.assertIn("av:token:voices:51", callbacks)
-        self.assertTrue(
-            any(button.text == "Показано 80 • загружено 130+" for button in navigation)
-        )
+        self.assertTrue(any(button.text == "Показано 80/130" for button in navigation))
 
     def test_next_button_disappears_when_loaded_data_is_complete(self) -> None:
         anime = AggregatedAnime(title="Example")
