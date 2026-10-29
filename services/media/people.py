@@ -217,6 +217,32 @@ class PeopleProgressService:
                 tasks.append(task)
         return tasks
 
+    async def settle_started_batches(
+        self,
+        progress: PeopleLoadProgress,
+        source: str | None = None,
+    ) -> None:
+        """Wait until every currently running first batch in the scope settles.
+
+        This is used before the first aggregate people render. It does not start
+        another progressive cursor batch; it only prevents the fastest source
+        from defining a temporary, misleading total while the other initial
+        source batches are still updating the same anime in the background.
+        """
+        tasks = [
+            item.task
+            for item in self._scope_progresses(progress, source)
+            if item.task is not None
+        ]
+        if not tasks:
+            return
+        try:
+            await asyncio.gather(*tasks)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception("Unexpected progressive people task failure")
+
     async def _await_one_scope_batch(
         self,
         anime: AggregatedAnime,

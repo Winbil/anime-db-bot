@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 
 from core.models import AggregatedAnime, PersonCredit
@@ -18,7 +19,8 @@ class _FakeAggregator:
     ) -> None:
         mapping = getattr(anime, f"{section}_by_source")
         mapping[source_name] = list(people)
-        setattr(anime, section, list(people))
+        merged = [person for values in mapping.values() for person in values]
+        setattr(anime, section, merged)
 
 
 class _BatchSource:
@@ -60,6 +62,32 @@ class _BatchSource:
         )
 
 
+class _ControlledBatchSource:
+    source_key = "anilist"
+
+    def __init__(self, name: str, release: asyncio.Event | None = None) -> None:
+        self.name = name
+        self.release = release
+        self.calls = 0
+
+    async def load_voices_batch(
+        self,
+        identity,
+        *,
+        cursor: str | None,
+        portrait_limit: int,
+    ) -> PeopleBatch:
+        del identity, cursor, portrait_limit
+        self.calls += 1
+        if self.release is not None:
+            await self.release.wait()
+        return PeopleBatch(
+            people=[PersonCredit(name=f"{self.name} Person")],
+            complete=True,
+            total_count=1,
+        )
+
+
 class PeopleProgressServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_progressive_loading_is_transport_independent(self) -> None:
         source = _BatchSource()
@@ -87,6 +115,41 @@ class PeopleProgressServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(source.calls, [(None, 2), ("1", 2)])
         self.assertEqual([person.name for person in anime.voices], ["First", "Second"])
+        self.assertEqual(service.scope_total_hint(anime, "voices", progress, None), 2)
+        self.assertFalse(service.scope_has_more(progress, None))
+
+    async def test_first_render_waits_for_initial_batch_from_every_source(self) -> None:
+        release = asyncio.Event()
+        fast = _ControlledBatchSource("Fast")
+        slow = _ControlledBatchSource("Slow", release)
+        service = PeopleProgressService(
+            [fast, slow],
+            _FakeAggregator(),  # type: ignore[arg-type]
+            portrait_batch_size=2,
+        )
+        anime = AggregatedAnime(
+            title="Example",
+            external_ids={"anilist": "1"},
+            sources=["Fast", "Slow"],
+        )
+        progress = service.build_progress(anime, "voices")
+        service.start_initial_batches(anime, "voices", progress)
+        settle_task = asyncio.create_task(service.settle_started_batches(progress))
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        self.assertEqual(fast.calls, 1)
+        self.assertEqual(slow.calls, 1)
+        self.assertFalse(
+            settle_task.done(),
+            "first render must not return while another initial source batch is running",
+        )
+
+        release.set()
+        await settle_task
+        await service.ensure(anime, "voices", progress, requested_page=0)
+
+        self.assertEqual(len(anime.voices), 2)
         self.assertEqual(service.scope_total_hint(anime, "voices", progress, None), 2)
         self.assertFalse(service.scope_has_more(progress, None))
 

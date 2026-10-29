@@ -80,6 +80,7 @@ async def ensure_lazy_people(
                     exc_info=True,
                 )
         service.start_initial_batches(anime, section, progress)
+        await service.settle_started_batches(progress, source)
 
     return await service.ensure(
         anime,
