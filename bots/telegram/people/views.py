@@ -170,7 +170,7 @@ def _keyboard(
         InlineKeyboardButton(
             text=text(
                 "people",
-                "shown_partial" if has_more else "shown",
+                "shown",
                 locale=locale,
                 shown=shown,
                 total=total,
