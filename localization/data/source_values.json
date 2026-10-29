@@ -157,5 +157,63 @@
         "fall": "fall"
       }
     }
+  },
+  "anisearch": {
+    "type": {
+      "domain": "anime_kind",
+      "values": {
+        "TV-Series": "tv",
+        "TV Series": "tv",
+        "Movie": "movie",
+        "OVA": "ova",
+        "ONA": "ona",
+        "Special": "special",
+        "TV-Special": "tv_special",
+        "TV Special": "tv_special",
+        "Music Video": "music_video",
+        "Web": "ona",
+        "Web-Series": "ona"
+      }
+    },
+    "status": {
+      "domain": "anime_status",
+      "values": {
+        "Completed": "finished",
+        "Ongoing": "airing",
+        "Upcoming": "announced",
+        "Announced": "announced",
+        "Cancelled": "cancelled",
+        "Canceled": "cancelled",
+        "Hiatus": "hiatus"
+      }
+    },
+    "season": {
+      "domain": "season",
+      "values": {
+        "Winter": "winter",
+        "Spring": "spring",
+        "Summer": "summer",
+        "Fall": "fall",
+        "Autumn": "fall"
+      }
+    },
+    "source": {
+      "domain": "source_material",
+      "values": {
+        "Original": "original",
+        "Manga": "manga",
+        "4-koma Manga": "four_koma_manga",
+        "Web Manga": "web_manga",
+        "Novel": "novel",
+        "Light Novel": "light_novel",
+        "Visual Novel": "visual_novel",
+        "Game": "game",
+        "Card Game": "card_game",
+        "Book": "book",
+        "Picture Book": "picture_book",
+        "Music": "music",
+        "Other": "other"
+      }
+    }
   }
 }

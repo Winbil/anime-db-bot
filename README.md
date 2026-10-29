@@ -6,7 +6,7 @@
 
 # anime-db-bot
 
-> Identity-native Telegram anime search and metadata aggregation across MyAnimeList/Jikan, AniList, Shikimori, and AniDB.
+> Identity-native Telegram anime search and metadata aggregation across MyAnimeList/Jikan, AniList, Shikimori, AniDB, and AniSearch.
 
 [![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
@@ -37,9 +37,10 @@ The project is designed around explicit boundaries between **search**, **identit
 | MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
 | AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
 | AniDB | — | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ |
+| AniSearch | — | ✓ | ✓ | ✓ | — | ✓ | — | ✓ | ✓ |
 | SkipDB (dormant) | — | — | — | — | — | — | — | — | — |
 
-AniDB is optional and is enabled only when `ANIDB_CLIENT` is configured. Jikan is **not** a separate identity database: it is a local MAL backend used for data that is not available through the official MAL API. Its main-card licensors and lazy popularity statistics use separate local endpoints, so score-distribution scraping is not on the initial card path. SkipDB support remains in the codebase as a dormant IMDb-backed provider, but it is intentionally not registered in the runtime because current anime skip-segment coverage is too small to justify exposing it in the UI. Its parser/settings/tests are kept so it can be re-enabled later if coverage improves. SkipDB data is served under ODbL 1.0 + reciprocity.
+AniDB is optional and is enabled only when `ANIDB_CLIENT` is configured. Jikan is **not** a separate identity database: it is a local MAL backend used for data that is not available through the official MAL API. Its main-card licensors and lazy popularity statistics use separate local endpoints, so score-distribution scraping is not on the initial card path. AniSearch is an identity-native Database API source resolved through confirmed `anisearch` mapping edges. Its public API does not expose normal title-query search, so it does not join the fast `/anime <title>` search path. Because AniSearch puts ID and `/full` in the same strict throttle group, the source performs one cached `/full` fetch per title and keeps heavy fields out of initial aggregation; people, characters, and episodes later reuse that same payload without another network wait. Only English and Japanese localized AniSearch data is consumed for now. Public no-token requests are paced to the documented 10-second ID-family interval (5 seconds with a valid token), and AniSearch-sourced synopsis text keeps the required direct AniSearch attribution link. SkipDB support remains in the codebase as a dormant IMDb-backed provider, but it is intentionally not registered in the runtime because current anime skip-segment coverage is too small to justify exposing it in the UI. Its parser/settings/tests are kept so it can be re-enabled later if coverage improves. SkipDB data is served under ODbL 1.0 + reciprocity.
 
 ## How it works
 
@@ -303,7 +304,7 @@ anime-db-bot/
 │   ├── search/          # search orchestration and query expansion
 │   └── users/           # access control, bans and persistent user settings
 ├── sources/
-│   ├── providers/       # MAL, AniList, Shikimori, AniDB and Jikan adapters
+│   ├── providers/       # MAL, AniList, Shikimori, AniDB, AniSearch and Jikan adapters
 │   └── runtime/         # source catalog, registries and resilience wrappers
 ├── tests/               # unit, integration, wiring and regression tests
 ├── jikan_service/       # local Jikan/MAL supplement service
@@ -385,6 +386,7 @@ Licensed under the [Apache License 2.0](LICENSE). You may use, modify, and distr
 - [AniList](https://anilist.co/)
 - [Shikimori](https://shikimori.one/)
 - [AniDB](https://anidb.net/)
+- [AniSearch](https://www.anisearch.com/) — Database API metadata; attribution and synopsis-link requirements apply
 - [SkipDB](https://skipdb.tv/) — skip-segment data under ODbL 1.0 + reciprocity
 
 Cross-ID mapping data is assembled from multiple community datasets. Each upstream service and dataset remains subject to its own terms, rate limits, and attribution requirements.

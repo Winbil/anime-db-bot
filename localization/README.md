@@ -5,7 +5,7 @@
 ## Files
 
 - `data/aliases.json` — aliases used to recognize equivalent genres, roles and studios. Aliases map input text to stable canonical keys and are independent from the UI language.
-- `data/source_values.json` — mappings from external API enum values (AniList, MyAnimeList, Shikimori) to stable canonical keys.
+- `data/source_values.json` — mappings from external API enum values (AniList, MyAnimeList, Shikimori, AniSearch) to stable canonical keys.
 - `locales/en.json` — English interface labels and the default/fallback locale.
 - `locales/ru.json` — Russian interface labels.
 - `locales/ja.json` — Japanese interface labels.

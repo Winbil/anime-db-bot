@@ -25,6 +25,11 @@ class AppSettingsTests(unittest.TestCase):
                 "MAL_CLIENT_ID": "mal-client",
                 "UPSTREAM_RATE_LIMIT_ANILIST_PER_MINUTE": "77",
                 "UPSTREAM_RATE_LIMIT_ANILIST_PEOPLE_PER_MINUTE": "13",
+                "ANISEARCH_API_URL": "https://anisearch.example/api/",
+                "ANISEARCH_API_TOKEN": "anisearch-token",
+                "ANISEARCH_REQUEST_TIMEOUT_SECONDS": "17.5",
+                "ANISEARCH_CACHE_TTL_SECONDS": "4321",
+                "UPSTREAM_RATE_LIMIT_ANISEARCH_PER_MINUTE": "5",
                 "SKIPDB_API_URL": "https://skipdb.example/api/",
                 "SKIPDB_SITE_URL": "https://skipdb.example/",
                 "SKIPDB_REQUEST_TIMEOUT_SECONDS": "12.5",
@@ -49,6 +54,13 @@ class AppSettingsTests(unittest.TestCase):
         self.assertEqual(settings.sources.mal_client_id, "mal-client")
         self.assertEqual(settings.rate_limits.source_limit("anilist"), 77)
         self.assertEqual(settings.rate_limits.operation_limit("anilist", "people"), 13)
+        self.assertEqual(
+            settings.sources.anisearch_api_url, "https://anisearch.example/api"
+        )
+        self.assertEqual(settings.sources.anisearch_api_token, "anisearch-token")
+        self.assertEqual(settings.sources.anisearch_request_timeout_seconds, 17.5)
+        self.assertEqual(settings.sources.anisearch_cache_ttl_seconds, 4321.0)
+        self.assertEqual(settings.rate_limits.source_limit("anisearch"), 5)
         self.assertEqual(settings.sources.skipdb_api_url, "https://skipdb.example/api")
         self.assertEqual(settings.sources.skipdb_site_url, "https://skipdb.example")
         self.assertEqual(settings.sources.skipdb_request_timeout_seconds, 12.5)

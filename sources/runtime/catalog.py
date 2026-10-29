@@ -20,6 +20,7 @@ from search.providers.shikimori import ShikimoriSearchProvider
 from services.runtime.source_health import SourceHealthRegistry
 from sources.providers.anidb import AniDBSource
 from sources.providers.anilist import AniListSource
+from sources.providers.anisearch import AniSearchSource
 from sources.providers.jikan import JikanSource
 from sources.providers.mal import MALSource
 from sources.providers.shikimori import ShikimoriSource
@@ -161,6 +162,20 @@ SOURCE_CATALOG: tuple[SourceRegistration, ...] = (
         episode_backends=(
             BackendRegistration(20, AniDBSource, enabled=AniDBSource.is_enabled),
         ),
+    ),
+    SourceRegistration(
+        descriptor=_descriptor(
+            SourceKey.ANISEARCH,
+            "AniSearch",
+            SourceCapability.METADATA,
+            SourceCapability.PEOPLE,
+            SourceCapability.CHARACTERS,
+            SourceCapability.EPISODES,
+            SourceCapability.POPULARITY,
+            SourceCapability.DESCRIPTION,
+        ),
+        metadata_factory=AniSearchSource,
+        episode_backends=(BackendRegistration(30, AniSearchSource),),
     ),
     # SkipDBSource intentionally stays dormant for now. Its provider, settings, and
     # tests remain in the codebase, but anime skip-segment coverage is currently too

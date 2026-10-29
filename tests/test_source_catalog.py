@@ -18,6 +18,7 @@ class SourceCatalogTests(unittest.TestCase):
     def test_source_key_is_string_compatible_and_normalized(self) -> None:
         self.assertEqual(SourceKey.MAL, "mal")
         self.assertEqual(normalize_source_key(" AniList "), SourceKey.ANILIST)
+        self.assertEqual(normalize_source_key(" AniSearch "), SourceKey.ANISEARCH)
         with self.assertRaises(ValueError):
             normalize_source_key("jikan")
 
@@ -46,6 +47,18 @@ class SourceCatalogTests(unittest.TestCase):
         self.assertTrue(descriptor.supports(SourceCapability.METADATA))
         self.assertTrue(descriptor.supports(SourceCapability.EPISODES))
         self.assertFalse(descriptor.supports(SourceCapability.SEARCH))
+
+    def test_anisearch_is_identity_native_but_not_a_search_provider(self) -> None:
+        descriptor = descriptor_for(SourceKey.ANISEARCH)
+        self.assertTrue(descriptor.supports(SourceCapability.METADATA))
+        self.assertTrue(descriptor.supports(SourceCapability.PEOPLE))
+        self.assertTrue(descriptor.supports(SourceCapability.CHARACTERS))
+        self.assertTrue(descriptor.supports(SourceCapability.EPISODES))
+        self.assertTrue(descriptor.supports(SourceCapability.POPULARITY))
+        self.assertTrue(descriptor.supports(SourceCapability.DESCRIPTION))
+        self.assertFalse(descriptor.supports(SourceCapability.SEARCH))
+        self.assertFalse(descriptor.supports(SourceCapability.TRAILERS))
+        self.assertFalse(descriptor.supports(SourceCapability.SCREENSHOTS))
 
     def test_lazy_section_capabilities_are_declared(self) -> None:
         shikimori = descriptor_for(SourceKey.SHIKIMORI)
@@ -79,6 +92,8 @@ class SourceCatalogTests(unittest.TestCase):
         self.assertEqual(trailer_keys, ["shikimori", "anilist", "jikan"])
         episode_keys = [source.backend_key for source in get_episode_sources()]
         self.assertEqual(episode_keys[0], "jikan")
+        self.assertIn("anisearch", episode_keys)
+        self.assertLess(episode_keys.index("jikan"), episode_keys.index("anisearch"))
 
 
 if __name__ == "__main__":
