@@ -3,7 +3,10 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bots.telegram.callbacks import KeyedPageCallback, SectionSourceCallback
-from bots.telegram.card.ui.constants import ALL_SOURCE_LABELS, SOURCE_SELECTABLE_SECTIONS
+from bots.telegram.card.ui.constants import (
+    ALL_SOURCE_LABELS,
+    SOURCE_SELECTABLE_SECTIONS,
+)
 from bots.telegram.card.ui.selectors import (
     description_source_options,
     ordered_mapping_items,
@@ -86,8 +89,34 @@ def navigation_keyboard(
     page_count: int,
     *,
     locale: str,
+    pagination_first: bool = False,
 ) -> InlineKeyboardMarkup | None:
     rows: list[list[InlineKeyboardButton]] = []
+
+    nav: list[InlineKeyboardButton] = []
+    if page_count > 1 and current_section not in {"description", "links"}:
+        if page > 0:
+            nav.append(
+                InlineKeyboardButton(
+                    text="◀️",
+                    callback_data=f"av:{token}:{current_section}:{page - 1}",
+                )
+            )
+        nav.append(
+            InlineKeyboardButton(
+                text=f"{page + 1}/{page_count}",
+                callback_data="noop",
+            )
+        )
+        if page + 1 < page_count:
+            nav.append(
+                InlineKeyboardButton(
+                    text="▶️",
+                    callback_data=f"av:{token}:{current_section}:{page + 1}",
+                )
+            )
+        if pagination_first:
+            rows.append(nav)
 
     if current_section == "description":
         rows.extend(description_selection_rows(token, anime))
@@ -114,28 +143,7 @@ def navigation_keyboard(
             ]
         )
 
-    if page_count > 1 and current_section not in {"description", "links"}:
-        nav: list[InlineKeyboardButton] = []
-        if page > 0:
-            nav.append(
-                InlineKeyboardButton(
-                    text="◀️",
-                    callback_data=f"av:{token}:{current_section}:{page - 1}",
-                )
-            )
-        nav.append(
-            InlineKeyboardButton(
-                text=f"{page + 1}/{page_count}",
-                callback_data="noop",
-            )
-        )
-        if page + 1 < page_count:
-            nav.append(
-                InlineKeyboardButton(
-                    text="▶️",
-                    callback_data=f"av:{token}:{current_section}:{page + 1}",
-                )
-            )
+    if nav and not pagination_first:
         rows.append(nav)
 
     return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
@@ -202,26 +210,10 @@ def source_section_keyboard(
     page_count: int,
     *,
     locale: str,
+    pagination_first: bool = False,
 ) -> InlineKeyboardMarkup:
-    rows = source_section_selection_rows(
-        token,
-        anime,
-        section,
-        locale=locale,
-        selected_source_key=source_key,
-    )
-
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text=text("common", "back", locale=locale),
-                callback_data=f"av:{token}:main:0",
-            )
-        ]
-    )
-
+    nav: list[InlineKeyboardButton] = []
     if page_count > 1:
-        nav: list[InlineKeyboardButton] = []
         if page > 0:
             nav.append(
                 InlineKeyboardButton(
@@ -246,6 +238,30 @@ def source_section_keyboard(
                     ).encode(),
                 )
             )
+
+    rows: list[list[InlineKeyboardButton]] = []
+    if nav and pagination_first:
+        rows.append(nav)
+    rows.extend(
+        source_section_selection_rows(
+            token,
+            anime,
+            section,
+            locale=locale,
+            selected_source_key=source_key,
+        )
+    )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=text("common", "back", locale=locale),
+                callback_data=f"av:{token}:main:0",
+            )
+        ]
+    )
+
+    if nav and not pagination_first:
         rows.append(nav)
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
