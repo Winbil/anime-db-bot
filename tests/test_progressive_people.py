@@ -149,7 +149,7 @@ class ShikimoriRoleIndexCacheTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ProgressivePeopleLoadingWiringTests(unittest.IsolatedAsyncioTestCase):
-    async def test_first_render_settles_all_started_initial_batches(self) -> None:
+    async def test_first_render_does_not_wait_for_all_initial_batches(self) -> None:
         state = TelegramCardState.create(60)
         anime = AggregatedAnime(title="Example")
         message = AsyncMock()
@@ -173,7 +173,7 @@ class ProgressivePeopleLoadingWiringTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(result, progress)
         service.start_initial_batches.assert_called_once_with(anime, "staff", progress)
-        service.settle_started_batches.assert_awaited_once_with(progress, None)
+        service.settle_started_batches.assert_not_awaited()
         service.ensure.assert_awaited_once_with(
             anime,
             "staff",
@@ -181,6 +181,41 @@ class ProgressivePeopleLoadingWiringTests(unittest.IsolatedAsyncioTestCase):
             source=None,
             requested_page=0,
         )
+
+    async def test_background_refresh_does_not_override_newer_navigation(self) -> None:
+        from bots.telegram.people.portraits import _refresh_people_after_initial_batches
+
+        state = TelegramCardState.create(60)
+        anime = AggregatedAnime(title="Example")
+        state.remember_anime(anime, 1)
+        progress = PeopleLoadProgress(view_revision=2)
+        state.people_loads["token:voices"] = progress
+        message = AsyncMock()
+
+        with (
+            patch(
+                "bots.telegram.people.portraits._settle_started_batches",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "bots.telegram.people.portraits._render_people_view",
+                new=AsyncMock(),
+            ) as render,
+        ):
+            await _refresh_people_after_initial_batches(
+                state,
+                message,
+                "token",
+                anime,
+                "voices",
+                None,
+                1,
+                progress,
+                1,
+                locale="ru",
+            )
+
+        render.assert_not_awaited()
 
 
 class ProgressivePeopleKeyboardTests(unittest.TestCase):
@@ -204,6 +239,30 @@ class ProgressivePeopleKeyboardTests(unittest.TestCase):
         callbacks = [button.callback_data for button in navigation]
         self.assertIn("av:token:voices:51", callbacks)
         self.assertTrue(any(button.text == "Показано 80/130" for button in navigation))
+
+    def test_initial_loading_counter_does_not_claim_final_total(self) -> None:
+        anime = AggregatedAnime(title="Example")
+        keyboard = _keyboard(
+            "token",
+            anime,
+            "voices",
+            None,
+            page=1,
+            shown=1,
+            total=51,
+            max_page=1,
+            locale="ru",
+            source_names=["Shikimori", "AniList"],
+            has_more=True,
+            initial_loading=True,
+        )
+
+        self.assertTrue(
+            any(
+                button.text == "Показано 1 • загружается…"
+                for button in keyboard.inline_keyboard[0]
+            )
+        )
 
     def test_next_button_disappears_when_loaded_data_is_complete(self) -> None:
         anime = AggregatedAnime(title="Example")

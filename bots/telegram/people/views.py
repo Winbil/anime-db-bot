@@ -156,6 +156,7 @@ def _keyboard(
     locale: str,
     source_names: list[str] | None = None,
     has_more: bool = False,
+    initial_loading: bool = False,
     first_page: int = 0,
 ) -> InlineKeyboardMarkup:
     nav: list[InlineKeyboardButton] = []
@@ -168,12 +169,16 @@ def _keyboard(
         )
     nav.append(
         InlineKeyboardButton(
-            text=text(
-                "people",
-                "shown",
-                locale=locale,
-                shown=shown,
-                total=total,
+            text=(
+                text("people", "shown_loading", locale=locale, shown=shown)
+                if initial_loading
+                else text(
+                    "people",
+                    "shown",
+                    locale=locale,
+                    shown=shown,
+                    total=total,
+                )
             ),
             callback_data="noop",
         )

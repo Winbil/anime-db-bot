@@ -36,6 +36,16 @@ def scope_has_more(progress: PeopleLoadProgress, source: str | None) -> bool:
     return _service().scope_has_more(progress, source)
 
 
+def scope_has_running(progress: PeopleLoadProgress, source: str | None) -> bool:
+    return _service().scope_has_running(progress, source)
+
+
+async def settle_started_batches(
+    progress: PeopleLoadProgress, source: str | None = None
+) -> None:
+    await _service().settle_started_batches(progress, source)
+
+
 def scope_total_hint(
     anime: AggregatedAnime,
     section: str,
@@ -80,7 +90,6 @@ async def ensure_lazy_people(
                     exc_info=True,
                 )
         service.start_initial_batches(anime, section, progress)
-        await service.settle_started_batches(progress, source)
 
     return await service.ensure(
         anime,
@@ -98,6 +107,8 @@ __all__ = [
     "ensure_lazy_people",
     "progress_key",
     "scope_has_more",
+    "scope_has_running",
     "scope_total_hint",
+    "settle_started_batches",
     "source_names",
 ]
