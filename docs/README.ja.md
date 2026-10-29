@@ -37,8 +37,11 @@
 | MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
 | AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
 | AniDB | — | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ |
+| SkipDB | — | — | — | — | — | ✓ | — | — | — |
 
 AniDB は optional で、`ANIDB_CLIENT` が設定されている場合のみ有効になります。Jikan は**独立した identity database ではありません**。公式 MAL API に存在しないデータを補うためのローカル MAL backend です。Main-card licensors と lazy popularity statistics は別々の local endpoint を使うため、score distribution の取得は initial card path から外れています。
+
+SkipDBはIMDbベースの遅延エピソードbackendです。確認済みの`tmdb_tv`/`tmdb_movie`はSkipDB自身のTMDB→IMDbリダイレクトで解決し、season/episodeとintro/recap/outro/previewのタイムコードを取得します。検索やinitial metadataには参加しません。SkipDBデータはODbL 1.0 + reciprocityです。
 
 ## 仕組み
 
@@ -365,5 +368,6 @@ Pull request を歓迎します。変更を送る前に [CONTRIBUTING.md](../CON
 - [AniList](https://anilist.co/)
 - [Shikimori](https://shikimori.one/)
 - [AniDB](https://anidb.net/)
+- [SkipDB](https://skipdb.tv/) — skip-segment data under ODbL 1.0 + reciprocity
 
 Cross-ID mapping は複数の community dataset から構築されます。各 upstream service / dataset には、それぞれ独自の terms、rate limit、attribution requirement が適用されます。

@@ -18,6 +18,13 @@ class EpisodeService:
     def sources(self) -> tuple[AnimeEpisodeSource, ...]:
         return self._sources
 
+    @staticmethod
+    def _supports_identity(source: AnimeEpisodeSource, identity: AnimeIdentity) -> bool:
+        checker = getattr(source, "supports_identity", None)
+        if callable(checker):
+            return bool(checker(identity))
+        return bool(source.source_key and identity.has(source.source_key))
+
     def display_name(self, backend: str = "jikan") -> str:
         source = self._by_backend.get(backend)
         return source.display_name if source is not None else backend
@@ -26,7 +33,7 @@ class EpisodeService:
         return [
             source.backend_key
             for source in self._sources
-            if source.source_key and identity.has(source.source_key)
+            if self._supports_identity(source, identity)
         ]
 
     async def load_page(
@@ -39,7 +46,7 @@ class EpisodeService:
         source = self._by_backend.get(backend)
         if source is None:
             raise ValueError(f"Unknown episode backend: {backend}")
-        if not identity.has(source.source_key):
+        if not self._supports_identity(source, identity):
             return EpisodePage(items=[], page=max(1, int(page)), has_next=False)
         return await source.load_episode_page(identity, page=page)
 
@@ -53,6 +60,6 @@ class EpisodeService:
         source = self._by_backend.get(backend)
         if source is None:
             raise ValueError(f"Unknown episode backend: {backend}")
-        if not identity.has(source.source_key):
+        if not self._supports_identity(source, identity):
             return None
         return await source.load_episode(identity, episode_number)

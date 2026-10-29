@@ -37,8 +37,9 @@ The project is designed around explicit boundaries between **search**, **identit
 | MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
 | AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
 | AniDB | — | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ |
+| SkipDB | — | — | — | — | — | ✓ | — | — | — |
 
-AniDB is optional and is enabled only when `ANIDB_CLIENT` is configured. Jikan is **not** a separate identity database: it is a local MAL backend used for data that is not available through the official MAL API. Its main-card licensors and lazy popularity statistics use separate local endpoints, so score-distribution scraping is not on the initial card path.
+AniDB is optional and is enabled only when `ANIDB_CLIENT` is configured. Jikan is **not** a separate identity database: it is a local MAL backend used for data that is not available through the official MAL API. Its main-card licensors and lazy popularity statistics use separate local endpoints, so score-distribution scraping is not on the initial card path. SkipDB is an IMDb-backed lazy episode backend: it resolves confirmed `tmdb_tv`/`tmdb_movie` IDs through SkipDB's own TMDB→IMDb redirect, then exposes season-aware episode listings and intro/recap/outro/preview timestamps without joining search or initial metadata. SkipDB data is served under ODbL 1.0 + reciprocity.
 
 ## How it works
 
@@ -384,5 +385,6 @@ Licensed under the [Apache License 2.0](LICENSE). You may use, modify, and distr
 - [AniList](https://anilist.co/)
 - [Shikimori](https://shikimori.one/)
 - [AniDB](https://anidb.net/)
+- [SkipDB](https://skipdb.tv/) — skip-segment data under ODbL 1.0 + reciprocity
 
 Cross-ID mapping data is assembled from multiple community datasets. Each upstream service and dataset remains subject to its own terms, rate limits, and attribution requirements.

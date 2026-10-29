@@ -86,6 +86,19 @@ class TrailerRecord:
     thumbnail: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class EpisodeSkipSegment:
+    """One SkipDB intro/recap/outro/preview segment for an episode."""
+
+    kind: str
+    start_ms: int
+    end_ms: int | None = None
+    match: str | None = None
+    adjusted: bool = False
+    offset_ms: int = 0
+    confidence: float | None = None
+
+
 @dataclass(slots=True)
 class EpisodeRecord:
     """One source-scoped anime episode record.
@@ -106,6 +119,11 @@ class EpisodeRecord:
     recap: bool = False
     synopsis: str | None = None
     urls: dict[str, str] = field(default_factory=dict)
+    season_number: int | None = None
+    episode_number: int | None = None
+    skip_types: tuple[str, ...] = ()
+    skip_segments: dict[str, EpisodeSkipSegment] = field(default_factory=dict)
+    skip_intro_absent: bool = False
 
     def __post_init__(self) -> None:
         self.aired_at = parse_partial_date(self.aired_at)

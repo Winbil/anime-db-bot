@@ -14,15 +14,15 @@ from bots.telegram.callbacks import (
     KeyedPageCallback,
     resolve_key_or_legacy_index,
 )
+from bots.telegram.card.runtime.state import AnimeCardSession
 from bots.telegram.card.views.renderer import (
     edit_standard_text,
     plain_text_to_rich_html,
 )
-from bots.telegram.card.runtime.state import AnimeCardSession
 from core.models import EpisodeRecord
 from localization import text
-from services.runtime.app_context import get_app_context
 from services.media.episodes import EpisodeService
+from services.runtime.app_context import get_app_context
 
 EPISODES_PER_VIEW = 10
 UPSTREAM_PAGE_SIZE = 100
@@ -53,9 +53,37 @@ def _episode_title(episode: EpisodeRecord, locale: str) -> str:
     return text("card", "episode_untitled", locale=locale)
 
 
+def _episode_reference(episode: EpisodeRecord) -> str:
+    if episode.season_number is not None and episode.episode_number is not None:
+        return f"S{episode.season_number}E{episode.episode_number}"
+    return str(episode.number)
+
+
+def _skip_kind_label(kind: str, locale: str) -> str:
+    key = {
+        "intro": "skipdb_intro",
+        "recap": "skipdb_recap",
+        "outro": "skipdb_outro",
+        "preview": "skipdb_preview",
+    }.get(kind, "")
+    return text("card", key, locale=locale) if key else kind
+
+
+def _timestamp_ms(value: int | None) -> str:
+    if value is None or value < 0:
+        return "?"
+    total_seconds = value / 1000
+    hours = int(total_seconds // 3600)
+    minutes = int((total_seconds % 3600) // 60)
+    seconds = total_seconds % 60
+    if hours:
+        return f"{hours}:{minutes:02d}:{seconds:04.1f}"
+    return f"{minutes}:{seconds:04.1f}"
+
+
 def _episode_summary_lines(episode: EpisodeRecord, *, locale: str) -> list[str]:
     title = _episode_title(episode, locale)
-    lines = [f"{episode.number}. {title}"]
+    lines = [f"{_episode_reference(episode)}. {title}"]
     if episode.aired_at:
         lines.append(
             text(
@@ -81,6 +109,14 @@ def _episode_summary_lines(episode: EpisodeRecord, *, locale: str) -> list[str]:
         flags.append(text("card", "episode_recap", locale=locale))
     if flags:
         lines.append(", ".join(flags))
+    if episode.backend == "skipdb":
+        if episode.skip_types:
+            labels = ", ".join(
+                _skip_kind_label(kind, locale) for kind in episode.skip_types
+            )
+            lines.append(text("card", "skipdb_available", locale=locale, value=labels))
+        elif episode.skip_intro_absent:
+            lines.append(text("card", "skipdb_intro_absent", locale=locale))
     return lines
 
 
@@ -121,7 +157,7 @@ def _episode_keyboard(
     rows: list[list[InlineKeyboardButton]] = []
     buttons = [
         InlineKeyboardButton(
-            text=str(episode.number),
+            text=_episode_reference(episode),
             callback_data=EpisodeDetailCallback(
                 token, backend, episode.number, view_page
             ).encode(),
@@ -296,7 +332,7 @@ def _episode_detail_text(
             "card",
             "episode_detail_title",
             locale=locale,
-            number=episode.number,
+            number=_episode_reference(episode),
             source=source_name,
         ),
         "",
@@ -341,6 +377,32 @@ def _episode_detail_text(
         lines.extend(
             ["", text("card", "episode_synopsis", locale=locale), episode.synopsis]
         )
+    if episode.backend == "skipdb":
+        lines.extend(["", text("card", "skipdb_segments", locale=locale)])
+        if episode.skip_intro_absent:
+            lines.append(text("card", "skipdb_intro_absent", locale=locale))
+        for kind in ("intro", "recap", "outro", "preview"):
+            segment = episode.skip_segments.get(kind)
+            if segment is None:
+                continue
+            confidence = (
+                f"{round(segment.confidence * 100)}%"
+                if segment.confidence is not None
+                else "—"
+            )
+            lines.append(
+                text(
+                    "card",
+                    "skipdb_segment",
+                    locale=locale,
+                    kind=_skip_kind_label(kind, locale),
+                    start=_timestamp_ms(segment.start_ms),
+                    end=_timestamp_ms(segment.end_ms),
+                    confidence=confidence,
+                )
+            )
+        if not episode.skip_segments and not episode.skip_intro_absent:
+            lines.append(text("card", "skipdb_no_segments", locale=locale))
     return "\n".join(lines)
 
 
@@ -398,6 +460,16 @@ async def edit_episode_detail(
     anidb_url = urls.get("AniDB")
     if anidb_url:
         rows.append([InlineKeyboardButton(text="AniDB", url=anidb_url)])
+    skipdb_url = urls.get("SkipDB")
+    if skipdb_url:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=text("card", "open_skipdb", locale=locale),
+                    url=skipdb_url,
+                )
+            ]
+        )
     rows.append(
         [
             InlineKeyboardButton(
