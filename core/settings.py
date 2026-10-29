@@ -132,6 +132,10 @@ class SourceSettings:
     anidb_request_timeout_seconds: float
     anidb_cache_dir: Path
     anidb_cache_ttl_seconds: float
+    skipdb_api_url: str
+    skipdb_site_url: str
+    skipdb_request_timeout_seconds: float
+    skipdb_cache_ttl_seconds: float
     shikimori_api_url: str
     shikimori_site_url: str
     shikimori_people_cache_ttl_seconds: float
@@ -197,6 +201,7 @@ class AppSettings:
             "mal": 120,
             "jikan": 30,
             "anidb": 20,
+            "skipdb": 30,
         }
         upstream_per_source = {
             source: _int(
@@ -215,6 +220,9 @@ class AppSettings:
             ("jikan", "trailers"): 15,
             ("jikan", "episodes"): 20,
             ("anidb", "episodes"): 20,
+            ("skipdb", "identity"): 30,
+            ("skipdb", "episodes"): 30,
+            ("skipdb", "episode"): 120,
         }
         upstream_per_operation = {
             (source, operation): _int(
@@ -344,6 +352,27 @@ class AppSettings:
                     values,
                     "ANIDB_CACHE_TTL_SECONDS",
                     86400.0,
+                ),
+                skipdb_api_url=_raw(
+                    values,
+                    "SKIPDB_API_URL",
+                    "https://skipdb.tv",
+                ).rstrip("/"),
+                skipdb_site_url=_raw(
+                    values,
+                    "SKIPDB_SITE_URL",
+                    "https://skipdb.tv",
+                ).rstrip("/"),
+                skipdb_request_timeout_seconds=_float(
+                    values,
+                    "SKIPDB_REQUEST_TIMEOUT_SECONDS",
+                    20.0,
+                    3.0,
+                ),
+                skipdb_cache_ttl_seconds=_float(
+                    values,
+                    "SKIPDB_CACHE_TTL_SECONDS",
+                    21600.0,
                 ),
                 shikimori_api_url=_raw(
                     values,

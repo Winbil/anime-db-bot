@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from core.settings import AppSettings, ROOT_DIR
+from core.settings import ROOT_DIR, AppSettings
 
 
 class AppSettingsTests(unittest.TestCase):
@@ -25,6 +25,11 @@ class AppSettingsTests(unittest.TestCase):
                 "MAL_CLIENT_ID": "mal-client",
                 "UPSTREAM_RATE_LIMIT_ANILIST_PER_MINUTE": "77",
                 "UPSTREAM_RATE_LIMIT_ANILIST_PEOPLE_PER_MINUTE": "13",
+                "SKIPDB_API_URL": "https://skipdb.example/api/",
+                "SKIPDB_SITE_URL": "https://skipdb.example/",
+                "SKIPDB_REQUEST_TIMEOUT_SECONDS": "12.5",
+                "SKIPDB_CACHE_TTL_SECONDS": "1234",
+                "UPSTREAM_RATE_LIMIT_SKIPDB_PER_MINUTE": "29",
                 "SOURCE_HEALTH_FAILURE_THRESHOLD": "5",
                 "SOURCE_HEALTH_COOLDOWN_SECONDS": "42.5",
             }
@@ -44,6 +49,11 @@ class AppSettingsTests(unittest.TestCase):
         self.assertEqual(settings.sources.mal_client_id, "mal-client")
         self.assertEqual(settings.rate_limits.source_limit("anilist"), 77)
         self.assertEqual(settings.rate_limits.operation_limit("anilist", "people"), 13)
+        self.assertEqual(settings.sources.skipdb_api_url, "https://skipdb.example/api")
+        self.assertEqual(settings.sources.skipdb_site_url, "https://skipdb.example")
+        self.assertEqual(settings.sources.skipdb_request_timeout_seconds, 12.5)
+        self.assertEqual(settings.sources.skipdb_cache_ttl_seconds, 1234.0)
+        self.assertEqual(settings.rate_limits.source_limit("skipdb"), 29)
         self.assertEqual(settings.source_health.failure_threshold, 5)
         self.assertEqual(settings.source_health.cooldown_seconds, 42.5)
 

@@ -15,6 +15,7 @@ class SourceKey(StrEnum):
     MAL = "mal"
     ANILIST = "anilist"
     ANIDB = "anidb"
+    IMDB = "imdb"
 
 
 def normalize_source_key(value: SourceKey | str) -> SourceKey:
