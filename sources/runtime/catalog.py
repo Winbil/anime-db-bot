@@ -23,7 +23,6 @@ from sources.providers.anilist import AniListSource
 from sources.providers.jikan import JikanSource
 from sources.providers.mal import MALSource
 from sources.providers.shikimori import ShikimoriSource
-from sources.providers.skipdb import SkipDBSource
 from sources.providers.trailers import AniListTrailerSource, ShikimoriTrailerSource
 from sources.runtime.rate_limited import rate_limited_source
 from sources.runtime.resilient import (
@@ -163,14 +162,9 @@ SOURCE_CATALOG: tuple[SourceRegistration, ...] = (
             BackendRegistration(20, AniDBSource, enabled=AniDBSource.is_enabled),
         ),
     ),
-    SourceRegistration(
-        descriptor=_descriptor(
-            SourceKey.IMDB,
-            "IMDb / SkipDB",
-            SourceCapability.EPISODES,
-        ),
-        episode_backends=(BackendRegistration(30, SkipDBSource),),
-    ),
+    # SkipDBSource intentionally stays dormant for now. Its provider, settings, and
+    # tests remain in the codebase, but anime skip-segment coverage is currently too
+    # small to justify runtime registration or UI exposure.
 )
 
 SOURCE_REGISTRATIONS: dict[SourceKey, SourceRegistration] = {

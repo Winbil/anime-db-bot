@@ -34,13 +34,11 @@ class SourceCatalogTests(unittest.TestCase):
             DEFAULT_SEARCH_PROVIDER_KEYS,
         )
 
-    def test_skipdb_is_imdb_backed_episode_only_source(self) -> None:
-        descriptor = descriptor_for(SourceKey.IMDB)
-        self.assertTrue(descriptor.supports(SourceCapability.EPISODES))
-        self.assertFalse(descriptor.supports(SourceCapability.SEARCH))
-        self.assertFalse(descriptor.supports(SourceCapability.METADATA))
+    def test_skipdb_provider_is_dormant_and_not_runtime_registered(self) -> None:
         episode_keys = [source.backend_key for source in get_episode_sources()]
-        self.assertIn("skipdb", episode_keys)
+        self.assertNotIn("skipdb", episode_keys)
+        with self.assertRaises(KeyError):
+            descriptor_for(SourceKey.IMDB)
 
     def test_anidb_is_optional_metadata_and_episode_source(self) -> None:
         descriptor = descriptor_for(SourceKey.ANIDB)
