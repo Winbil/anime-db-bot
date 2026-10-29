@@ -26,7 +26,7 @@ from core.models import (
 )
 from core.people_loading import PeopleManifest, without_portraits
 from core.settings import SourceSettings, get_settings
-from core.source_errors import SourceInvalidResponse
+from core.source_errors import SourceInvalidResponse, SourceUnavailable
 from core.source_keys import SourceKey
 from core.temporal import parse_partial_date
 from localization import source_value_key
@@ -43,6 +43,7 @@ _PAGE_SIZE = 100
 # limiter used by the rest of the application.
 _NETWORK_LOCK = asyncio.Lock()
 _LAST_NETWORK_REQUEST_AT = 0.0
+_MAX_INTERACTIVE_PACE_WAIT_SECONDS = 0.75
 
 _FULL_CACHE: BoundedTTLCache[tuple[str, str], dict[str, Any]] = BoundedTTLCache(
     max_entries=750,
@@ -487,8 +488,24 @@ async def _paced_request(
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
+    if _NETWORK_LOCK.locked():
+        raise SourceUnavailable(
+            "AniSearch request already in flight; skipping this interactive call",
+            source="anisearch",
+            operation=operation,
+            transient=False,
+        )
+
     async with _NETWORK_LOCK:
         wait_for = _LAST_NETWORK_REQUEST_AT + min_interval - time.monotonic()
+        if wait_for > _MAX_INTERACTIVE_PACE_WAIT_SECONDS:
+            raise SourceUnavailable(
+                "AniSearch pacing window is still active; skipping this interactive call",
+                source="anisearch",
+                operation=operation,
+                transient=False,
+                retry_after=wait_for,
+            )
         if wait_for > 0:
             await asyncio.sleep(wait_for)
         try:

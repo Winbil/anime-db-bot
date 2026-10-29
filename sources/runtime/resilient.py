@@ -28,6 +28,7 @@ T = TypeVar("T")
 
 _RETRY_ATTEMPTS = 3
 _RETRY_BASE_DELAY = 0.8
+_MAX_INLINE_RETRY_DELAY_SECONDS = 5.0
 _TRANSIENT_STATUS_RE = re.compile(r"(?:HTTP\s+)?(429|5\d\d)\b", re.IGNORECASE)
 _RETRY_AFTER_RE = re.compile(r"retry after\s+([0-9]+(?:\.[0-9]+)?)s?", re.IGNORECASE)
 
@@ -126,6 +127,29 @@ async def _retry_call(
                 raise error from exc
 
             delay = _retry_delay(exc, attempt)
+            if delay > _MAX_INLINE_RETRY_DELAY_SECONDS:
+                error = _typed_error(exc, source_name, operation)
+                if health is not None:
+                    health.record_failure(key, error)
+                logging.warning(
+                    "Source retry exceeds inline budget; failing fast",
+                    extra={
+                        "event": "source_retry",
+                        "source": key,
+                        "operation": operation,
+                        "outcome": "deferred",
+                        "attempt": attempt,
+                        "max_attempts": attempts,
+                        "retry_after": round(delay, 3),
+                        "inline_budget": _MAX_INLINE_RETRY_DELAY_SECONDS,
+                        "error_type": type(error).__name__,
+                        "duration_ms": round((time.monotonic() - started) * 1000, 3),
+                    },
+                )
+                if error is exc:
+                    raise
+                raise error from exc
+
             logging.warning(
                 "Transient source failure; retry scheduled",
                 extra={

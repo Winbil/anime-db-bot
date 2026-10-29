@@ -7,6 +7,7 @@ import httpx
 
 from core.identity import AnimeIdentity
 from core.models import AnimeRecord, PersonCredit
+from core.source_errors import SourceRateLimited
 from sources.runtime.resilient import (
     PeopleRetryingSourceProxy,
     RetryingSourceProxy,
@@ -86,6 +87,36 @@ class ResilientSourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(source.staff_calls, 2)
         self.assertEqual([person.name for person in people], ["Staff Person"])
         self.assertEqual(source.identities[-1].get("shikimori"), "48316")
+
+    async def test_long_retry_after_never_blocks_interactive_request(self) -> None:
+        class _RateLimitedSource:
+            name = "RateLimited"
+
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def get_details(self, identity: AnimeIdentity):
+                self.calls += 1
+                raise SourceRateLimited(
+                    "daily quota exhausted",
+                    source="ratelimited",
+                    operation="metadata",
+                    transient=True,
+                    status_code=429,
+                    retry_after=86395.0,
+                )
+
+        source = _RateLimitedSource()
+        proxy = RetryingSourceProxy(source)
+        sleep = AsyncMock()
+        with (
+            patch("sources.runtime.resilient.asyncio.sleep", new=sleep),
+            self.assertRaises(SourceRateLimited),
+        ):
+            await proxy.get_details(AnimeIdentity({"mal": "1"}))
+
+        self.assertEqual(source.calls, 1)
+        sleep.assert_not_awaited()
 
     def test_metadata_only_source_does_not_gain_people_capabilities(self) -> None:
         class _MetadataOnlySource:
