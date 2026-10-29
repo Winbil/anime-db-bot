@@ -74,11 +74,11 @@ class SearchService:
         cache_ttl = max(0.0, float(self._settings.cache_ttl_seconds))
         cache_max = max(10, int(self._settings.cache_max_entries))
         self._cache = BoundedTTLCache[tuple[str, int, int], SearchPage](
-            max_entries=cache_max, ttl_seconds=cache_ttl
+            max_entries=cache_max, ttl_seconds=cache_ttl, name="search_page"
         )
         self._result_set_cache = BoundedTTLCache[
             tuple[str, int, int, int, int], SearchResultSet
-        ](max_entries=cache_max, ttl_seconds=cache_ttl)
+        ](max_entries=cache_max, ttl_seconds=cache_ttl, name="search_result_set")
 
     @property
     def provider_names(self) -> tuple[str, ...]:

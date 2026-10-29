@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from typing import Any, Awaitable, Callable, TypeVar
 
 import httpx
@@ -75,11 +76,24 @@ async def _retry_call(
     attempts = 1 if is_probe else _RETRY_ATTEMPTS
 
     last_error: BaseException | None = None
+    started = time.monotonic()
     for attempt in range(1, attempts + 1):
         try:
             result = await call()
             if health is not None:
                 health.record_success(key)
+            logging.debug(
+                "Source call completed",
+                extra={
+                    "event": "source_call",
+                    "source": key,
+                    "operation": operation,
+                    "outcome": "success",
+                    "attempt": attempt,
+                    "max_attempts": attempts,
+                    "duration_ms": round((time.monotonic() - started) * 1000, 3),
+                },
+            )
             return result
         except asyncio.CancelledError:
             if health is not None and is_probe:
@@ -93,12 +107,17 @@ async def _retry_call(
                 if health is not None:
                     health.record_failure(key, error)
                 logging.warning(
-                    "%s %s failed after %d attempt(s): %s: %s",
-                    source_name,
-                    operation,
-                    attempt,
-                    type(error).__name__,
-                    error,
+                    "Source call failed after retries",
+                    extra={
+                        "event": "source_call",
+                        "source": key,
+                        "operation": operation,
+                        "outcome": "error",
+                        "attempt": attempt,
+                        "max_attempts": attempts,
+                        "error_type": type(error).__name__,
+                        "duration_ms": round((time.monotonic() - started) * 1000, 3),
+                    },
                 )
                 if error is exc:
                     raise
@@ -106,14 +125,17 @@ async def _retry_call(
 
             delay = _retry_delay(exc, attempt)
             logging.warning(
-                "%s %s transient failure (%s: %s); retry %d/%d in %.1fs",
-                source_name,
-                operation,
-                type(exc).__name__,
-                exc,
-                attempt + 1,
-                attempts,
-                delay,
+                "Transient source failure; retry scheduled",
+                extra={
+                    "event": "source_retry",
+                    "source": key,
+                    "operation": operation,
+                    "outcome": "retry",
+                    "attempt": attempt + 1,
+                    "max_attempts": attempts,
+                    "retry_after": round(delay, 3),
+                    "error_type": type(exc).__name__,
+                },
             )
             await asyncio.sleep(delay)
 

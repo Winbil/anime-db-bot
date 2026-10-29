@@ -8,7 +8,7 @@
 
 > MyAnimeList/Jikan、AniList、Shikimori、AniDB を横断して検索・統合する、identity-native な Telegram アニメボットです。
 
-[![Python](https://img.shields.io/badge/Python-3.11--3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
 [![CI](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](../LICENSE)
@@ -27,7 +27,7 @@
 - **共通 resilience layer** — typed source errors、retry、circuit breaker、half-open recovery、rate limits、shared HTTP lifecycle。
 - **永続化された platform-scoped settings** — user locale、known users、moderation state を SQLite に保存します。
 - **3 言語 UI** — English が default/fallback、Russian と Japanese は `/settings` から選択できます。
-- **Production-oriented checks** — Python 3.11–3.13、Ruff、formatter、mypy scope、coverage gate、ShellCheck。
+- **Production-oriented checks** — Python 3.11–3.14 + experimental 3.15 probe、Ruff、formatter、mypy scope、coverage gate、ShellCheck。
 
 ## Source capabilities
 
@@ -118,7 +118,7 @@ Hard cap によって upstream quota を保護します。最終件数を保証�
 推奨環境:
 
 - Linux server;
-- Python **3.11 / 3.12 / 3.13**;
+- Python **3.11 / 3.12 / 3.13 / 3.14**;
 - Git;
 - bundled `start.sh` を使う場合は `tmux`;
 - optional local Jikan supplement 用の Docker + Docker Compose。
@@ -212,6 +212,7 @@ Jikan が停止しても公式 MAL search / metadata は利用できます。
 
 ```text
 /users
+/source_health
 /ban <user_id> [seconds] [reason]
 /unban <user_id>
 /mapping_overrides
@@ -323,7 +324,7 @@ Manual directional override は `accept` / `reject`、author/reason/timestamp、
 .venv/bin/python -m pip check
 ```
 
-GitHub Actions は Python 3.11 / 3.12 / 3.13 で test matrix を実行します。Quality job では Ruff、typed foundation formatter check、mypy、full test suite + coverage gate `>=70%`、ShellCheck も実行します。
+GitHub Actions では Python 3.11 / 3.12 / 3.13 / 3.14 の成功を必須とし、Python 3.15 は aiogram が対応するまで experimental compatibility probe として実行します。Quality job では Ruff、typed foundation formatter check、mypy、full test suite + coverage gate `>=70%`、ShellCheck も実行します。
 
 ## Contributing
 
@@ -332,7 +333,7 @@ Pull request を歓迎します。変更を送る前に [CONTRIBUTING.md](../CON
 ## Security
 
 - `.env` と credentials は version control に含めないでください。
-- Log には secret redaction がありますが、custom log message に credential を直接含めないでください。
+- Log には secret redaction、update ごとの correlation ID、privacy-safe な source/cache/health/resolver structured event、bounded file rotation があります。custom log message に credential、user ID、query identifier を直接含めないでください。
 - Admin-only action は access-control layer の内側に置いてください。
 - Self-hosted Telegram Bot API、将来の metrics endpoint、将来の external API を公開する場合は explicit authentication/network controls が必要です。
 - Mapping override は identity edge を変更するため audit 対象です。

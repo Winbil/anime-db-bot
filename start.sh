@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$SCRIPT_DIR/.venv"
 LOG_DIR="${LOG_DIR:-$SCRIPT_DIR/logs}"
 LOG_FILE="$LOG_DIR/bot.log"
+LOG_MAX_BYTES="${LOG_MAX_BYTES:-}"
+LOG_BACKUPS="${LOG_BACKUPS:-}"
 BOT_MODULE="bots.telegram.bot"
 
 cd "$SCRIPT_DIR"
@@ -63,6 +65,17 @@ if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
     fail "Add BOT_TOKEN to .env, then run ./start.sh again."
 fi
 
+if [[ -z "$LOG_MAX_BYTES" ]]; then
+    LOG_MAX_BYTES="$(sed -n 's/^[[:space:]]*LOG_MAX_BYTES[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
+fi
+if [[ -z "$LOG_BACKUPS" ]]; then
+    LOG_BACKUPS="$(sed -n 's/^[[:space:]]*LOG_BACKUPS[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
+fi
+LOG_MAX_BYTES="${LOG_MAX_BYTES:-10485760}"
+LOG_BACKUPS="${LOG_BACKUPS:-5}"
+[[ "$LOG_MAX_BYTES" =~ ^[1-9][0-9]*$ ]] || fail "LOG_MAX_BYTES must be a positive integer."
+[[ "$LOG_BACKUPS" =~ ^[0-9]+$ ]] || fail "LOG_BACKUPS must be a non-negative integer."
+
 BOT_TOKEN_VALUE="$(sed -n 's/^[[:space:]]*BOT_TOKEN[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
 [[ -n "$BOT_TOKEN_VALUE" ]] || fail "BOT_TOKEN is empty in .env."
 
@@ -112,6 +125,30 @@ info "Staff/seiyuu/characters and episode backends are loaded lazily."
 info "Use scripts/check.sh for compile/tests and scripts/update-mappings.sh for an explicit mapping refresh."
 
 mkdir -p "$LOG_DIR"
+
+rotate_log_if_needed() {
+    [[ -f "$LOG_FILE" ]] || return 0
+    local current_size
+    current_size="$(wc -c < "$LOG_FILE")"
+    (( current_size < LOG_MAX_BYTES )) && return 0
+
+    if (( LOG_BACKUPS == 0 )); then
+        : > "$LOG_FILE"
+        info "Truncated bot log after reaching ${LOG_MAX_BYTES} bytes."
+        return 0
+    fi
+
+    local index
+    for (( index=LOG_BACKUPS; index>=2; index-- )); do
+        if [[ -f "$LOG_FILE.$((index - 1))" ]]; then
+            mv -f "$LOG_FILE.$((index - 1))" "$LOG_FILE.$index"
+        fi
+    done
+    mv -f "$LOG_FILE" "$LOG_FILE.1"
+    info "Rotated bot log after reaching ${LOG_MAX_BYTES} bytes; keeping ${LOG_BACKUPS} backup(s)."
+}
+
+rotate_log_if_needed
 
 tmux new-session -d \
     -s "$SESSION_NAME" \

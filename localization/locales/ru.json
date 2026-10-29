@@ -113,7 +113,15 @@
     "mapping_confirm_owner": "Это подтверждение принадлежит другому администратору.",
     "mapping_cancelled": "Изменение отменено.",
     "mapping_delete_missing": "Такого mapping override уже нет.",
-    "mapping_mutation_failed": "Не удалось применить изменение: {error}"
+    "mapping_mutation_failed": "Не удалось применить изменение: {error}",
+    "source_health_title": "Состояние источников: {count}",
+    "source_health_empty": "Состояние источников ещё не зафиксировано.",
+    "source_health_line": "{source}: {state}; ошибок подряд={failures}; probe={probe}",
+    "source_health_state_closed": "закрыт",
+    "source_health_state_open": "открыт",
+    "source_health_state_half_open": "полуоткрыт",
+    "source_health_probe_yes": "да",
+    "source_health_probe_no": "нет"
   },
   "rate_limit": {
     "too_many_requests": "Ошибка: Too Many Requests\nСлишком много запросов. Повторите через {seconds} секунд."

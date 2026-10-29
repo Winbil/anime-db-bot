@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message
@@ -18,6 +19,7 @@ from bots.telegram.transports.official import OfficialTelegramTransport
 from bots.telegram.transports.tgapi import LocalTelegramTransport
 from core.logging_config import configure_logging
 from core.models import SearchCandidate
+from core.observability import bind_observability_context, new_correlation_id
 from core.settings import TelegramSettings, get_settings
 from localization import text
 from mappings.runtime import periodic_mapping_updates
@@ -77,6 +79,53 @@ async def _aggregate_and_cleanup_search(
             "Could not replace completed search message",
             exc_info=True,
         )
+
+
+def _update_action(event: object) -> str:
+    if isinstance(event, CallbackQuery):
+        return "callback"
+    if isinstance(event, Message):
+        text_value = event.text or event.caption or ""
+        return "command" if text_value.lstrip().startswith("/") else "message"
+    return "update"
+
+
+class _ObservabilityMiddleware(BaseMiddleware):
+    """Attach one privacy-safe correlation context to each Telegram update."""
+
+    async def __call__(self, handler, event, data):
+        started = time.monotonic()
+        with bind_observability_context(
+            correlation_id=new_correlation_id(),
+            platform="telegram",
+            action=_update_action(event),
+        ):
+            logging.info(
+                "Telegram update started",
+                extra={"event": "telegram_update", "outcome": "started"},
+            )
+            try:
+                result = await handler(event, data)
+            except Exception as exc:
+                logging.error(
+                    "Telegram update failed",
+                    extra={
+                        "event": "telegram_update",
+                        "outcome": "error",
+                        "error_type": type(exc).__name__,
+                        "duration_ms": round((time.monotonic() - started) * 1000, 3),
+                    },
+                )
+                raise
+            logging.info(
+                "Telegram update completed",
+                extra={
+                    "event": "telegram_update",
+                    "outcome": "success",
+                    "duration_ms": round((time.monotonic() - started) * 1000, 3),
+                },
+            )
+            return result
 
 
 class _CallbackRoutingMiddleware(BaseMiddleware):
@@ -146,15 +195,18 @@ async def run_bot(
                 )
 
             dp = build_dispatcher(mode_name=transport.mode_name, state=card_state)
+            observability = _ObservabilityMiddleware()
             moderation = TelegramModerationMiddleware()
             rate_limit = TelegramRateLimitMiddleware(context.personal_rate_limiter)
+            dp.message.outer_middleware(observability)
             dp.message.outer_middleware(moderation)
             dp.message.outer_middleware(rate_limit)
+            dp.callback_query.outer_middleware(observability)
             dp.callback_query.outer_middleware(moderation)
             dp.callback_query.outer_middleware(rate_limit)
             dp.callback_query.outer_middleware(_CallbackRoutingMiddleware(card_state))
 
-            register_admin_handlers(dp)
+            register_admin_handlers(dp, source_health=context.source_health)
 
             async def aggregate_search_result(
                 message: Message,

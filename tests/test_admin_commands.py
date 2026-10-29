@@ -20,7 +20,9 @@ from bots.telegram.admin import (
     _parse_mapping_set,
     register_admin_handlers,
 )
+from core.source_errors import SourceUnavailable
 from mappings.resolver import MappingOverride, MappingOverrideHistory
+from services.runtime.source_health import SourceHealthRegistry
 
 
 class AdminCommandTests(unittest.TestCase):
@@ -146,7 +148,12 @@ class AdminAiogramIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.session = _FakeTelegramSession()
         self.bot = Bot("123456:TESTTOKEN", session=self.session)
         self.dispatcher = Dispatcher()
-        register_admin_handlers(self.dispatcher)
+        self.source_health = SourceHealthRegistry(
+            failure_threshold=1,
+            cooldown_seconds=30.0,
+            clock=lambda: 100.0,
+        )
+        register_admin_handlers(self.dispatcher, source_health=self.source_health)
         self.update_id = 0
 
     async def asyncTearDown(self) -> None:
@@ -172,6 +179,27 @@ class AdminAiogramIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await self.dispatcher.feed_update(self.bot, update)
         self.assertGreater(len(self.session.methods), before)
         return str(getattr(self.session.methods[-1], "text", ""))
+
+    async def test_source_health_is_admin_only_and_omits_error_details(self) -> None:
+        self.source_health.record_failure(
+            "anilist",
+            SourceUnavailable(
+                "private upstream detail must not be exposed",
+                source="anilist",
+                operation="metadata",
+                transient=True,
+            ),
+        )
+        with (
+            patch("bots.telegram.admin.is_telegram_admin", return_value=True),
+            patch("bots.telegram.admin.get_user_locale", return_value="en"),
+        ):
+            text = await self._feed("/source_health")
+
+        self.assertIn("Source health states: 1", text)
+        self.assertIn("anilist: open", text)
+        self.assertIn("failures=1", text)
+        self.assertNotIn("private upstream detail", text)
 
     async def test_mapping_overrides_runs_through_command_filter_and_handler(
         self,

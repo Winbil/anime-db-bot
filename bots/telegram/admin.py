@@ -23,6 +23,7 @@ from mappings.resolver import (
 )
 from services.users.access_control import is_telegram_admin
 from services.users.bans import BanRecord, ban_user, get_active_ban, unban_user
+from services.runtime.source_health import SourceHealthRegistry, SourceHealthSnapshot
 from services.users.settings import (
     get_user_locale,
     list_platform_user_ids,
@@ -290,10 +291,33 @@ class TelegramModerationMiddleware(BaseMiddleware):
         return None
 
 
-def register_admin_handlers(dp: Dispatcher) -> None:
+def _source_health_line(snapshot: SourceHealthSnapshot, locale: str) -> str:
+    state = _t(locale, f"source_health_state_{snapshot.state}")
+    probe = _t(
+        locale,
+        "source_health_probe_yes"
+        if snapshot.probe_in_flight
+        else "source_health_probe_no",
+    )
+    return _t(
+        locale,
+        "source_health_line",
+        source=snapshot.source,
+        state=state,
+        failures=snapshot.consecutive_failures,
+        probe=probe,
+    )
+
+
+def register_admin_handlers(
+    dp: Dispatcher,
+    *,
+    source_health: SourceHealthRegistry | None = None,
+) -> None:
     pending_mapping_mutations = ExpiringSessionStore[_PendingMappingMutation](
         max_entries=128,
         ttl_seconds=300,
+        name="admin_mapping_mutation",
     )
 
     def new_mapping_token() -> str:
@@ -317,6 +341,21 @@ def register_admin_handlers(dp: Dispatcher) -> None:
             return
 
         for chunk in _chunk_user_ids(list_platform_user_ids("telegram"), locale):
+            await message.answer(chunk)
+
+    @dp.message(Command("source_health"))
+    async def source_health_handler(message: Message) -> None:
+        admin_id, locale = await require_admin(message)
+        if admin_id is None:
+            return
+
+        snapshots = source_health.snapshots() if source_health is not None else ()
+        lines = [_source_health_line(snapshot, locale) for snapshot in snapshots]
+        for chunk in _chunk_lines(
+            _t(locale, "source_health_title", count=len(snapshots)),
+            lines,
+            empty_text=_t(locale, "source_health_empty"),
+        ):
             await message.answer(chunk)
 
     @dp.message(Command("mapping_overrides"))

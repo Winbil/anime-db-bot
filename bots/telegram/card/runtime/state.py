@@ -40,10 +40,12 @@ class TelegramCardState:
             anime_sessions=ExpiringSessionStore(
                 max_entries=MAX_ANIME_SESSIONS,
                 ttl_seconds=ttl,
+                name="card_anime",
             ),
             people_loads=ExpiringSessionStore(
                 max_entries=MAX_PEOPLE_LOADS,
                 ttl_seconds=ttl,
+                name="card_people",
             ),
         )
 

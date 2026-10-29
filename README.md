@@ -8,7 +8,7 @@
 
 > Identity-native Telegram anime search and metadata aggregation across MyAnimeList/Jikan, AniList, Shikimori, and AniDB.
 
-[![Python](https://img.shields.io/badge/Python-3.11--3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
 [![CI](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](LICENSE)
@@ -27,7 +27,7 @@ The project is designed around explicit boundaries between **search**, **identit
 - **Shared resilience layer** — typed source errors, retries, circuit breakers, half-open recovery, rate limits, and shared HTTP lifecycle.
 - **Persistent platform-scoped settings** — user locale, known users, and moderation state are stored in SQLite.
 - **Three UI languages** — English is the default/fallback locale; Russian and Japanese are fully selectable in `/settings`.
-- **Production-oriented checks** — Python 3.11–3.13 CI, Ruff, formatter checks, mypy scope, coverage gate, and ShellCheck.
+- **Production-oriented checks** — Python 3.11–3.14 CI + experimental 3.15 probe, Ruff, formatter checks, mypy scope, coverage gate, and ShellCheck.
 
 ## Source capabilities
 
@@ -118,7 +118,7 @@ Foreign dub credits are not mixed into the original Japanese voice list. Localiz
 Recommended environment:
 
 - Linux server;
-- Python **3.11, 3.12, or 3.13**;
+- Python **3.11, 3.12, 3.13, or 3.14**;
 - Git;
 - `tmux` for the bundled `start.sh` runtime;
 - Docker + Docker Compose for the optional local Jikan supplement.
@@ -216,6 +216,7 @@ A Jikan outage does not make official MAL search/metadata unavailable.
 
 ```text
 /users
+/source_health
 /ban <user_id> [seconds] [reason]
 /unban <user_id>
 /mapping_overrides
@@ -342,7 +343,7 @@ Useful direct commands:
 .venv/bin/python -m pip check
 ```
 
-GitHub Actions runs the test matrix on Python 3.11, 3.12, and 3.13. The quality job additionally runs Ruff correctness checks, formatter checks for the typed foundation, mypy for the typed foundation, full tests with a coverage gate of at least 70%, and ShellCheck for shell scripts.
+GitHub Actions requires Python 3.11, 3.12, 3.13, and 3.14 to pass; Python 3.15 runs as an experimental compatibility probe until the aiogram dependency supports it. The quality job additionally runs Ruff correctness checks, formatter checks for the typed foundation, mypy for the typed foundation, full tests with a coverage gate of at least 70%, and ShellCheck for shell scripts.
 
 ## Contributing
 
@@ -351,7 +352,7 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before openin
 ## Security
 
 - Keep `.env` and credentials outside version control.
-- Logs use secret redaction; avoid adding raw credentials to custom log messages.
+- Logs use secret redaction, per-update correlation IDs, privacy-safe structured source/cache/health/resolver events, and bounded file rotation; avoid adding raw credentials or user/query identifiers to custom log messages.
 - Admin-only actions must remain behind the access-control layer.
 - Do not expose a self-hosted Telegram Bot API, future metrics endpoint, or future external API publicly without explicit authentication/network controls.
 - Mapping overrides are audited because an incorrect identity edge can affect multiple capabilities.

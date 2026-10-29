@@ -8,7 +8,7 @@
 
 > Telegram-бот с независимым от конкретной базы поиском аниме и агрегацией метаданных из MyAnimeList/Jikan, AniList, Shikimori и AniDB.
 
-[![Python](https://img.shields.io/badge/Python-3.11--3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
 [![CI](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](../LICENSE)
@@ -27,7 +27,7 @@
 - **Общий resilience layer** — typed source errors, retry, circuit breaker, half-open recovery, rate limits и shared HTTP lifecycle.
 - **Persistent platform-scoped settings** — locale, known users и moderation state хранятся в SQLite.
 - **Три языка UI** — английский является default/fallback, русский и японский выбираются через `/settings`.
-- **Production-oriented CI** — Python 3.11–3.13, Ruff, formatter, mypy scope, coverage gate и ShellCheck.
+- **Production-oriented CI** — Python 3.11–3.14 + experimental 3.15 probe, Ruff, formatter, mypy scope, coverage gate и ShellCheck.
 
 ## Возможности источников
 
@@ -118,7 +118,7 @@ Hard caps защищают upstream quotas. Если бот не может до
 Рекомендуемое окружение:
 
 - Linux server;
-- Python **3.11, 3.12 или 3.13**;
+- Python **3.11, 3.12, 3.13 или 3.14**;
 - Git;
 - `tmux` для bundled `start.sh`;
 - Docker + Docker Compose для опционального локального Jikan supplement.
@@ -212,6 +212,7 @@ deploy/systemd/anime-db-bot-jikan-update.{service,timer}
 
 ```text
 /users
+/source_health
 /ban <user_id> [seconds] [reason]
 /unban <user_id>
 /mapping_overrides
@@ -323,7 +324,7 @@ Manual directional overrides поддерживают `accept`/`reject`, author/
 .venv/bin/python -m pip check
 ```
 
-GitHub Actions тестирует Python 3.11, 3.12 и 3.13. Quality job также запускает Ruff, formatter check typed foundation, mypy typed foundation, полный suite с coverage gate `>=70%` и ShellCheck.
+GitHub Actions требует успешное прохождение Python 3.11, 3.12, 3.13 и 3.14; Python 3.15 запускается как experimental compatibility probe, пока его не поддерживает зависимость aiogram. Quality job также запускает Ruff, formatter check typed foundation, mypy typed foundation, полный suite с coverage gate `>=70%` и ShellCheck.
 
 ## Участие в разработке
 
@@ -332,7 +333,7 @@ Pull requests приветствуются. Перед изменениями п
 ## Безопасность
 
 - `.env` и credentials должны оставаться вне version control.
-- Logs используют secret redaction; не добавляйте credentials в custom log messages.
+- Logs используют secret redaction, correlation ID для каждого update, privacy-safe structured события source/cache/health/resolver и ограниченную ротацию файла; не добавляйте credentials, user ID или query identifiers в custom log messages.
 - Admin-only actions должны оставаться за access-control layer.
 - Self-hosted Telegram Bot API, будущий metrics endpoint и будущий external API нельзя публиковать наружу без явных authentication/network controls.
 - Mapping overrides аудируются, потому что ошибочный identity edge способен затронуть несколько capabilities.

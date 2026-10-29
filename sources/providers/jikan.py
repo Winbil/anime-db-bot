@@ -196,8 +196,12 @@ class JikanSource:
 
     def __init__(self, settings: SourceSettings | None = None) -> None:
         self._settings = _settings(settings)
-        self._supplement_cache = BoundedTTLCache[str, dict[str, Any]](max_entries=1000)
-        self._people_cache = BoundedTTLCache[str, dict[str, Any]](max_entries=1000)
+        self._supplement_cache = BoundedTTLCache[str, dict[str, Any]](
+            max_entries=1000, name="jikan_supplement"
+        )
+        self._people_cache = BoundedTTLCache[str, dict[str, Any]](
+            max_entries=1000, name="jikan_people"
+        )
 
     @staticmethod
     def _mal_id(identity: AnimeIdentity) -> str:

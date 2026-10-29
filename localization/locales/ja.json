@@ -113,7 +113,15 @@
     "mapping_confirm_owner": "この確認情報は別の管理者に属しています。",
     "mapping_cancelled": "変更をキャンセルしました。",
     "mapping_delete_missing": "その mapping override は既に存在しません。",
-    "mapping_mutation_failed": "変更を適用できませんでした: {error}"
+    "mapping_mutation_failed": "変更を適用できませんでした: {error}",
+    "source_health_title": "ソース状態: {count}",
+    "source_health_empty": "ソース状態はまだ記録されていません。",
+    "source_health_line": "{source}: {state}; 連続失敗={failures}; probe={probe}",
+    "source_health_state_closed": "closed",
+    "source_health_state_open": "open",
+    "source_health_state_half_open": "half-open",
+    "source_health_probe_yes": "あり",
+    "source_health_probe_no": "なし"
   },
   "rate_limit": {
     "too_many_requests": "エラー: Too Many Requests\nリクエストが多すぎます。{seconds} 秒後にもう一度お試しください。"

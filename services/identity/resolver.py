@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from core.cache import BoundedTTLCache
 from core.contracts import AnimeSearchProvider
@@ -40,7 +41,9 @@ class IdentityResolver:
     ) -> None:
         self._mapping_resolver = mapping_resolver or MappingResolver()
         self._shikimori_provider = shikimori_provider or ShikimoriSearchProvider()
-        self._shikimori_cache = BoundedTTLCache[str, str | None](max_entries=2000)
+        self._shikimori_cache = BoundedTTLCache[str, str | None](
+            max_entries=2000, name="identity_shikimori"
+        )
 
     @property
     def mapping_resolver(self) -> MappingResolver:
@@ -63,12 +66,16 @@ class IdentityResolver:
         for query in _dedupe(titles)[:5]:
             try:
                 page = await self._shikimori_provider.search(query, page=1, limit=20)
-            except Exception:
+            except Exception as exc:
                 logging.warning(
-                    "Could not resolve Shikimori ID from MAL %s via query %r",
-                    mal_id,
-                    query,
-                    exc_info=True,
+                    "Live identity resolver query failed",
+                    extra={
+                        "event": "resolver_live_lookup",
+                        "provider": "shikimori",
+                        "operation": "identity_resolve",
+                        "outcome": "error",
+                        "error_type": type(exc).__name__,
+                    },
                 )
                 continue
 
@@ -98,20 +105,43 @@ class IdentityResolver:
         titles: list[str],
     ) -> AnimeIdentity:
         """Best-effort direct cross-database identity enrichment."""
+        started = time.monotonic()
         enriched = identity.copy()
+        accepted = 0
+        conflict_count = 0
 
         mapped = self._mapping_resolver.resolve(enriched)
         if mapped:
             conflicts = enriched.merge_missing(mapped)
             if conflicts:
-                logging.warning("Ignoring conflicting mappings.db edges: %s", conflicts)
+                conflict_count += len(conflicts)
+                logging.warning(
+                    "Resolver ignored conflicting mapping edges",
+                    extra={
+                        "event": "resolver_mapping",
+                        "provider": "mappings_db",
+                        "operation": "identity_resolve",
+                        "outcome": "conflict",
+                        "conflicts": len(conflicts),
+                    },
+                )
             additions = {
                 provider: external_id
                 for provider, external_id in mapped.items()
                 if provider not in identity.external_ids
             }
             if additions:
-                logging.info("Identity enriched from mappings.db: %s", additions)
+                accepted += len(additions)
+                logging.info(
+                    "Identity enriched from mapping evidence",
+                    extra={
+                        "event": "resolver_mapping",
+                        "provider": "mappings_db",
+                        "operation": "identity_resolve",
+                        "outcome": "accepted",
+                        "accepted": len(additions),
+                    },
+                )
 
         if not enriched.has("shikimori"):
             mal_id = enriched.get("mal")
@@ -119,10 +149,28 @@ class IdentityResolver:
                 shikimori_id = await self._resolve_shikimori_from_mal(mal_id, titles)
                 if shikimori_id:
                     enriched.merge_missing({"shikimori": shikimori_id})
+                    accepted += 1
                     logging.info(
-                        "Identity enriched with shikimori:%s from mal:%s",
-                        shikimori_id,
-                        mal_id,
+                        "Identity enriched by live resolver",
+                        extra={
+                            "event": "resolver_live_lookup",
+                            "provider": "shikimori",
+                            "operation": "identity_resolve",
+                            "outcome": "accepted",
+                            "accepted": 1,
+                        },
                     )
 
+        logging.info(
+            "Identity resolver completed",
+            extra={
+                "event": "resolver_lookup",
+                "operation": "identity_resolve",
+                "outcome": "success",
+                "accepted": accepted,
+                "conflicts": conflict_count,
+                "size": len(enriched.external_ids),
+                "duration_ms": round((time.monotonic() - started) * 1000, 3),
+            },
+        )
         return enriched
