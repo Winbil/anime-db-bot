@@ -115,7 +115,7 @@ info "Default /anime search: Shikimori + MAL (MyAnimeList) / Jikan + AniList."
 info "External IDs are enriched locally from disk-backed mappings.db."
 info "Interactive /anime sources: All / MAL (MyAnimeList) / Jikan / Shikimori / AniList."
 info "Direct external-ID lookup is source-independent."
-info "Metadata sources: Shikimori + AniList + MAL (MyAnimeList) / Jikan + optional AniDB."
+info "Metadata sources: Shikimori + MAL (MyAnimeList) / Jikan + AniList + optional AniDB + AniSearch."
 info "Staff/seiyuu/characters and episode backends are loaded lazily."
 info "Use scripts/check.sh for compile/tests and scripts/update-mappings.sh for an explicit mapping refresh."
 
