@@ -5,8 +5,10 @@ import logging
 import re
 from collections.abc import Iterable
 from datetime import datetime
+from pathlib import Path
 from typing import TextIO
 
+from core.logging_files import DailySplitFileHandler, classify_log_stream
 from core.observability import current_observability_context
 
 _REDACTED = "<redacted>"
@@ -93,6 +95,7 @@ class StructuredLogFormatter(logging.Formatter):
             "timezone": local_time.tzname() or str(local_time.utcoffset() or "local"),
             "level": record.levelname,
             "logger": record.name,
+            "log_stream": classify_log_stream(record),
             "message": self.redactor.redact(record.getMessage()),
         }
         context = current_observability_context()
@@ -155,6 +158,9 @@ def configure_logging(
     structured: bool = True,
     secrets: Iterable[str] = (),
     redact_secrets: bool = True,
+    log_directory: Path | str | None = None,
+    log_max_bytes: int = 10 * 1024 * 1024,
+    log_backups: int = 5,
     stream: TextIO | None = None,
     logger: logging.Logger | None = None,
 ) -> logging.Handler:
@@ -174,4 +180,12 @@ def configure_logging(
         existing.close()
     target.setLevel(level_value)
     target.addHandler(handler)
+    if log_directory is not None:
+        file_handler = DailySplitFileHandler(
+            log_directory,
+            max_bytes=log_max_bytes,
+            backups=log_backups,
+        )
+        file_handler.setFormatter(handler.formatter)
+        target.addHandler(file_handler)
     return handler

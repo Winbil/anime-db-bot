@@ -154,6 +154,9 @@ async def run_bot(
         level=settings.logging.level,
         structured=settings.logging.structured,
         redact_secrets=settings.logging.redact_secrets,
+        log_directory=settings.logging.directory,
+        log_max_bytes=settings.logging.max_bytes,
+        log_backups=settings.logging.backups,
         secrets=(
             settings.telegram.bot_token,
             settings.sources.anilist_access_token,

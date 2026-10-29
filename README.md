@@ -145,8 +145,13 @@ Useful runtime commands:
 
 ```bash
 tmux attach -t anime-db-bot
-tail -f logs/bot.log
+TODAY="$(date '+%Y.%m.%d')"
+tail -f "logs/$TODAY/bot.log"
+tail -f "logs/$TODAY/users.log"
+tail -f "logs/$TODAY/api.log"
 ```
+
+Runtime logs are split by responsibility under `logs/YYYY.MM.DD/`: `bot.log` contains application/runtime events, `users.log` contains Telegram user-action tracing, `api.log` contains outbound source/API/retry/health events, and `errors.log` duplicates all `ERROR+` records for quick diagnostics. The directory switches automatically after local midnight without restarting the bot.
 
 ## Configuration
 
@@ -352,7 +357,7 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before openin
 ## Security
 
 - Keep `.env` and credentials outside version control.
-- Logs use secret redaction by default, per-update correlation IDs, runtime-local timezone timestamps, privacy-safe structured source/cache/health/resolver events, and bounded file rotation. `LOG_REDACT_SECRETS=0` deliberately disables all masking for local diagnostics and may write credentials verbatim; keep it enabled on shared/public logs.
+- Logs use daily `bot/users/api/errors` files, secret redaction by default, per-update correlation IDs, runtime-local timezone timestamps, and bounded per-file rotation. `LOG_REDACT_SECRETS=0` deliberately disables all masking for local diagnostics and may write credentials verbatim; keep it enabled on shared/public logs.
 - Admin-only actions must remain behind the access-control layer.
 - Do not expose a self-hosted Telegram Bot API, future metrics endpoint, or future external API publicly without explicit authentication/network controls.
 - Mapping overrides are audited because an incorrect identity edge can affect multiple capabilities.
