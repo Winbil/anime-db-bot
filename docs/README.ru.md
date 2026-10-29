@@ -333,7 +333,7 @@ Pull requests приветствуются. Перед изменениями п
 ## Безопасность
 
 - `.env` и credentials должны оставаться вне version control.
-- Logs используют secret redaction, correlation ID для каждого update, privacy-safe structured события source/cache/health/resolver и ограниченную ротацию файла; не добавляйте credentials, user ID или query identifiers в custom log messages.
+- Logs по умолчанию используют secret redaction, correlation ID для каждого update, timestamps в локальной timezone runtime, privacy-safe structured события source/cache/health/resolver и ограниченную ротацию файла. `LOG_REDACT_SECRETS=0` намеренно полностью отключает маскирование для локальной диагностики и может записать credentials verbatim; на shared/public logs оставляйте его включённым.
 - Admin-only actions должны оставаться за access-control layer.
 - Self-hosted Telegram Bot API, будущий metrics endpoint и будущий external API нельзя публиковать наружу без явных authentication/network controls.
 - Mapping overrides аудируются, потому что ошибочный identity edge способен затронуть несколько capabilities.

@@ -153,6 +153,7 @@ async def run_bot(
     configure_logging(
         level=settings.logging.level,
         structured=settings.logging.structured,
+        redact_secrets=settings.logging.redact_secrets,
         secrets=(
             settings.telegram.bot_token,
             settings.sources.anilist_access_token,
@@ -161,6 +162,15 @@ async def run_bot(
     )
     context = context or AppContext.create(settings)
     transport = transport or select_transport(settings.telegram)
+
+    if not settings.logging.redact_secrets:
+        logging.warning(
+            "Log secret redaction is disabled; sensitive values may be written verbatim",
+            extra={
+                "event": "logging_config",
+                "outcome": "redaction_disabled",
+            },
+        )
 
     logging.info("Bot platform: Telegram")
     logging.info("Telegram transport: %s", transport.mode_name)

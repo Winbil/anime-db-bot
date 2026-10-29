@@ -13,6 +13,7 @@ class AppSettingsTests(unittest.TestCase):
                 "BOT_TOKEN": "token",
                 "LOG_LEVEL": "debug",
                 "LOG_STRUCTURED": "0",
+                "LOG_REDACT_SECRETS": "0",
                 "TELEGRAM_BOT_API_LOCAL": "true",
                 "TELEGRAM_SESSION_TTL_SECONDS": "90",
                 "ADMIN_TELEGRAM_USER_IDS": "1, 2;3\n2",
@@ -27,6 +28,7 @@ class AppSettingsTests(unittest.TestCase):
         )
         self.assertEqual(settings.logging.level, "DEBUG")
         self.assertFalse(settings.logging.structured)
+        self.assertFalse(settings.logging.redact_secrets)
         self.assertEqual(settings.telegram.bot_token, "token")
         self.assertTrue(settings.telegram.bot_api_local)
         self.assertEqual(settings.telegram.session_ttl_seconds, 90)
@@ -59,6 +61,10 @@ class AppSettingsTests(unittest.TestCase):
             settings.mappings.db_path,
             ROOT_DIR / Path("data/test-mappings.sqlite3"),
         )
+
+    def test_log_secret_redaction_defaults_to_enabled(self) -> None:
+        settings = AppSettings.from_env({"BOT_TOKEN": "token"})
+        self.assertTrue(settings.logging.redact_secrets)
 
     def test_invalid_admin_id_fails_fast(self) -> None:
         with self.assertRaises(ValueError):

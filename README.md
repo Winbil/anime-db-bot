@@ -352,7 +352,7 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before openin
 ## Security
 
 - Keep `.env` and credentials outside version control.
-- Logs use secret redaction, per-update correlation IDs, privacy-safe structured source/cache/health/resolver events, and bounded file rotation; avoid adding raw credentials or user/query identifiers to custom log messages.
+- Logs use secret redaction by default, per-update correlation IDs, runtime-local timezone timestamps, privacy-safe structured source/cache/health/resolver events, and bounded file rotation. `LOG_REDACT_SECRETS=0` deliberately disables all masking for local diagnostics and may write credentials verbatim; keep it enabled on shared/public logs.
 - Admin-only actions must remain behind the access-control layer.
 - Do not expose a self-hosted Telegram Bot API, future metrics endpoint, or future external API publicly without explicit authentication/network controls.
 - Mapping overrides are audited because an incorrect identity edge can affect multiple capabilities.

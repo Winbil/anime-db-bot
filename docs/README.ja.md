@@ -333,7 +333,7 @@ Pull request を歓迎します。変更を送る前に [CONTRIBUTING.md](../CON
 ## Security
 
 - `.env` と credentials は version control に含めないでください。
-- Log には secret redaction、update ごとの correlation ID、privacy-safe な source/cache/health/resolver structured event、bounded file rotation があります。custom log message に credential、user ID、query identifier を直接含めないでください。
+- Log は既定で secret redaction を使用し、update ごとの correlation ID、runtime の local timezone timestamp、privacy-safe な source/cache/health/resolver structured event、bounded file rotation を保持します。`LOG_REDACT_SECRETS=0` は local diagnostics 用に masking を完全に無効化し credentials をそのまま記録する可能性があるため、shared/public logs では有効のままにしてください。
 - Admin-only action は access-control layer の内側に置いてください。
 - Self-hosted Telegram Bot API、将来の metrics endpoint、将来の external API を公開する場合は explicit authentication/network controls が必要です。
 - Mapping override は identity edge を変更するため audit 対象です。

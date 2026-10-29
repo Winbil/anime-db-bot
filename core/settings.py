@@ -70,6 +70,7 @@ def _admin_ids(value: str) -> tuple[int, ...]:
 class LoggingSettings:
     level: str
     structured: bool
+    redact_secrets: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,6 +227,7 @@ class AppSettings:
             logging=LoggingSettings(
                 level=(_raw(values, "LOG_LEVEL", "INFO") or "INFO").upper(),
                 structured=_bool(values, "LOG_STRUCTURED", True),
+                redact_secrets=_bool(values, "LOG_REDACT_SECRETS", True),
             ),
             telegram=TelegramSettings(
                 bot_token=_raw(values, "BOT_TOKEN"),
