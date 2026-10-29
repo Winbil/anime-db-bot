@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 from core.identity import AnimeIdentity
 from core.settings import AppSettings
+from core.source_errors import SourceUnavailable
 from core.source_keys import SourceKey
 from sources.providers import anisearch
 from sources.providers.anisearch import AniSearchSource
@@ -328,6 +329,22 @@ class AniSearchSourceTests(unittest.IsolatedAsyncioTestCase):
             "/v1/anime/5048/full", operation="full", settings=settings
         )
         anisearch._FULL_CACHE.clear()
+
+    async def test_local_pacing_skips_instead_of_blocking_card(self) -> None:
+        request = AsyncMock()
+        with (
+            patch.object(anisearch, "_LAST_NETWORK_REQUEST_AT", 100.0),
+            patch("sources.providers.anisearch.time.monotonic", return_value=100.1),
+            patch("sources.providers.anisearch.http_request", request),
+            self.assertRaises(SourceUnavailable),
+        ):
+            await anisearch._paced_request(
+                "/v1/anime/5048/full",
+                operation="full",
+                settings=self.settings,
+            )
+
+        request.assert_not_awaited()
 
     async def test_missing_anisearch_identity_never_calls_network(self) -> None:
         loader = AsyncMock(return_value=_payload())
