@@ -37,10 +37,10 @@ DEFAULT_API_URL = "https://api.anisearch.com"
 SUPPORTED_LOCALIZATIONS = ("en", "ja")
 _PAGE_SIZE = 100
 
-# The public Database API documents one request per 10 seconds for the shared
-# id/full/episodes/characters/staff family without a token, and one per 5 seconds
-# with a token. Keep this exact pacing separate from the coarse per-minute safety
-# limiter used by the rest of the application.
+# The read-only Database API does not require OAuth. Keep its documented
+# 10-second pacing separate from the coarse per-minute safety limiter used by
+# the rest of the application. App ID/App Secret are OAuth application
+# credentials for future user-authorized features and are never sent here.
 _NETWORK_LOCK = asyncio.Lock()
 _LAST_NETWORK_REQUEST_AT = 0.0
 _MAX_INTERACTIVE_PACE_WAIT_SECONDS = 0.75
@@ -67,10 +67,6 @@ def _timeout(settings: SourceSettings | None = None) -> float:
 
 def _cache_ttl(settings: SourceSettings | None = None) -> float:
     return max(0.0, float(_settings(settings).anisearch_cache_ttl_seconds))
-
-
-def _token(settings: SourceSettings | None = None) -> str:
-    return str(_settings(settings).anisearch_api_token or "").strip()
 
 
 def _clean(value: Any) -> str:
@@ -482,11 +478,7 @@ async def _paced_request(
 ) -> dict[str, Any]:
     global _LAST_NETWORK_REQUEST_AT
 
-    token = _token(settings)
-    min_interval = 5.1 if token else 10.1
-    headers: dict[str, str] = {}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    min_interval = 10.1
 
     if _NETWORK_LOCK.locked():
         raise SourceUnavailable(
@@ -515,7 +507,6 @@ async def _paced_request(
                 f"{_api_url(settings)}{path}",
                 operation=operation,
                 timeout=_timeout(settings),
-                headers=headers or None,
             )
         finally:
             # Failed requests count against the documented aniSearch allowance too.

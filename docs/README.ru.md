@@ -371,3 +371,5 @@ Pull requests приветствуются. Перед изменениями п
 - [SkipDB](https://skipdb.tv/) — skip-segment data under ODbL 1.0 + reciprocity
 
 Cross-ID mapping строится из нескольких community datasets. Для каждого upstream service/dataset действуют его собственные условия использования, rate limits и требования к attribution.
+
+Read-only запросы к AniSearch Database API не требуют OAuth. `ANISEARCH_APP_ID` и `ANISEARCH_APP_SECRET` — необязательные OAuth-реквизиты приложения для будущих пользовательских функций AniSearch; с обычными запросами базы они не отправляются.

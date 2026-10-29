@@ -390,3 +390,5 @@ Licensed under the [Apache License 2.0](LICENSE). You may use, modify, and distr
 - [SkipDB](https://skipdb.tv/) — skip-segment data under ODbL 1.0 + reciprocity
 
 Cross-ID mapping data is assembled from multiple community datasets. Each upstream service and dataset remains subject to its own terms, rate limits, and attribution requirements.
+
+AniSearch Database API read-only metadata requests do not require OAuth. `ANISEARCH_APP_ID` and `ANISEARCH_APP_SECRET` are optional OAuth application credentials reserved for future user-authorized AniSearch features; they are never sent with read-only database requests.

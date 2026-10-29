@@ -26,7 +26,8 @@ class AppSettingsTests(unittest.TestCase):
                 "UPSTREAM_RATE_LIMIT_ANILIST_PER_MINUTE": "77",
                 "UPSTREAM_RATE_LIMIT_ANILIST_PEOPLE_PER_MINUTE": "13",
                 "ANISEARCH_API_URL": "https://anisearch.example/api/",
-                "ANISEARCH_API_TOKEN": "anisearch-token",
+                "ANISEARCH_APP_ID": "anisearch-app-id",
+                "ANISEARCH_APP_SECRET": "anisearch-app-secret",
                 "ANISEARCH_REQUEST_TIMEOUT_SECONDS": "17.5",
                 "ANISEARCH_CACHE_TTL_SECONDS": "4321",
                 "UPSTREAM_RATE_LIMIT_ANISEARCH_PER_MINUTE": "5",
@@ -57,7 +58,8 @@ class AppSettingsTests(unittest.TestCase):
         self.assertEqual(
             settings.sources.anisearch_api_url, "https://anisearch.example/api"
         )
-        self.assertEqual(settings.sources.anisearch_api_token, "anisearch-token")
+        self.assertEqual(settings.sources.anisearch_app_id, "anisearch-app-id")
+        self.assertEqual(settings.sources.anisearch_app_secret, "anisearch-app-secret")
         self.assertEqual(settings.sources.anisearch_request_timeout_seconds, 17.5)
         self.assertEqual(settings.sources.anisearch_cache_ttl_seconds, 4321.0)
         self.assertEqual(settings.rate_limits.source_limit("anisearch"), 5)
