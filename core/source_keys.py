@@ -15,6 +15,7 @@ class SourceKey(StrEnum):
     MAL = "mal"
     ANILIST = "anilist"
     ANIDB = "anidb"
+    ANISEARCH = "anisearch"
     IMDB = "imdb"
 
 

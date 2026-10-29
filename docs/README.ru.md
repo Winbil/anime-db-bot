@@ -6,7 +6,7 @@
 
 # anime-db-bot
 
-> Telegram-бот с независимым от конкретной базы поиском аниме и агрегацией метаданных из MyAnimeList/Jikan, AniList, Shikimori и AniDB.
+> Telegram-бот с независимым от конкретной базы поиском аниме и агрегацией метаданных из MyAnimeList/Jikan, AniList, Shikimori, AniDB и AniSearch.
 
 [![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
@@ -37,9 +37,10 @@
 | MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
 | AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
 | AniDB | — | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ |
+| AniSearch | — | ✓ | ✓ | ✓ | — | ✓ | — | ✓ | ✓ |
 | SkipDB (dormant) | — | — | — | — | — | — | — | — | — |
 
-AniDB опционален и включается только при настроенном `ANIDB_CLIENT`. Jikan **не является отдельной identity-базой**: это локальный backend MAL для данных, которых нет в официальном MAL API. Licensors для main card и lazy popularity statistics теперь используют разные local endpoints, поэтому score distribution больше не парсится на initial card path. Поддержка SkipDB сохранена в кодовой базе как dormant IMDb-backed provider, но намеренно не зарегистрирована в runtime: текущее покрытие anime skip-segments слишком мало, чтобы показывать источник пользователю. Parser/settings/tests остаются на месте, чтобы SkipDB можно было быстро включить позже, если покрытие заметно вырастет. Данные SkipDB распространяются по ODbL 1.0 + reciprocity.
+AniDB опционален и включается только при настроенном `ANIDB_CLIENT`. Jikan **не является отдельной identity-базой**: это локальный backend MAL для данных, которых нет в официальном MAL API. Licensors для main card и lazy popularity statistics теперь используют разные local endpoints, поэтому score distribution больше не парсится на initial card path. AniSearch подключён как identity-native источник Database API через подтверждённые `anisearch` edges из mappings.db. Публичного query-search endpoint у AniSearch нет, поэтому он не добавляется в быстрый `/anime <title>` поиск. Так как AniSearch помещает ID и `/full` в одну строгую rate-limit группу, источник делает один cached `/full` запрос на тайтл, но не подмешивает heavy fields в initial aggregation; people/characters/episodes затем используют тот же payload без второго сетевого ожидания. Пока учитываются только английская и японская локализации AniSearch. Без токена запросы ID-family дополнительно выдерживают документированный интервал 10 секунд (5 секунд с валидным токеном); synopsis от AniSearch всегда сопровождается требуемой прямой ссылкой на запись AniSearch. Поддержка SkipDB сохранена в кодовой базе как dormant IMDb-backed provider, но намеренно не зарегистрирована в runtime: текущее покрытие anime skip-segments слишком мало, чтобы показывать источник пользователю. Parser/settings/tests остаются на месте, чтобы SkipDB можно было быстро включить позже, если покрытие заметно вырастет. Данные SkipDB распространяются по ODbL 1.0 + reciprocity.
 
 ## Как это работает
 
@@ -293,7 +294,7 @@ anime-db-bot/
 │   ├── search/          # search orchestration и query expansion
 │   └── users/           # access control, bans и persistent user settings
 ├── sources/
-│   ├── providers/       # MAL, AniList, Shikimori, AniDB и Jikan adapters
+│   ├── providers/       # MAL, AniList, Shikimori, AniDB, AniSearch и Jikan adapters
 │   └── runtime/         # source catalog, registries и resilience wrappers
 ├── tests/               # unit, integration, wiring и regression tests
 ├── jikan_service/       # локальный Jikan/MAL supplement service
@@ -366,6 +367,7 @@ Pull requests приветствуются. Перед изменениями п
 - [AniList](https://anilist.co/)
 - [Shikimori](https://shikimori.one/)
 - [AniDB](https://anidb.net/)
+- [AniSearch](https://www.anisearch.com/) — Database API metadata; attribution and synopsis-link requirements apply
 - [SkipDB](https://skipdb.tv/) — skip-segment data under ODbL 1.0 + reciprocity
 
 Cross-ID mapping строится из нескольких community datasets. Для каждого upstream service/dataset действуют его собственные условия использования, rate limits и требования к attribution.

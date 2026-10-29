@@ -132,6 +132,10 @@ class SourceSettings:
     anidb_request_timeout_seconds: float
     anidb_cache_dir: Path
     anidb_cache_ttl_seconds: float
+    anisearch_api_url: str
+    anisearch_api_token: str
+    anisearch_request_timeout_seconds: float
+    anisearch_cache_ttl_seconds: float
     skipdb_api_url: str
     skipdb_site_url: str
     skipdb_request_timeout_seconds: float
@@ -201,6 +205,7 @@ class AppSettings:
             "mal": 120,
             "jikan": 30,
             "anidb": 20,
+            "anisearch": 12,
             "skipdb": 30,
         }
         upstream_per_source = {
@@ -220,6 +225,8 @@ class AppSettings:
             ("jikan", "trailers"): 15,
             ("jikan", "episodes"): 20,
             ("anidb", "episodes"): 20,
+            ("anisearch", "people"): 12,
+            ("anisearch", "episodes"): 12,
             ("skipdb", "identity"): 30,
             ("skipdb", "episodes"): 30,
             ("skipdb", "episode"): 120,
@@ -352,6 +359,23 @@ class AppSettings:
                     values,
                     "ANIDB_CACHE_TTL_SECONDS",
                     86400.0,
+                ),
+                anisearch_api_url=_raw(
+                    values,
+                    "ANISEARCH_API_URL",
+                    "https://api.anisearch.com",
+                ).rstrip("/"),
+                anisearch_api_token=_raw(values, "ANISEARCH_API_TOKEN"),
+                anisearch_request_timeout_seconds=_float(
+                    values,
+                    "ANISEARCH_REQUEST_TIMEOUT_SECONDS",
+                    30.0,
+                    3.0,
+                ),
+                anisearch_cache_ttl_seconds=_float(
+                    values,
+                    "ANISEARCH_CACHE_TTL_SECONDS",
+                    21600.0,
                 ),
                 skipdb_api_url=_raw(
                     values,

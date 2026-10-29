@@ -6,7 +6,7 @@
 
 # anime-db-bot
 
-> MyAnimeList/Jikan、AniList、Shikimori、AniDB を横断して検索・統合する、identity-native な Telegram アニメボットです。
+> MyAnimeList/Jikan、AniList、Shikimori、AniDB、AniSearch を横断して検索・統合する、identity-native な Telegram アニメボットです。
 
 [![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
@@ -37,9 +37,12 @@
 | MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
 | AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
 | AniDB | — | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ |
+| AniSearch | — | ✓ | ✓ | ✓ | — | ✓ | — | ✓ | ✓ |
 | SkipDB (dormant) | — | — | — | — | — | — | — | — | — |
 
 AniDB は optional で、`ANIDB_CLIENT` が設定されている場合のみ有効になります。Jikan は**独立した identity database ではありません**。公式 MAL API に存在しないデータを補うためのローカル MAL backend です。Main-card licensors と lazy popularity statistics は別々の local endpoint を使うため、score distribution の取得は initial card path から外れています。
+
+AniSearch は、mappings.db の確認済み `anisearch` edge を使う identity-native Database API source です。公開 API には通常のタイトル query-search endpoint がないため、高速 `/anime <title>` 検索には参加しません。AniSearch は ID と `/full` を同じ厳しい rate-limit group に置いているため、title ごとに cached `/full` を 1 回だけ取得し、heavy fields は initial aggregation には混ぜません。people/characters/episodes はその同じ payload を再利用するため、追加の network wait は発生しません。現在取り込む AniSearch のローカライズは英語と日本語だけです。トークンなしの ID-family request は公式仕様どおり 10 秒間隔（有効な token がある場合は 5 秒）で送信し、AniSearch 由来の synopsis には必須の AniSearch 直接リンクを付けます。
 
 SkipDB対応はIMDbベースのdormant providerとしてコードベースに残していますが、現在のアニメ向けskip-segment coverageが小さすぎるためruntimeには登録していません。parser/settings/testsは保持し、coverageが十分に増えた場合に再有効化できる状態を維持します。SkipDBデータはODbL 1.0 + reciprocityです。
 
@@ -295,7 +298,7 @@ anime-db-bot/
 │   ├── search/          # search orchestration and query expansion
 │   └── users/           # access control, bans, persistent user settings
 ├── sources/
-│   ├── providers/       # MAL, AniList, Shikimori, AniDB, Jikan adapters
+│   ├── providers/       # MAL, AniList, Shikimori, AniDB, AniSearch, Jikan adapters
 │   └── runtime/         # source catalog, registries, resilience wrappers
 ├── tests/               # unit, integration, wiring, regression tests
 ├── jikan_service/       # local Jikan/MAL supplement service
@@ -368,6 +371,7 @@ Pull request を歓迎します。変更を送る前に [CONTRIBUTING.md](../CON
 - [AniList](https://anilist.co/)
 - [Shikimori](https://shikimori.one/)
 - [AniDB](https://anidb.net/)
+- [AniSearch](https://www.anisearch.com/) — Database API metadata; attribution and synopsis-link requirements apply
 - [SkipDB](https://skipdb.tv/) — skip-segment data under ODbL 1.0 + reciprocity
 
 Cross-ID mapping は複数の community dataset から構築されます。各 upstream service / dataset には、それぞれ独自の terms、rate limit、attribution requirement が適用されます。
