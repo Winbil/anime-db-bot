@@ -8,6 +8,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # aiogram 3.31.0 currently declares Python <3.15, so keep 3.15 as a
+    # forward-compatibility probe without blocking otherwise healthy changes.
+    continue-on-error: ${{ matrix.python-version == '3.15' }}
     strategy:
       fail-fast: false
       matrix:
