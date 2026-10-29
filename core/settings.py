@@ -71,6 +71,9 @@ class LoggingSettings:
     level: str
     structured: bool
     redact_secrets: bool
+    directory: Path
+    max_bytes: int
+    backups: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,6 +231,9 @@ class AppSettings:
                 level=(_raw(values, "LOG_LEVEL", "INFO") or "INFO").upper(),
                 structured=_bool(values, "LOG_STRUCTURED", True),
                 redact_secrets=_bool(values, "LOG_REDACT_SECRETS", True),
+                directory=_path(values, "LOG_DIR", "logs"),
+                max_bytes=_int(values, "LOG_MAX_BYTES", 10485760, 1),
+                backups=_int(values, "LOG_BACKUPS", 5, 0),
             ),
             telegram=TelegramSettings(
                 bot_token=_raw(values, "BOT_TOKEN"),

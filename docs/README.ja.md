@@ -143,8 +143,13 @@ cp .env.example .env
 
 ```bash
 tmux attach -t anime-db-bot
-tail -f logs/bot.log
+TODAY="$(date '+%Y.%m.%d')"
+tail -f "logs/$TODAY/bot.log"
+tail -f "logs/$TODAY/users.log"
+tail -f "logs/$TODAY/api.log"
 ```
+
+Runtime log は `logs/YYYY.MM.DD/` 配下で用途別に分割されます。`bot.log` は application/runtime、`users.log` は Telegram user action、`api.log` は outbound source/API/retry/health event、`errors.log` はすべての `ERROR+` record の追加コピーです。runtime の local midnight を越えると、bot を再起動せず次の record から新しい日付ディレクトリへ自動的に切り替わります。
 
 ## 設定
 
@@ -333,7 +338,7 @@ Pull request を歓迎します。変更を送る前に [CONTRIBUTING.md](../CON
 ## Security
 
 - `.env` と credentials は version control に含めないでください。
-- Log は既定で secret redaction を使用し、update ごとの correlation ID、runtime の local timezone timestamp、privacy-safe な source/cache/health/resolver structured event、bounded file rotation を保持します。`LOG_REDACT_SECRETS=0` は local diagnostics 用に masking を完全に無効化し credentials をそのまま記録する可能性があるため、shared/public logs では有効のままにしてください。
+- Log は日付別の `bot/users/api/errors` file に分割され、既定で secret redaction、update ごとの correlation ID、runtime の local timezone timestamp、各 file の bounded rotation を使用します。`LOG_REDACT_SECRETS=0` は local diagnostics 用に masking を完全に無効化し credentials をそのまま記録する可能性があるため、shared/public logs では有効のままにしてください。
 - Admin-only action は access-control layer の内側に置いてください。
 - Self-hosted Telegram Bot API、将来の metrics endpoint、将来の external API を公開する場合は explicit authentication/network controls が必要です。
 - Mapping override は identity edge を変更するため audit 対象です。

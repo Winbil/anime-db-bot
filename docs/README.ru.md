@@ -143,8 +143,13 @@ cp .env.example .env
 
 ```bash
 tmux attach -t anime-db-bot
-tail -f logs/bot.log
+TODAY="$(date '+%Y.%m.%d')"
+tail -f "logs/$TODAY/bot.log"
+tail -f "logs/$TODAY/users.log"
+tail -f "logs/$TODAY/api.log"
 ```
+
+Runtime-логи разделены по назначению в `logs/YYYY.MM.DD/`: `bot.log` содержит события приложения/runtime, `users.log` — действия пользователей Telegram, `api.log` — outbound source/API/retry/health события, а `errors.log` дополнительно дублирует все записи `ERROR+` для быстрой диагностики. После локальной полуночи следующая запись автоматически попадёт в новый дневной каталог без перезапуска бота.
 
 ## Конфигурация
 
@@ -333,7 +338,7 @@ Pull requests приветствуются. Перед изменениями п
 ## Безопасность
 
 - `.env` и credentials должны оставаться вне version control.
-- Logs по умолчанию используют secret redaction, correlation ID для каждого update, timestamps в локальной timezone runtime, privacy-safe structured события source/cache/health/resolver и ограниченную ротацию файла. `LOG_REDACT_SECRETS=0` намеренно полностью отключает маскирование для локальной диагностики и может записать credentials verbatim; на shared/public logs оставляйте его включённым.
+- Logs разделены на дневные `bot/users/api/errors` файлы, по умолчанию используют secret redaction, correlation ID для каждого update, timestamps в локальной timezone runtime и ограниченную ротацию каждого файла. `LOG_REDACT_SECRETS=0` намеренно полностью отключает маскирование для локальной диагностики и может записать credentials verbatim; на shared/public logs оставляйте его включённым.
 - Admin-only actions должны оставаться за access-control layer.
 - Self-hosted Telegram Bot API, будущий metrics endpoint и будущий external API нельзя публиковать наружу без явных authentication/network controls.
 - Mapping overrides аудируются, потому что ошибочный identity edge способен затронуть несколько capabilities.

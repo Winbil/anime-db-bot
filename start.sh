@@ -4,10 +4,7 @@ set -Eeuo pipefail
 SESSION_NAME="${TMUX_SESSION_NAME:-anime-db-bot}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$SCRIPT_DIR/.venv"
-LOG_DIR="${LOG_DIR:-$SCRIPT_DIR/logs}"
-LOG_FILE="$LOG_DIR/bot.log"
-LOG_MAX_BYTES="${LOG_MAX_BYTES:-}"
-LOG_BACKUPS="${LOG_BACKUPS:-}"
+LOG_DIR="${LOG_DIR:-}"
 BOT_MODULE="bots.telegram.bot"
 
 cd "$SCRIPT_DIR"
@@ -65,16 +62,14 @@ if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
     fail "Add BOT_TOKEN to .env, then run ./start.sh again."
 fi
 
-if [[ -z "$LOG_MAX_BYTES" ]]; then
-    LOG_MAX_BYTES="$(sed -n 's/^[[:space:]]*LOG_MAX_BYTES[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
+if [[ -z "$LOG_DIR" ]]; then
+    LOG_DIR="$(sed -n 's/^[[:space:]]*LOG_DIR[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
 fi
-if [[ -z "$LOG_BACKUPS" ]]; then
-    LOG_BACKUPS="$(sed -n 's/^[[:space:]]*LOG_BACKUPS[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
+LOG_DIR="${LOG_DIR:-logs}"
+if [[ "$LOG_DIR" != /* ]]; then
+    LOG_DIR="$SCRIPT_DIR/$LOG_DIR"
 fi
-LOG_MAX_BYTES="${LOG_MAX_BYTES:-10485760}"
-LOG_BACKUPS="${LOG_BACKUPS:-5}"
-[[ "$LOG_MAX_BYTES" =~ ^[1-9][0-9]*$ ]] || fail "LOG_MAX_BYTES must be a positive integer."
-[[ "$LOG_BACKUPS" =~ ^[0-9]+$ ]] || fail "LOG_BACKUPS must be a non-negative integer."
+export LOG_DIR
 
 BOT_TOKEN_VALUE="$(sed -n 's/^[[:space:]]*BOT_TOKEN[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
 [[ -n "$BOT_TOKEN_VALUE" ]] || fail "BOT_TOKEN is empty in .env."
@@ -125,35 +120,14 @@ info "Staff/seiyuu/characters and episode backends are loaded lazily."
 info "Use scripts/check.sh for compile/tests and scripts/update-mappings.sh for an explicit mapping refresh."
 
 mkdir -p "$LOG_DIR"
-
-rotate_log_if_needed() {
-    [[ -f "$LOG_FILE" ]] || return 0
-    local current_size
-    current_size="$(wc -c < "$LOG_FILE")"
-    (( current_size < LOG_MAX_BYTES )) && return 0
-
-    if (( LOG_BACKUPS == 0 )); then
-        : > "$LOG_FILE"
-        info "Truncated bot log after reaching ${LOG_MAX_BYTES} bytes."
-        return 0
-    fi
-
-    local index
-    for (( index=LOG_BACKUPS; index>=2; index-- )); do
-        if [[ -f "$LOG_FILE.$((index - 1))" ]]; then
-            mv -f "$LOG_FILE.$((index - 1))" "$LOG_FILE.$index"
-        fi
-    done
-    mv -f "$LOG_FILE" "$LOG_FILE.1"
-    info "Rotated bot log after reaching ${LOG_MAX_BYTES} bytes; keeping ${LOG_BACKUPS} backup(s)."
-}
-
-rotate_log_if_needed
+CURRENT_LOG_DIR="$LOG_DIR/$(date '+%Y.%m.%d')"
+BOT_LOG_FILE="$CURRENT_LOG_DIR/bot.log"
+ERROR_LOG_FILE="$CURRENT_LOG_DIR/errors.log"
 
 tmux new-session -d \
     -s "$SESSION_NAME" \
     -c "$SCRIPT_DIR" \
-    "exec '$PYTHON' -m '$BOT_MODULE' 2>&1 | tee -a '$LOG_FILE'"
+    "exec '$PYTHON' -m '$BOT_MODULE'"
 
 sleep 1
 
@@ -161,11 +135,14 @@ if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
     info "Bot started in tmux session '$SESSION_NAME'."
     info "Module:  $BOT_MODULE"
     info "Attach:  tmux attach -t $SESSION_NAME"
-    info "Logs:    tail -f '$LOG_FILE'"
+    info "Logs:    $LOG_DIR/YYYY.MM.DD/{bot.log,users.log,api.log,errors.log}"
+    info "Today:   tail -f '$BOT_LOG_FILE'"
 else
     printf '\n' >&2
-    if [[ -f "$LOG_FILE" ]]; then
-        tail -n 50 "$LOG_FILE" >&2
+    if [[ -f "$ERROR_LOG_FILE" ]]; then
+        tail -n 50 "$ERROR_LOG_FILE" >&2
+    elif [[ -f "$BOT_LOG_FILE" ]]; then
+        tail -n 50 "$BOT_LOG_FILE" >&2
     fi
-    fail "The bot exited immediately. See the log above or $LOG_FILE"
+    fail "The bot exited immediately. See $CURRENT_LOG_DIR for diagnostics."
 fi

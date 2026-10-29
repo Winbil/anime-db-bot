@@ -14,6 +14,9 @@ class AppSettingsTests(unittest.TestCase):
                 "LOG_LEVEL": "debug",
                 "LOG_STRUCTURED": "0",
                 "LOG_REDACT_SECRETS": "0",
+                "LOG_DIR": "logs-test",
+                "LOG_MAX_BYTES": "12345",
+                "LOG_BACKUPS": "2",
                 "TELEGRAM_BOT_API_LOCAL": "true",
                 "TELEGRAM_SESSION_TTL_SECONDS": "90",
                 "ADMIN_TELEGRAM_USER_IDS": "1, 2;3\n2",
@@ -29,6 +32,9 @@ class AppSettingsTests(unittest.TestCase):
         self.assertEqual(settings.logging.level, "DEBUG")
         self.assertFalse(settings.logging.structured)
         self.assertFalse(settings.logging.redact_secrets)
+        self.assertEqual(settings.logging.directory, ROOT_DIR / Path("logs-test"))
+        self.assertEqual(settings.logging.max_bytes, 12345)
+        self.assertEqual(settings.logging.backups, 2)
         self.assertEqual(settings.telegram.bot_token, "token")
         self.assertTrue(settings.telegram.bot_api_local)
         self.assertEqual(settings.telegram.session_ttl_seconds, 90)
