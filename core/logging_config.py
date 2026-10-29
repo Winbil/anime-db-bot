@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TextIO
 
 from core.observability import current_observability_context
@@ -51,7 +51,13 @@ _STRUCTURED_FIELDS = (
 class SecretRedactor:
     """Best-effort log sanitizer for configured secrets and common token shapes."""
 
-    def __init__(self, secrets: Iterable[str] = ()) -> None:
+    def __init__(
+        self,
+        secrets: Iterable[str] = (),
+        *,
+        enabled: bool = True,
+    ) -> None:
+        self.enabled = bool(enabled)
         self._secrets = tuple(
             sorted(
                 {str(secret) for secret in secrets if secret and len(str(secret)) >= 6},
@@ -62,6 +68,8 @@ class SecretRedactor:
 
     def redact(self, value: object) -> str:
         text = str(value)
+        if not self.enabled:
+            return text
         for secret in self._secrets:
             text = text.replace(secret, _REDACTED)
         text = _TELEGRAM_TOKEN_RE.sub(_REDACTED, text)
@@ -79,10 +87,10 @@ class StructuredLogFormatter(logging.Formatter):
         self.redactor = redactor or SecretRedactor()
 
     def format(self, record: logging.LogRecord) -> str:
+        local_time = datetime.fromtimestamp(record.created).astimezone()
         payload: dict[str, object] = {
-            "timestamp": datetime.fromtimestamp(record.created, timezone.utc)
-            .isoformat(timespec="milliseconds")
-            .replace("+00:00", "Z"),
+            "timestamp": local_time.isoformat(timespec="milliseconds"),
+            "timezone": local_time.tzname() or str(local_time.utcoffset() or "local"),
             "level": record.levelname,
             "logger": record.name,
             "message": self.redactor.redact(record.getMessage()),
@@ -116,6 +124,16 @@ class RedactingTextFormatter(logging.Formatter):
         super().__init__("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
         self.redactor = redactor or SecretRedactor()
 
+    def formatTime(
+        self,
+        record: logging.LogRecord,
+        datefmt: str | None = None,
+    ) -> str:
+        local_time = datetime.fromtimestamp(record.created).astimezone()
+        if datefmt:
+            return local_time.strftime(datefmt)
+        return local_time.isoformat(timespec="milliseconds")
+
     def format(self, record: logging.LogRecord) -> str:
         output = self.redactor.redact(super().format(record))
         context = current_observability_context()
@@ -136,6 +154,7 @@ def configure_logging(
     level: str = "INFO",
     structured: bool = True,
     secrets: Iterable[str] = (),
+    redact_secrets: bool = True,
     stream: TextIO | None = None,
     logger: logging.Logger | None = None,
 ) -> logging.Handler:
@@ -143,7 +162,7 @@ def configure_logging(
     target = logger or logging.getLogger()
     level_name = str(level or "INFO").strip().upper()
     level_value = getattr(logging, level_name, logging.INFO)
-    redactor = SecretRedactor(secrets)
+    redactor = SecretRedactor(secrets, enabled=redact_secrets)
     handler = logging.StreamHandler(stream)
     handler.setFormatter(
         StructuredLogFormatter(redactor)
