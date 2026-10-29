@@ -37,9 +37,9 @@
 | MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
 | AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
 | AniDB | — | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ |
-| SkipDB | — | — | — | — | — | ✓ | — | — | — |
+| SkipDB (dormant) | — | — | — | — | — | — | — | — | — |
 
-AniDB опционален и включается только при настроенном `ANIDB_CLIENT`. Jikan **не является отдельной identity-базой**: это локальный backend MAL для данных, которых нет в официальном MAL API. Licensors для main card и lazy popularity statistics теперь используют разные local endpoints, поэтому score distribution больше не парсится на initial card path. SkipDB подключён как lazy episode backend поверх IMDb identity: подтверждённые `tmdb_tv`/`tmdb_movie` разрешаются через собственный redirect SkipDB TMDB→IMDb, после чего доступны сезоны/серии и таймкоды intro/recap/outro/preview. SkipDB не участвует в поиске и initial metadata. Данные SkipDB распространяются по ODbL 1.0 + reciprocity.
+AniDB опционален и включается только при настроенном `ANIDB_CLIENT`. Jikan **не является отдельной identity-базой**: это локальный backend MAL для данных, которых нет в официальном MAL API. Licensors для main card и lazy popularity statistics теперь используют разные local endpoints, поэтому score distribution больше не парсится на initial card path. Поддержка SkipDB сохранена в кодовой базе как dormant IMDb-backed provider, но намеренно не зарегистрирована в runtime: текущее покрытие anime skip-segments слишком мало, чтобы показывать источник пользователю. Parser/settings/tests остаются на месте, чтобы SkipDB можно было быстро включить позже, если покрытие заметно вырастет. Данные SkipDB распространяются по ODbL 1.0 + reciprocity.
 
 ## Как это работает
 

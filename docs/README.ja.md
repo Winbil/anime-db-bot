@@ -37,11 +37,11 @@
 | MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
 | AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
 | AniDB | — | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ |
-| SkipDB | — | — | — | — | — | ✓ | — | — | — |
+| SkipDB (dormant) | — | — | — | — | — | — | — | — | — |
 
 AniDB は optional で、`ANIDB_CLIENT` が設定されている場合のみ有効になります。Jikan は**独立した identity database ではありません**。公式 MAL API に存在しないデータを補うためのローカル MAL backend です。Main-card licensors と lazy popularity statistics は別々の local endpoint を使うため、score distribution の取得は initial card path から外れています。
 
-SkipDBはIMDbベースの遅延エピソードbackendです。確認済みの`tmdb_tv`/`tmdb_movie`はSkipDB自身のTMDB→IMDbリダイレクトで解決し、season/episodeとintro/recap/outro/previewのタイムコードを取得します。検索やinitial metadataには参加しません。SkipDBデータはODbL 1.0 + reciprocityです。
+SkipDB対応はIMDbベースのdormant providerとしてコードベースに残していますが、現在のアニメ向けskip-segment coverageが小さすぎるためruntimeには登録していません。parser/settings/testsは保持し、coverageが十分に増えた場合に再有効化できる状態を維持します。SkipDBデータはODbL 1.0 + reciprocityです。
 
 ## 仕組み
 
