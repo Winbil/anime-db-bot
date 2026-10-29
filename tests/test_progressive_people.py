@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+from bots.telegram.card.runtime.state import TelegramCardState
+from bots.telegram.people.loading import ensure_lazy_people
 from bots.telegram.people.portraits import _keyboard
 from core.models import AggregatedAnime
-from sources.providers.shikimori_people_batches import _character_ids_for_anime, load_shikimori_voices_batch
+from services.media.people import PeopleLoadProgress, SourceLoadProgress
+from sources.providers.shikimori_people_batches import (
+    _character_ids_for_anime,
+    load_shikimori_voices_batch,
+)
 from sources.providers.shikimori_people_runtime import ShikimoriPeopleRuntime
 
 
@@ -13,7 +19,9 @@ class ProgressiveShikimoriPeopleTests(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _character(character_id: str, *, portrait: bool) -> dict:
         person_id = f"p{character_id}"
-        image = {"original": f"/system/people/original/{person_id}.jpg"} if portrait else {}
+        image = (
+            {"original": f"/system/people/original/{person_id}.jpg"} if portrait else {}
+        )
         return {
             "id": character_id,
             "name": f"Character {character_id}",
@@ -76,7 +84,9 @@ class ProgressiveShikimoriPeopleTests(unittest.IsolatedAsyncioTestCase):
         character_ids = [str(index) for index in range(1, 8)]
 
         async def load_characters(ids: list[str], *_args) -> list[dict]:
-            return [self._character(character_id, portrait=True) for character_id in ids]
+            return [
+                self._character(character_id, portrait=True) for character_id in ids
+            ]
 
         with (
             patch(
@@ -105,8 +115,12 @@ class ProgressiveShikimoriPeopleTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(first.next_cursor, "2")
         self.assertFalse(first.complete)
-        self.assertEqual([person.external_ids["shikimori"] for person in first.people], ["p1", "p2"])
-        self.assertEqual([person.external_ids["shikimori"] for person in second.people], ["p3", "p4"])
+        self.assertEqual(
+            [person.external_ids["shikimori"] for person in first.people], ["p1", "p2"]
+        )
+        self.assertEqual(
+            [person.external_ids["shikimori"] for person in second.people], ["p3", "p4"]
+        )
         self.assertFalse(second.complete)
         self.assertEqual(second.next_cursor, "4")
 
@@ -121,11 +135,52 @@ class ShikimoriRoleIndexCacheTests(unittest.IsolatedAsyncioTestCase):
             "sources.providers.shikimori_people_batches._rest_anime_roles",
             new=AsyncMock(return_value=roles),
         ) as load_roles:
-            self.assertEqual(await _character_ids_for_anime("37430", runtime=first), ["1"])
-            self.assertEqual(await _character_ids_for_anime("37430", runtime=first), ["1"])
-            self.assertEqual(await _character_ids_for_anime("37430", runtime=second), ["1"])
+            self.assertEqual(
+                await _character_ids_for_anime("37430", runtime=first), ["1"]
+            )
+            self.assertEqual(
+                await _character_ids_for_anime("37430", runtime=first), ["1"]
+            )
+            self.assertEqual(
+                await _character_ids_for_anime("37430", runtime=second), ["1"]
+            )
 
         self.assertEqual(load_roles.await_count, 2)
+
+
+class ProgressivePeopleLoadingWiringTests(unittest.IsolatedAsyncioTestCase):
+    async def test_first_render_settles_all_started_initial_batches(self) -> None:
+        state = TelegramCardState.create(60)
+        anime = AggregatedAnime(title="Example")
+        message = AsyncMock()
+        progress = PeopleLoadProgress(
+            sources={"Slow": SourceLoadProgress(source=object())}
+        )
+        service = MagicMock()
+        service.build_progress.return_value = progress
+        service.settle_started_batches = AsyncMock(return_value=None)
+        service.ensure = AsyncMock(return_value=progress)
+
+        with patch("bots.telegram.people.loading._service", return_value=service):
+            result = await ensure_lazy_people(
+                state,
+                "token",
+                anime,
+                message,
+                "staff",
+                locale="ru",
+            )
+
+        self.assertIs(result, progress)
+        service.start_initial_batches.assert_called_once_with(anime, "staff", progress)
+        service.settle_started_batches.assert_awaited_once_with(progress, None)
+        service.ensure.assert_awaited_once_with(
+            anime,
+            "staff",
+            progress,
+            source=None,
+            requested_page=0,
+        )
 
 
 class ProgressivePeopleKeyboardTests(unittest.TestCase):
@@ -148,7 +203,7 @@ class ProgressivePeopleKeyboardTests(unittest.TestCase):
         navigation = keyboard.inline_keyboard[0]
         callbacks = [button.callback_data for button in navigation]
         self.assertIn("av:token:voices:51", callbacks)
-        self.assertTrue(any(button.text == "Показано 80/130" for button in navigation))
+        self.assertTrue(any(button.text == "Показано 80/130+" for button in navigation))
 
     def test_next_button_disappears_when_loaded_data_is_complete(self) -> None:
         anime = AggregatedAnime(title="Example")

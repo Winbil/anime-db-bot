@@ -168,7 +168,13 @@ def _keyboard(
         )
     nav.append(
         InlineKeyboardButton(
-            text=text("people", "shown", locale=locale, shown=shown, total=total),
+            text=text(
+                "people",
+                "shown_partial" if has_more else "shown",
+                locale=locale,
+                shown=shown,
+                total=total,
+            ),
             callback_data="noop",
         )
     )

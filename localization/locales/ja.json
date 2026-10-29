@@ -255,6 +255,7 @@
     "roles": "担当: {roles}",
     "portraits": "ポートレート: {sources}",
     "shown": "表示 {shown}/{total}",
+    "shown_partial": "表示 {shown}/{total}+",
     "loading_staff": "スタッフ・制作陣とポートレートを読み込み中…",
     "loading_voices": "声優とポートレートを読み込み中…",
     "source_unavailable": "このソースは利用できなくなりました。カードに戻ってセクションを開き直してください。"
