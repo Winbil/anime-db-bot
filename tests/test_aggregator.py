@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock
 
 from core.identity import AnimeIdentity
 from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate
-from services.aggregator import _merge_people
-from services.identity_aggregator import AnimeAggregator
+from services.aggregation.service import _merge_people
+from services.identity.aggregator import AnimeAggregator
 
 
 class FakeSource:

@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import unittest
 
-from bots.telegram.card.state import AnimeCardSession
-from bots.telegram.card.trailers import (
+from bots.telegram.card.runtime.state import AnimeCardSession
+from bots.telegram.card.features.trailers import (
     _source_keyboard,
     _source_name_for_selector,
     _trailer_text,
 )
 from core.identity import AnimeIdentity
 from core.models import AggregatedAnime, TrailerRecord
-from services.trailers import TrailerService
-from sources.trailers import _anilist_trailers, _shikimori_trailers
+from services.media.trailers import TrailerService
+from sources.providers.trailers import _anilist_trailers, _shikimori_trailers
 
 
 class TrailerParsingTests(unittest.TestCase):

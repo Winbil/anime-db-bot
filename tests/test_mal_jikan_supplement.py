@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, patch
 
 from core.identity import AnimeIdentity
 from search.providers.mal import MALSearchProvider
-from sources.jikan import JIKAN_DISPLAY_NAME
-from sources.mal import MALSource
+from sources.providers.jikan import JIKAN_DISPLAY_NAME
+from sources.providers.mal import MALSource
 
 
 class MALJikanSupplementTests(unittest.IsolatedAsyncioTestCase):
@@ -32,7 +32,7 @@ class MALJikanSupplementTests(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-        with patch("sources.mal._get_raw", new=AsyncMock(return_value=self._official_payload())):
+        with patch("sources.providers.mal._get_raw", new=AsyncMock(return_value=self._official_payload())):
             record = await source.get_details(AnimeIdentity({"mal": "123"}))
 
         self.assertIsNotNone(record)
@@ -50,7 +50,7 @@ class MALJikanSupplementTests(unittest.IsolatedAsyncioTestCase):
             side_effect=RuntimeError("local parser unavailable")
         )
 
-        with patch("sources.mal._get_raw", new=AsyncMock(return_value=self._official_payload())):
+        with patch("sources.providers.mal._get_raw", new=AsyncMock(return_value=self._official_payload())):
             record = await source.get_details(AnimeIdentity({"mal": "123"}))
 
         self.assertIsNotNone(record)

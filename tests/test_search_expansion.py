@@ -4,7 +4,7 @@ import os
 import unittest
 
 from core.models import SearchCandidate, SearchResultSet
-from services.search_expansion import expand_text_search, expansion_queries
+from services.search.expansion import expand_text_search, expansion_queries
 
 
 class FakeSearchService:

@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 from core.settings import AppSettings, RateLimitSettings
-from services.rate_limits import PersonalRateLimiter, UpstreamRateLimiter
+from services.runtime.rate_limits import PersonalRateLimiter, UpstreamRateLimiter
 
 
 def rate_settings(values: dict[str, str] | None = None) -> RateLimitSettings:

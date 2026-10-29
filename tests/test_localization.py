@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-import sources.anilist as anilist_source
-import sources.mal as mal_source
-import sources.shikimori as shikimori_source
+import sources.providers.anilist as anilist_source
+import sources.providers.mal as mal_source
+import sources.providers.shikimori as shikimori_source
 from core.canonicalization import (
     canonical_genre,
     canonical_genre_key,

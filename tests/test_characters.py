@@ -3,20 +3,20 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from bots.telegram.card.characters import (
+from bots.telegram.card.features.characters import (
     _keyboard,
     _merge_characters,
     _page_text,
     _source_name_for_selector,
 )
-from bots.telegram.card.state import AnimeCardSession
+from bots.telegram.card.runtime.state import AnimeCardSession
 from core.character_identity import CharacterIdentity
 from core.identity import AnimeIdentity
 from core.models import AggregatedAnime, CharacterRecord
-from services.characters import CharacterService
-from sources.anilist import _characters_from_connection
-from sources.jikan import JikanSource
-from sources.shikimori_people import _characters_from_roles
+from services.media.characters import CharacterService
+from sources.providers.anilist import _characters_from_connection
+from sources.providers.jikan import JikanSource
+from sources.providers.shikimori_people import _characters_from_roles
 
 
 class CharacterParsingTests(unittest.IsolatedAsyncioTestCase):

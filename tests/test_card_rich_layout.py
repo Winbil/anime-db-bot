@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from bots.telegram.card.renderer import anime_sections, main_rich, rich_view, source_section_text
-from bots.telegram.card.selectors import source_section_sources
+from bots.telegram.card.views.renderer import anime_sections, main_rich, rich_view, source_section_text
+from bots.telegram.card.ui.selectors import source_section_sources
 from core.models import AggregatedAnime, BroadcastSlot, PopularityRanking, PopularityStats
 
 

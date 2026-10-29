@@ -5,8 +5,8 @@ import unittest
 
 from core.identity import AnimeIdentity
 from core.source_errors import SourceCircuitOpen, SourceUnavailable
-from services.source_health import SourceHealthRegistry
-from sources.resilient import resilient_source
+from services.runtime.source_health import SourceHealthRegistry
+from sources.runtime.resilient import resilient_source
 
 
 class _Clock:

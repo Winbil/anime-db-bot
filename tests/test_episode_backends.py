@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import unittest
 
-from bots.telegram.card.episodes import _episode_keyboard, resolve_backend_selector
+from bots.telegram.card.features.episodes import _episode_keyboard, resolve_backend_selector
 from core.identity import AnimeIdentity
 from core.models import EpisodePage, EpisodeRecord
-from services.episodes import EpisodeService
+from services.media.episodes import EpisodeService
 
 
 class _EpisodeSource:

@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from bots.telegram.rate_limit import TelegramRateLimitMiddleware
 from core.identity import AnimeIdentity
 from core.people_loading import PeopleBatch
-from services.rate_limits import PersonalRateLimiter, RateLimitDecision
-from sources.rate_limited import PeopleRateLimitedSourceProxy, RateLimitedSourceProxy
+from services.runtime.rate_limits import PersonalRateLimiter, RateLimitDecision
+from sources.runtime.rate_limited import PeopleRateLimitedSourceProxy, RateLimitedSourceProxy
 
 
 class TelegramRateLimitMiddlewareTests(unittest.IsolatedAsyncioTestCase):
@@ -64,7 +64,7 @@ class RateLimitedSourceProxyTests(unittest.IsolatedAsyncioTestCase):
         proxy = RateLimitedSourceProxy(source, "anilist")
         identity = AnimeIdentity.from_mapping({"anilist": "1"})
 
-        with patch("sources.rate_limited.wait_for_upstream", new=AsyncMock()) as wait:
+        with patch("sources.runtime.rate_limited.wait_for_upstream", new=AsyncMock()) as wait:
             await proxy.get_details(identity)
 
         wait.assert_awaited_once_with("anilist", "metadata")
@@ -75,7 +75,7 @@ class RateLimitedSourceProxyTests(unittest.IsolatedAsyncioTestCase):
         proxy = PeopleRateLimitedSourceProxy(source, "shikimori")
         identity = AnimeIdentity.from_mapping({"shikimori": "1"})
 
-        with patch("sources.rate_limited.wait_for_upstream", new=AsyncMock()) as wait:
+        with patch("sources.runtime.rate_limited.wait_for_upstream", new=AsyncMock()) as wait:
             await proxy.load_characters(identity)
 
         wait.assert_awaited_once_with("shikimori", "people")
@@ -86,7 +86,7 @@ class RateLimitedSourceProxyTests(unittest.IsolatedAsyncioTestCase):
         proxy = PeopleRateLimitedSourceProxy(source, "shikimori")
         identity = AnimeIdentity.from_mapping({"shikimori": "1"})
 
-        with patch("sources.rate_limited.wait_for_upstream", new=AsyncMock()) as wait:
+        with patch("sources.runtime.rate_limited.wait_for_upstream", new=AsyncMock()) as wait:
             await proxy.load_voices_batch(
                 identity,
                 cursor="8",

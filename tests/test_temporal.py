@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, time, timezone
 
-from bots.telegram.card.renderer import anime_sections
+from bots.telegram.card.views.renderer import anime_sections
 from core.models import AggregatedAnime, AnimeRecord, BroadcastSlot, EpisodeRecord
 from core.temporal import (
     PartialDate,
@@ -12,11 +12,11 @@ from core.temporal import (
     parse_partial_date,
     parse_time,
 )
-from services.aggregation_merge import _consensus_datetime, _consensus_partial_date
-from services.direct_lookup import _record_year
-from sources.anilist import _format_date as anilist_date
-from sources.anilist import _format_timestamp as anilist_timestamp
-from sources.jikan import _episode as jikan_episode
+from services.aggregation.merge import _consensus_datetime, _consensus_partial_date
+from services.identity.direct_lookup import _record_year
+from sources.providers.anilist import _format_date as anilist_date
+from sources.providers.anilist import _format_timestamp as anilist_timestamp
+from sources.providers.jikan import _episode as jikan_episode
 
 
 class PartialDateTests(unittest.TestCase):

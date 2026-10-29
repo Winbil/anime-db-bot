@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from core.identity import AnimeIdentity
-from sources.jikan import JikanSource
+from sources.providers.jikan import JikanSource
 
 
 class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
@@ -29,7 +29,7 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        with patch("sources.jikan._get", new=AsyncMock(return_value=payload)) as getter:
+        with patch("sources.providers.jikan._get", new=AsyncMock(return_value=payload)) as getter:
             page = await source.load_episode_page(AnimeIdentity({"mal": "123"}), page=1)
 
         args, kwargs = getter.await_args
@@ -58,7 +58,7 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
             }
         }
 
-        with patch("sources.jikan._get", new=AsyncMock(return_value=payload)):
+        with patch("sources.providers.jikan._get", new=AsyncMock(return_value=payload)):
             episode = await source.load_episode(AnimeIdentity({"mal": "123"}), 7)
 
         self.assertIsNotNone(episode)
@@ -69,7 +69,7 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_mal_identity_does_not_call_service(self) -> None:
         source = JikanSource()
-        with patch("sources.jikan._get", new=AsyncMock()) as getter:
+        with patch("sources.providers.jikan._get", new=AsyncMock()) as getter:
             page = await source.load_episode_page(AnimeIdentity({"anilist": "10"}))
         getter.assert_not_awaited()
         self.assertEqual(page.items, [])
@@ -87,7 +87,7 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
                 }
             ]
         }
-        with patch("sources.jikan._get", new=AsyncMock(return_value=payload)) as getter:
+        with patch("sources.providers.jikan._get", new=AsyncMock(return_value=payload)) as getter:
             trailers = await source.load_trailers(AnimeIdentity({"mal": "123"}))
 
         args, kwargs = getter.await_args
@@ -108,7 +108,7 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
                 "score_distribution": {"10": 120, "9": 80, "0": 999},
             }
         }
-        with patch("sources.jikan._get", new=AsyncMock(return_value=payload)) as getter:
+        with patch("sources.providers.jikan._get", new=AsyncMock(return_value=payload)) as getter:
             result = await source.load_metadata_supplement(AnimeIdentity({"mal": "123"}))
 
         args, kwargs = getter.await_args
@@ -129,7 +129,7 @@ class JikanSourceTests(unittest.IsolatedAsyncioTestCase):
                 ],
             }
         }
-        with patch("sources.jikan._get", new=AsyncMock(return_value=payload)) as getter:
+        with patch("sources.providers.jikan._get", new=AsyncMock(return_value=payload)) as getter:
             staff = await source.load_staff(AnimeIdentity({"mal": "123"}))
             voices = await source.load_voices(AnimeIdentity({"mal": "123"}))
 

@@ -4,7 +4,7 @@ import unittest
 
 from core.models import AggregatedAnime, PersonCredit
 from core.people_loading import PeopleBatch
-from services.people_progress import PeopleProgressService
+from services.media.people import PeopleProgressService
 
 
 class _FakeAggregator:

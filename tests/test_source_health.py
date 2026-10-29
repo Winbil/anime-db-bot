@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, patch
 
 from core.identity import AnimeIdentity
 from core.source_errors import SourceCircuitOpen, SourceUnavailable
-from services.source_health import SourceHealthRegistry
-from sources.resilient import (
+from services.runtime.source_health import SourceHealthRegistry
+from sources.runtime.resilient import (
     resilient_episode_source,
     resilient_search_provider,
     resilient_source,
@@ -82,7 +82,7 @@ class SourceHealthTests(unittest.IsolatedAsyncioTestCase):
         health = SourceHealthRegistry(failure_threshold=3, cooldown_seconds=30)
         source = resilient_source(_FailingSource(), health)
 
-        with patch("sources.resilient.asyncio.sleep", new=AsyncMock()):
+        with patch("sources.runtime.resilient.asyncio.sleep", new=AsyncMock()):
             for _ in range(3):
                 with self.assertRaises(SourceUnavailable):
                     await source.get_details(AnimeIdentity({"mal": "1"}))
@@ -101,7 +101,7 @@ class SourceHealthTests(unittest.IsolatedAsyncioTestCase):
             health_key="mal",
         )
 
-        with patch("sources.resilient.asyncio.sleep", new=AsyncMock()):
+        with patch("sources.runtime.resilient.asyncio.sleep", new=AsyncMock()):
             with self.assertRaises(SourceUnavailable):
                 await provider.search("test", page=1, limit=10)
 
@@ -113,7 +113,7 @@ class SourceHealthTests(unittest.IsolatedAsyncioTestCase):
         health = SourceHealthRegistry(failure_threshold=1, cooldown_seconds=30)
         source = resilient_trailer_source(_FailingTrailerSource(), health)
 
-        with patch("sources.resilient.asyncio.sleep", new=AsyncMock()):
+        with patch("sources.runtime.resilient.asyncio.sleep", new=AsyncMock()):
             with self.assertRaises(SourceUnavailable):
                 await source.load_trailers(AnimeIdentity({"mal": "1"}))
 
@@ -124,7 +124,7 @@ class SourceHealthTests(unittest.IsolatedAsyncioTestCase):
         health = SourceHealthRegistry(failure_threshold=1, cooldown_seconds=30)
         source = resilient_episode_source(_FailingEpisodeSource(), health)
 
-        with patch("sources.resilient.asyncio.sleep", new=AsyncMock()):
+        with patch("sources.runtime.resilient.asyncio.sleep", new=AsyncMock()):
             with self.assertRaises(SourceUnavailable):
                 await source.load_episode_page(AnimeIdentity({"mal": "1"}), page=1)
 

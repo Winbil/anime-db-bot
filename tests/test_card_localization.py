@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from bots.telegram.card.renderer import anime_sections, display_anime_title
+from bots.telegram.card.views.renderer import anime_sections, display_anime_title
 from core.models import AggregatedAnime, BroadcastSlot, PersonCredit
 
 

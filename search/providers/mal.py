@@ -7,7 +7,7 @@ from core.models import SearchCandidate, SearchPage
 from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse
 from core.source_names import MAL_SOURCE_NAME
-from services.rate_limits import wait_for_upstream
+from services.runtime.rate_limits import wait_for_upstream
 
 MAL_MAX_PAGE_SIZE = 100
 

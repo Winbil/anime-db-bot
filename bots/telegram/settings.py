@@ -11,7 +11,7 @@ from aiogram.types import (
 
 from bots.telegram.callbacks import SettingsCallback
 from localization import available_locales, locale_name, text
-from services.user_settings import get_user_locale, set_user_locale
+from services.users.settings import get_user_locale, set_user_locale
 
 SETTINGS_PREFIX = "settings:"
 

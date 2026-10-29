@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 from core.identity import AnimeIdentity
 from core.source_keys import SourceKey
-from sources.shikimori import ShikimoriSource
+from sources.providers.shikimori import ShikimoriSource
 
 
 class ShikimoriIdentitySourceTests(unittest.IsolatedAsyncioTestCase):
@@ -24,7 +24,7 @@ class ShikimoriIdentitySourceTests(unittest.IsolatedAsyncioTestCase):
         }
         source = ShikimoriSource()
         with patch(
-            "sources.shikimori._get_raw",
+            "sources.providers.shikimori._get_raw",
             new=AsyncMock(return_value=payload),
         ) as loader:
             record = await source.get_details(AnimeIdentity({"shikimori": "48316"}))
@@ -39,7 +39,7 @@ class ShikimoriIdentitySourceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_shikimori_id_does_not_guess_from_mal_number(self) -> None:
         source = ShikimoriSource()
-        with patch("sources.shikimori._get_raw", new=AsyncMock()) as loader:
+        with patch("sources.providers.shikimori._get_raw", new=AsyncMock()) as loader:
             record = await source.get_details(AnimeIdentity({"mal": "48316"}))
 
         self.assertIsNone(record)

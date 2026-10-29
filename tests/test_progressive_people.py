@@ -3,10 +3,10 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from bots.telegram.people_portraits import _keyboard
+from bots.telegram.people.portraits import _keyboard
 from core.models import AggregatedAnime
-from sources.shikimori_people_batches import _character_ids_for_anime, load_shikimori_voices_batch
-from sources.shikimori_people_runtime import ShikimoriPeopleRuntime
+from sources.providers.shikimori_people_batches import _character_ids_for_anime, load_shikimori_voices_batch
+from sources.providers.shikimori_people_runtime import ShikimoriPeopleRuntime
 
 
 class ProgressiveShikimoriPeopleTests(unittest.IsolatedAsyncioTestCase):
@@ -40,19 +40,19 @@ class ProgressiveShikimoriPeopleTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "sources.shikimori_people_batches._character_ids_for_anime",
+                "sources.providers.shikimori_people_batches._character_ids_for_anime",
                 new=AsyncMock(return_value=character_ids),
             ),
             patch(
-                "sources.shikimori_people_batches._rest_character_details",
+                "sources.providers.shikimori_people_batches._rest_character_details",
                 new=AsyncMock(side_effect=load_characters),
             ) as character_details,
             patch(
-                "sources.shikimori_people_batches._refresh_people",
+                "sources.providers.shikimori_people_batches._refresh_people",
                 new=AsyncMock(return_value=None),
             ),
             patch(
-                "sources.shikimori_people_batches._character_chunk_size",
+                "sources.providers.shikimori_people_batches._character_chunk_size",
                 return_value=1,
             ),
         ):
@@ -80,19 +80,19 @@ class ProgressiveShikimoriPeopleTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "sources.shikimori_people_batches._character_ids_for_anime",
+                "sources.providers.shikimori_people_batches._character_ids_for_anime",
                 new=AsyncMock(return_value=character_ids),
             ),
             patch(
-                "sources.shikimori_people_batches._rest_character_details",
+                "sources.providers.shikimori_people_batches._rest_character_details",
                 new=AsyncMock(side_effect=load_characters),
             ),
             patch(
-                "sources.shikimori_people_batches._refresh_people",
+                "sources.providers.shikimori_people_batches._refresh_people",
                 new=AsyncMock(return_value=None),
             ),
             patch(
-                "sources.shikimori_people_batches._character_chunk_size",
+                "sources.providers.shikimori_people_batches._character_chunk_size",
                 return_value=1,
             ),
         ):
@@ -118,7 +118,7 @@ class ShikimoriRoleIndexCacheTests(unittest.IsolatedAsyncioTestCase):
         second = ShikimoriPeopleRuntime()
 
         with patch(
-            "sources.shikimori_people_batches._rest_anime_roles",
+            "sources.providers.shikimori_people_batches._rest_anime_roles",
             new=AsyncMock(return_value=roles),
         ) as load_roles:
             self.assertEqual(await _character_ids_for_anime("37430", runtime=first), ["1"])

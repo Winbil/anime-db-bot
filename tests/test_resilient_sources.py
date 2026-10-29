@@ -7,7 +7,7 @@ import httpx
 
 from core.identity import AnimeIdentity
 from core.models import AnimeRecord, PersonCredit
-from sources.resilient import (
+from sources.runtime.resilient import (
     PeopleRetryingSourceProxy,
     RetryingSourceProxy,
     resilient_source,
@@ -47,7 +47,7 @@ class ResilientSourceTests(unittest.IsolatedAsyncioTestCase):
         proxy = RetryingSourceProxy(source)
         identity = AnimeIdentity({"anilist": "999"})
 
-        with patch("sources.resilient.asyncio.sleep", new=AsyncMock()):
+        with patch("sources.runtime.resilient.asyncio.sleep", new=AsyncMock()):
             record = await proxy.get_details(identity)
 
         self.assertIsNotNone(record)
@@ -59,7 +59,7 @@ class ResilientSourceTests(unittest.IsolatedAsyncioTestCase):
         proxy = PeopleRetryingSourceProxy(source)
         identity = AnimeIdentity({"shikimori": "48316"})
 
-        with patch("sources.resilient.asyncio.sleep", new=AsyncMock()):
+        with patch("sources.runtime.resilient.asyncio.sleep", new=AsyncMock()):
             people = await proxy.load_staff(identity)
 
         self.assertEqual(source.staff_calls, 2)
