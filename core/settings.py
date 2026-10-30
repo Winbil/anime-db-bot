@@ -141,6 +141,10 @@ class SourceSettings:
     skipdb_site_url: str
     skipdb_request_timeout_seconds: float
     skipdb_cache_ttl_seconds: float
+    anime_skip_api_url: str
+    anime_skip_client_id: str
+    anime_skip_request_timeout_seconds: float
+    anime_skip_cache_ttl_seconds: float
     shikimori_api_url: str
     shikimori_site_url: str
     shikimori_people_cache_ttl_seconds: float
@@ -208,6 +212,7 @@ class AppSettings:
             "anidb": 20,
             "anisearch": 12,
             "skipdb": 30,
+            "anime_skip": 60,
         }
         upstream_per_source = {
             source: _int(
@@ -218,6 +223,9 @@ class AppSettings:
             )
             for source, default in source_defaults.items()
         }
+        # Anime Skip client IDs have a hard server-side ceiling of 60 RPM. Local
+        # configuration may reserve headroom, but must never raise that ceiling.
+        upstream_per_source["anime_skip"] = min(60, upstream_per_source["anime_skip"])
         operation_defaults = {
             ("anilist", "people"): 20,
             ("shikimori", "people"): 60,
@@ -231,6 +239,7 @@ class AppSettings:
             ("skipdb", "identity"): 30,
             ("skipdb", "episodes"): 30,
             ("skipdb", "episode"): 120,
+            ("anime_skip", "episode_segments"): 60,
         }
         upstream_per_operation = {
             (source, operation): _int(
@@ -398,6 +407,23 @@ class AppSettings:
                 skipdb_cache_ttl_seconds=_float(
                     values,
                     "SKIPDB_CACHE_TTL_SECONDS",
+                    21600.0,
+                ),
+                anime_skip_api_url=_raw(
+                    values,
+                    "ANIME_SKIP_API_URL",
+                    "https://anime-skip.com/api",
+                ).rstrip("/"),
+                anime_skip_client_id=_raw(values, "ANIME_SKIP_CLIENT_ID"),
+                anime_skip_request_timeout_seconds=_float(
+                    values,
+                    "ANIME_SKIP_REQUEST_TIMEOUT_SECONDS",
+                    20.0,
+                    3.0,
+                ),
+                anime_skip_cache_ttl_seconds=_float(
+                    values,
+                    "ANIME_SKIP_CACHE_TTL_SECONDS",
                     21600.0,
                 ),
                 shikimori_api_url=_raw(

@@ -48,9 +48,7 @@ class AniSkipSegmentSource:
     ) -> None:
         self._api_url = str(api_url or ANISKIP_API_URL).rstrip("/")
         self._timeout_seconds = max(1.0, float(timeout_seconds))
-        self._cache = BoundedTTLCache[
-            tuple[str, int, int], tuple[EpisodeSegment, ...]
-        ](
+        self._cache = BoundedTTLCache[tuple[str, int, int], tuple[EpisodeSegment, ...]](
             max_entries=5000,
             ttl_seconds=max(0.0, float(cache_ttl_seconds)),
             name="aniskip_episode_segments",

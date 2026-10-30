@@ -8,6 +8,7 @@ import httpx
 from core.episode_segments import EpisodeSegment
 from core.identity import AnimeIdentity
 from services.media.episode_segments import EpisodeSegmentService, aggregate_segments
+from sources.providers.anime_skip import AnimeSkipSegmentSource
 from sources.providers.aniskip import AniSkipSegmentSource
 
 
@@ -129,6 +130,184 @@ class AniSkipSegmentSourceTests(unittest.IsolatedAsyncioTestCase):
             values = await source.load_segments(AnimeIdentity({"anidb": "1"}), 1)
         self.assertEqual(values, [])
         request.assert_not_awaited()
+
+
+class AnimeSkipSegmentSourceTests(unittest.IsolatedAsyncioTestCase):
+    def test_requires_client_id_and_confirmed_anilist_id(self) -> None:
+        enabled = AnimeSkipSegmentSource(
+            client_id="client-id",
+            api_url="https://anime-skip.test/api",
+        )
+        disabled = AnimeSkipSegmentSource(
+            client_id="",
+            api_url="https://anime-skip.test/api",
+        )
+        self.assertTrue(enabled.supports_identity(AnimeIdentity({"anilist": "16498"})))
+        self.assertFalse(enabled.supports_identity(AnimeIdentity({"mal": "16498"})))
+        self.assertFalse(enabled.supports_identity(AnimeIdentity({"anilist": "bad"})))
+        self.assertFalse(
+            disabled.supports_identity(AnimeIdentity({"anilist": "16498"}))
+        )
+
+    async def test_parses_graphql_boundaries_into_segments_and_sends_client_id(
+        self,
+    ) -> None:
+        source = AnimeSkipSegmentSource(
+            client_id="client-id",
+            api_url="https://anime-skip.test/api",
+            cache_ttl_seconds=0,
+        )
+        payload = {
+            "data": {
+                "findShowsByExternalId": [
+                    {
+                        "id": "show-id",
+                        "episodes": [
+                            {
+                                "id": "bad-duplicate",
+                                "number": "2",
+                                "absoluteNumber": None,
+                                "baseDuration": 1420,
+                                "timestamps": [
+                                    {
+                                        "id": "bad",
+                                        "at": -100,
+                                        "source": "ANIME_SKIP",
+                                        "type": {"name": "Intro"},
+                                    }
+                                ],
+                            },
+                            {
+                                "id": "episode-id",
+                                "number": "2",
+                                "absoluteNumber": None,
+                                "baseDuration": 1420,
+                                "timestamps": [
+                                    {
+                                        "id": "canon-0",
+                                        "at": 0,
+                                        "source": "ANIME_SKIP",
+                                        "type": {"name": "Canon"},
+                                    },
+                                    {
+                                        "id": "intro",
+                                        "at": 90,
+                                        "source": "ANIME_SKIP",
+                                        "type": {"name": "Intro"},
+                                    },
+                                    {
+                                        "id": "canon-1",
+                                        "at": 180,
+                                        "source": "ANIME_SKIP",
+                                        "type": {"name": "Canon"},
+                                    },
+                                    {
+                                        "id": "credits",
+                                        "at": 1300,
+                                        "source": "ANIME_SKIP",
+                                        "type": {"name": "Credits"},
+                                    },
+                                    {
+                                        "id": "preview",
+                                        "at": 1390,
+                                        "source": "ANIME_SKIP",
+                                        "type": {"name": "Preview"},
+                                    },
+                                    {
+                                        "id": "canon-end",
+                                        "at": 1420,
+                                        "source": "ANIME_SKIP",
+                                        "type": {"name": "Canon"},
+                                    },
+                                ],
+                            },
+                        ],
+                    }
+                ]
+            }
+        }
+        request_obj = httpx.Request("POST", "https://anime-skip.test/api/graphql")
+        response = httpx.Response(200, json=payload, request=request_obj)
+        request = AsyncMock(return_value=response)
+        with (
+            patch("sources.providers.anime_skip.wait_for_upstream", new=AsyncMock()),
+            patch("sources.providers.anime_skip.http_request", new=request),
+        ):
+            values = await source.load_segments(
+                AnimeIdentity({"anilist": "16498"}),
+                2,
+                episode_length_seconds=1420,
+            )
+        self.assertEqual(
+            [item.kind for item in values], ["opening", "ending", "preview"]
+        )
+        self.assertEqual(
+            [(item.start_seconds, item.end_seconds) for item in values],
+            [(90.0, 180.0), (1300.0, 1390.0), (1390.0, 1420.0)],
+        )
+        self.assertEqual(values[0].source_segment_id, "intro")
+        self.assertEqual(values[0].raw_kind, "Intro")
+        self.assertEqual(
+            request.await_args.args[2], "https://anime-skip.test/api/graphql"
+        )
+        self.assertEqual(
+            request.await_args.kwargs["headers"]["X-Client-ID"], "client-id"
+        )
+        self.assertEqual(
+            request.await_args.kwargs["json"]["variables"]["anilistId"], "16498"
+        )
+
+    async def test_show_episode_payload_is_cached_across_episode_lookups(self) -> None:
+        source = AnimeSkipSegmentSource(
+            client_id="client-id",
+            api_url="https://anime-skip.test/api",
+            cache_ttl_seconds=3600,
+        )
+        payload = {
+            "data": {
+                "findShowsByExternalId": [
+                    {
+                        "id": "show-id",
+                        "episodes": [
+                            {
+                                "id": "episode-id",
+                                "number": "1",
+                                "absoluteNumber": None,
+                                "baseDuration": 100,
+                                "timestamps": [
+                                    {
+                                        "id": "intro",
+                                        "at": 10,
+                                        "source": "ANIME_SKIP",
+                                        "type": {"name": "Intro"},
+                                    },
+                                    {
+                                        "id": "canon",
+                                        "at": 20,
+                                        "source": "ANIME_SKIP",
+                                        "type": {"name": "Canon"},
+                                    },
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+        response = httpx.Response(
+            200,
+            json=payload,
+            request=httpx.Request("POST", "https://anime-skip.test/api/graphql"),
+        )
+        request = AsyncMock(return_value=response)
+        with (
+            patch("sources.providers.anime_skip.wait_for_upstream", new=AsyncMock()),
+            patch("sources.providers.anime_skip.http_request", new=request),
+        ):
+            first = await source.load_segments(AnimeIdentity({"anilist": "1"}), 1)
+            second = await source.load_segments(AnimeIdentity({"anilist": "1"}), 1)
+        self.assertEqual(first, second)
+        self.assertEqual(request.await_count, 1)
 
 
 if __name__ == "__main__":
