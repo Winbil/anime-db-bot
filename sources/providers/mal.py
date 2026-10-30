@@ -69,7 +69,7 @@ def client_id() -> str:
     value = _settings().mal_client_id
     if not value:
         raise RuntimeError(
-            "MAL_CLIENT_ID is empty. Add a MyAnimeList API Client ID to .env."
+            "MAL_CLIENT_ID is empty. Add a MyAnimeList API Client ID to .env.d/sources.env."
         )
     return value
 
@@ -170,7 +170,7 @@ async def _get_raw(
     settings = settings or _settings()
     if not settings.mal_client_id:
         raise RuntimeError(
-            "MAL_CLIENT_ID is empty. Add a MyAnimeList API Client ID to .env."
+            "MAL_CLIENT_ID is empty. Add a MyAnimeList API Client ID to .env.d/sources.env."
         )
     response = await http_request(
         "mal",

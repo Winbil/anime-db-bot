@@ -55,6 +55,17 @@ class ObservabilityContextTests(unittest.TestCase):
                 self.assertEqual(current.action, "callback")
             self.assertEqual(current_observability_context().action, "message")
 
+    def test_proxy_url_passwords_are_redacted_for_http_and_socks(self) -> None:
+        redactor = SecretRedactor()
+        for url in (
+            "http://proxy-user:proxy-pass@example.invalid:8080",
+            "socks4://proxy-user:proxy-pass@example.invalid:1080",
+            "socks5h://proxy-user:proxy-pass@example.invalid:1080",
+        ):
+            redacted = redactor.redact(url)
+            self.assertNotIn("proxy-pass", redacted)
+            self.assertIn("<redacted>", redacted)
+
 
 class _FakeAsyncClient:
     async def request(self, method: str, url: str, **kwargs: object) -> httpx.Response:

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from python_socks import ProxyConnectionError, ProxyError, ProxyTimeoutError
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,14 +137,14 @@ def normalize_source_error(
 ) -> SourceError:
     if isinstance(exc, SourceError):
         return exc
-    if isinstance(exc, httpx.TimeoutException):
+    if isinstance(exc, (httpx.TimeoutException, ProxyTimeoutError)):
         return SourceTimeout(
             f"{source} {operation} timed out: {exc}",
             source=source,
             operation=operation,
             transient=True,
         )
-    if isinstance(exc, httpx.TransportError):
+    if isinstance(exc, (httpx.TransportError, ProxyConnectionError, ProxyError)):
         return SourceUnavailable(
             f"{source} {operation} transport failure: {exc}",
             source=source,

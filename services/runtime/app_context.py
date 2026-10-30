@@ -7,6 +7,7 @@ from typing import Iterator
 
 from core.contracts import AnimeSearchProvider, AnimeSource
 from core.http_client import HttpClientPool, activate_http_pool
+from core.proxy_config import ProxySettings, load_proxy_settings
 from core.settings import AppSettings, get_settings
 from core.source_keys import SourceKey
 from mappings.resolver import MappingResolver
@@ -49,6 +50,7 @@ class AppContext:
     """Application composition root shared by transport/UI adapters."""
 
     settings: AppSettings
+    proxy_settings: ProxySettings
     http: HttpClientPool
     source_health: SourceHealthRegistry
     user_settings_store: SQLiteUserSettingsStore
@@ -72,9 +74,14 @@ class AppContext:
     direct_lookup: DirectIdLookupService
 
     @classmethod
-    def create(cls, settings: AppSettings | None = None) -> "AppContext":
+    def create(
+        cls,
+        settings: AppSettings | None = None,
+        proxy_settings: ProxySettings | None = None,
+    ) -> "AppContext":
         settings = settings or get_settings()
-        http = HttpClientPool()
+        proxy_settings = proxy_settings or load_proxy_settings()
+        http = HttpClientPool(proxy_settings)
         source_health = SourceHealthRegistry(
             failure_threshold=settings.source_health.failure_threshold,
             cooldown_seconds=settings.source_health.cooldown_seconds,
@@ -95,6 +102,7 @@ class AppContext:
         aggregator = AnimeAggregator(sources, identity_resolver)
         return cls(
             settings=settings,
+            proxy_settings=proxy_settings,
             http=http,
             source_health=source_health,
             user_settings_store=user_settings_store,

@@ -142,7 +142,9 @@ git clone git@github.com:Winbil/anime-db-bot.git
 cd anime-db-bot
 
 cp -R .env.example.d .env.d
+cp -R .proxies.example.d .proxies.d
 # Edit .env.d/telegram.env and add at least BOT_TOKEN.
+# Proxy files are optional; their example entries are disabled/commented by default.
 
 ./scripts/setup.sh
 ./scripts/check.sh
@@ -183,7 +185,29 @@ All runtime environment parsing is centralized in `core/settings.py`. New deploy
 | `BANS_DB_PATH` | No | SQLite path for moderation bans. |
 | `MAPPINGS_DB_PATH` | No | Runtime cross-ID mapping database. |
 
-Do not commit `.env`, `.env.d/`, bot tokens, access tokens, passwords, or private API credentials.
+Do not commit `.env`, `.env.d/`, `.proxies.d/`, bot tokens, access tokens, passwords, proxy credentials, or private API credentials.
+
+### Per-source proxy pools
+
+Optional outbound proxy routing is configured separately under `.proxies.d/`, one fixed TOML file per runtime source plus `telegram.toml` for the bot itself. Start from `.proxies.example.d/`. Supported proxy schemes are `http`, `socks4`, and `socks5`.
+
+```toml
+enabled = true
+
+[[proxy]]
+name = "primary"
+enabled = true
+url = "socks5://user:password@127.0.0.1:1080"
+
+[[proxy]]
+name = "backup"
+enabled = false
+url = "http://127.0.0.1:8080"
+```
+
+Profiles are independent: `mal.toml` affects only MAL, `anilist.toml` only AniList, and so on. Multiple enabled entries are round-robin selected and the remaining entries are tried on proxy/network failure. Duplicate proxy URLs are allowed when they have distinct entry names, so repeating an endpoint can intentionally give it more rotation weight. `enabled = false` can disable either the whole profile or an individual entry. If at least one proxy entry is active for a profile, that profile does **not** silently fall back to the direct connection when all proxies fail; direct access is used only when the profile has no active proxies. Proxy configuration is loaded at process startup, so edits take effect after a bot restart. When `telegram.toml` has active proxies, this bot intentionally bypasses any configured local/shared `telegram-bot-api` endpoint and talks to the official `api.telegram.org` through its own proxy pool; this keeps the proxy scoped to this bot instead of changing other bots that share the local server. `jikan.toml` is also special: the Python hop to the loopback Jikan service stays direct, while the selected proxy is forwarded to the local Jikan service and applied to its outbound MyAnimeList scrape.
+
+Fixed runtime profiles are: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `bahamut`, `baha_anime_skip`, and `skipdb`. Stray TOML files are ignored. Proxy files may contain credentials and are gitignored; `start.sh` keeps `.proxies.d` at mode `700` and known profile files at mode `600`.
 
 ### AniDB
 
