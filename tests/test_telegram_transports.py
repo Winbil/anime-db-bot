@@ -4,8 +4,13 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from aiogram.exceptions import TelegramNetworkError
+from aiogram.methods import GetMe
+
 from bots.telegram.transports.official import OfficialTelegramTransport
+from bots.telegram.transports.proxy_session import ProxyPoolAiohttpSession
 from bots.telegram.transports.tgapi import LocalTelegramTransport
+from core.proxy_config import ProxyEntry, ProxyProfile
 from core.settings import TelegramSettings
 
 
@@ -72,6 +77,32 @@ class TelegramTransportCreationTests(unittest.TestCase):
             session=session_object,
         )
 
+    def test_official_transport_uses_telegram_proxy_pool_when_enabled(self) -> None:
+        proxies = (
+            ProxyEntry("one", "http://127.0.0.1:8001"),
+            ProxyEntry("two", "socks5://127.0.0.1:8002"),
+        )
+        profile = ProxyProfile(name="telegram", proxies=proxies)
+        session_object = object()
+        bot_object = object()
+        transport = OfficialTelegramTransport(telegram_settings(), profile)
+        with (
+            patch(
+                "bots.telegram.transports.official.ProxyPoolAiohttpSession",
+                return_value=session_object,
+            ) as session_cls,
+            patch(
+                "bots.telegram.transports.official.Bot", return_value=bot_object
+            ) as bot_cls,
+        ):
+            self.assertIs(transport.create_bot(), bot_object)
+
+        session_cls.assert_called_once_with(proxies)
+        bot_cls.assert_called_once_with(
+            token="123456:TEST_TOKEN",
+            session=session_object,
+        )
+
     def test_transport_uses_frozen_settings_not_environment(self) -> None:
         transport = LocalTelegramTransport(
             telegram_settings(
@@ -95,6 +126,34 @@ class TelegramTransportCreationTests(unittest.TestCase):
 
 
 class TelegramTransportLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_proxy_pool_session_fails_over_and_round_robins(self) -> None:
+        proxies = (
+            ProxyEntry("one", "http://127.0.0.1:8001"),
+            ProxyEntry("two", "socks5://127.0.0.1:8002"),
+        )
+        session = ProxyPoolAiohttpSession(proxies)
+        method = GetMe()
+        first = SimpleNamespace(
+            make_request=AsyncMock(
+                side_effect=TelegramNetworkError(method=method, message="down")
+            ),
+            close=AsyncMock(),
+        )
+        second = SimpleNamespace(
+            make_request=AsyncMock(return_value="ok"),
+            close=AsyncMock(),
+        )
+        session._sessions = (first, second)
+
+        self.assertEqual(await session.make_request(SimpleNamespace(), method), "ok")
+        self.assertEqual(await session.make_request(SimpleNamespace(), method), "ok")
+
+        self.assertEqual(first.make_request.await_count, 1)
+        self.assertEqual(second.make_request.await_count, 2)
+        await session.close()
+        first.close.assert_awaited_once()
+        second.close.assert_awaited_once()
+
     async def test_health_probe_returns_bot_identity(self) -> None:
         transport = OfficialTelegramTransport(telegram_settings())
         bot = SimpleNamespace(

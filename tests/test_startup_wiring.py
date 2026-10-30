@@ -28,6 +28,7 @@ from core.canonicalization import (
 )
 from core.contracts import AnimeSearchProvider, AnimeSource
 from core.http_config import USER_AGENT
+from core.proxy_config import ProxyEntry, ProxyProfile
 from core.settings import TelegramSettings
 from core.models import (
     AggregatedAnime,
@@ -118,12 +119,20 @@ class StartupWiringTests(unittest.TestCase):
             admin_user_ids=(),
         )
         official = select_transport(TelegramSettings(bot_api_url="", **base))
-        local = select_transport(
-            TelegramSettings(bot_api_url="http://127.0.0.1:8081", **base)
+        local_settings = TelegramSettings(bot_api_url="http://127.0.0.1:8081", **base)
+        local = select_transport(local_settings)
+        proxied = select_transport(
+            local_settings,
+            ProxyProfile(
+                name="telegram",
+                proxies=(ProxyEntry("proxy", "socks5://127.0.0.1:1080"),),
+            ),
         )
 
         self.assertIsInstance(official, OfficialTelegramTransport)
         self.assertIsInstance(local, LocalTelegramTransport)
+        self.assertIsInstance(proxied, OfficialTelegramTransport)
+        self.assertEqual(len(proxied.proxy_profile.active), 1)
 
     def test_canonicalization_contracts(self) -> None:
         self.assertEqual(canonical_genre("Fantasy"), canonical_genre("Фэнтези"))

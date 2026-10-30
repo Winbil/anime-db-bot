@@ -1,5 +1,6 @@
 .env
 .env.d/
+.proxies.d/
 .venv/
 venv/
 logs/

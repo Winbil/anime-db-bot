@@ -22,7 +22,9 @@ _SENSITIVE_ASSIGNMENT_RE = re.compile(
 _SENSITIVE_QUERY_RE = re.compile(
     r"(?i)([?&](?:access[_-]?token|api[_-]?key|token|secret|password)=)([^&\s]+)"
 )
-_URL_CREDENTIAL_RE = re.compile(r"(?i)(https?://[^:/@\s]+:)([^@/\s]+)(@)")
+_URL_CREDENTIAL_RE = re.compile(
+    r"(?i)((?:https?|socks4a?|socks5h?)://[^:/@\s]+:)([^@/\s]+)(@)"
+)
 _STRUCTURED_FIELDS = (
     "event",
     "platform",
@@ -30,6 +32,9 @@ _STRUCTURED_FIELDS = (
     "operation",
     "backend",
     "provider",
+    "proxy",
+    "proxy_scheme",
+    "proxy_attempt",
     "attempt",
     "max_attempts",
     "retry_after",

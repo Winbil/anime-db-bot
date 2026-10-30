@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from aiogram import Bot
 
+from core.proxy_config import ProxyProfile
 from core.settings import TelegramSettings
 
 
@@ -22,12 +23,21 @@ class TelegramTransport:
     key = "base"
     mode_name = "Telegram Bot API"
 
-    def __init__(self, settings: TelegramSettings) -> None:
+    def __init__(
+        self,
+        settings: TelegramSettings,
+        proxy_profile: ProxyProfile | None = None,
+    ) -> None:
         self._settings = settings
+        self._proxy_profile = proxy_profile or ProxyProfile(name="telegram")
 
     @property
     def settings(self) -> TelegramSettings:
         return self._settings
+
+    @property
+    def proxy_profile(self) -> ProxyProfile:
+        return self._proxy_profile
 
     @property
     def endpoint_label(self) -> str:

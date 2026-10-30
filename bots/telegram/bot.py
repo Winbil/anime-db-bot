@@ -20,6 +20,7 @@ from bots.telegram.transports.tgapi import LocalTelegramTransport
 from core.logging_config import configure_logging
 from core.models import SearchCandidate
 from core.observability import bind_observability_context, new_correlation_id
+from core.proxy_config import ProxyProfile, load_proxy_settings
 from core.settings import TelegramSettings, get_settings
 from localization import text
 from mappings.runtime import periodic_mapping_updates
@@ -28,9 +29,17 @@ from services.runtime.app_context import AppContext, activate_app_context
 from services.users.settings import get_user_locale
 
 
-def select_transport(settings: TelegramSettings | None = None) -> TelegramTransport:
-    """Select official Telegram API or local tg-bot-api from frozen configuration."""
+def select_transport(
+    settings: TelegramSettings | None = None,
+    proxy_profile: ProxyProfile | None = None,
+) -> TelegramTransport:
+    """Select Telegram API backend and its independent proxy profile."""
     settings = settings or get_settings().telegram
+    proxy_profile = proxy_profile or load_proxy_settings().profile("telegram")
+    # A configured bot proxy must route the real Telegram connection, not the
+    # loopback hop to a shared/self-hosted telegram-bot-api instance.
+    if proxy_profile.active:
+        return OfficialTelegramTransport(settings, proxy_profile)
     if settings.bot_api_url:
         return LocalTelegramTransport(settings)
     return OfficialTelegramTransport(settings)
@@ -150,6 +159,7 @@ async def run_bot(
     """Build and run the Telegram implementation of anime-db-bot."""
     settings = context.settings if context is not None else get_settings()
     settings.require_bot_token()
+    context = context or AppContext.create(settings)
     configure_logging(
         level=settings.logging.level,
         structured=settings.logging.structured,
@@ -161,10 +171,12 @@ async def run_bot(
             settings.telegram.bot_token,
             settings.sources.anilist_access_token,
             settings.sources.mal_client_id,
+            *context.proxy_settings.secret_values(),
         ),
     )
-    context = context or AppContext.create(settings)
-    transport = transport or select_transport(settings.telegram)
+    transport = transport or select_transport(
+        settings.telegram, context.proxy_settings.profile("telegram")
+    )
 
     if not settings.logging.redact_secrets:
         logging.warning(
@@ -177,6 +189,21 @@ async def run_bot(
 
     logging.info("Bot platform: Telegram")
     logging.info("Telegram transport: %s", transport.mode_name)
+    logging.info(
+        "Telegram proxy route: %s",
+        f"{len(transport.proxy_profile.active)} enabled proxy entries"
+        if transport.proxy_profile.active
+        else "direct",
+    )
+    proxied_sources = [
+        name
+        for name in context.proxy_settings.profiles
+        if name != "telegram" and context.proxy_settings.active(name)
+    ]
+    logging.info(
+        "Source proxy profiles enabled: %s",
+        ", ".join(proxied_sources) if proxied_sources else "none",
+    )
     logging.info("Configured Telegram administrators: %d", len(telegram_admin_ids()))
     logging.info(
         "Personal rate limit: %d/min/user, %d/hour/user (admins bypass personal limit)",

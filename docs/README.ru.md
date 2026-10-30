@@ -142,7 +142,9 @@ git clone git@github.com:Winbil/anime-db-bot.git
 cd anime-db-bot
 
 cp -R .env.example.d .env.d
+cp -R .proxies.example.d .proxies.d
 # Отредактируйте .env.d/telegram.env и как минимум добавьте BOT_TOKEN.
+# Proxy-конфиги опциональны; примерные записи по умолчанию выключены/закомментированы.
 
 ./scripts/setup.sh
 ./scripts/check.sh
@@ -181,7 +183,29 @@ Runtime-логи разделены по назначению в `logs/YYYY.MM.D
 | `BANS_DB_PATH` | Нет | SQLite для moderation bans. |
 | `MAPPINGS_DB_PATH` | Нет | Runtime cross-ID mapping database. |
 
-Не коммитьте `.env`, `.env.d/`, bot/access tokens, пароли и другие приватные credentials.
+Не коммитьте `.env`, `.env.d/`, `.proxies.d/`, bot/access tokens, пароли, credentials прокси и другие приватные данные.
+
+### Прокси по источникам
+
+Исходящий трафик можно маршрутизировать отдельно для каждого runtime-источника через `.proxies.d/`. Для каждого source используется свой фиксированный TOML-файл, а `telegram.toml` относится к самому Telegram-боту. Шаблоны лежат в `.proxies.example.d/`. Поддерживаются `http`, `socks4` и `socks5`.
+
+```toml
+enabled = true
+
+[[proxy]]
+name = "primary"
+enabled = true
+url = "socks5://user:password@127.0.0.1:1080"
+
+[[proxy]]
+name = "backup"
+enabled = false
+url = "http://127.0.0.1:8080"
+```
+
+Профили полностью независимы: `mal.toml` действует только на MAL, `anilist.toml` — только на AniList и т.д. Несколько включённых записей выбираются round-robin, а при сетевой/proxy-ошибке запрос пробует оставшиеся включённые прокси. Одинаковые URL разрешены, если у записей разные `name`, поэтому повторением одного endpoint можно намеренно увеличить его вес в ротации. `enabled = false` выключает либо весь профиль, либо конкретную запись. Если у профиля есть хотя бы один активный proxy, при отказе всех прокси **нет скрытого fallback на прямое соединение**; напрямую source ходит только когда активных proxy нет. Изменения proxy-конфигов применяются после перезапуска бота. Если в `telegram.toml` есть активные прокси, именно этот бот намеренно обходит настроенный локальный/общий `telegram-bot-api` и подключается к официальному `api.telegram.org` через свой proxy-pool — так прокси не влияет на другие боты, использующие тот же локальный сервер. `jikan.toml` тоже обрабатывается специально: Python → локальный Jikan остаётся direct, а выбранный proxy передаётся внутрь Jikan и применяется уже к его исходящему запросу в MyAnimeList.
+
+Фиксированные профили: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `bahamut`, `baha_anime_skip`, `skipdb`. Посторонние TOML-файлы игнорируются. `.proxies.d/` gitignored, потому что в URL могут быть логин/пароль; `start.sh` выставляет каталогу mode `700`, известным файлам — `600`.
 
 ### AniDB
 

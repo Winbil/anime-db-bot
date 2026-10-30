@@ -12,6 +12,7 @@ use Jikan\Request\Anime\AnimeEpisodesRequest;
 use Jikan\Request\Anime\AnimeRequest;
 use Jikan\Request\Anime\AnimeStatsRequest;
 use Jikan\Request\Anime\AnimeVideosRequest;
+use Symfony\Component\HttpClient\CurlHttpClient;
 
 const ACTIVE_LOCK = '/tmp/anime-db-bot-jikan-active.lock';
 
@@ -42,6 +43,39 @@ function withActivity(callable $callback): mixed
     } finally {
         @unlink(ACTIVE_LOCK);
     }
+}
+
+function upstreamProxyUrl(): ?string
+{
+    $encoded = trim((string) ($_SERVER['HTTP_X_ANIME_DB_BOT_PROXY'] ?? ''));
+    if ($encoded === '') {
+        return null;
+    }
+    $padding = strlen($encoded) % 4;
+    if ($padding !== 0) {
+        $encoded .= str_repeat('=', 4 - $padding);
+    }
+    $decoded = base64_decode(strtr($encoded, '-_', '+/'), true);
+    if ($decoded === false || $decoded === '') {
+        throw new InvalidArgumentException('Invalid upstream proxy header encoding.');
+    }
+    $parts = parse_url($decoded);
+    $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+    $host = (string) ($parts['host'] ?? '');
+    $port = (int) ($parts['port'] ?? 0);
+    if (!in_array($scheme, ['http', 'socks4', 'socks5'], true) || $host === '' || $port <= 0) {
+        throw new InvalidArgumentException('Invalid upstream proxy URL.');
+    }
+    return $decoded;
+}
+
+function malClient(): MalClient
+{
+    $proxy = upstreamProxyUrl();
+    if ($proxy === null) {
+        return new MalClient();
+    }
+    return new MalClient(new CurlHttpClient(['proxy' => $proxy]));
 }
 
 function episodeListItemToArray(object $item): array
@@ -167,7 +201,7 @@ if (preg_match('#^/anime/(\d+)/licensors$#', $path, $match)) {
     $malId = (int) $match[1];
     try {
         $anime = withActivity(function () use ($malId) {
-            $client = new MalClient();
+            $client = malClient();
             return $client->getAnime(new AnimeRequest($malId));
         });
 
@@ -199,7 +233,7 @@ if (preg_match('#^/anime/(\d+)/popularity$#', $path, $match)) {
     $malId = (int) $match[1];
     try {
         $stats = withActivity(function () use ($malId) {
-            $client = new MalClient();
+            $client = malClient();
             return $client->getAnimeStats(new AnimeStatsRequest($malId));
         });
 
@@ -228,7 +262,7 @@ if (preg_match('#^/anime/(\d+)/supplement$#', $path, $match)) {
     $malId = (int) $match[1];
     try {
         [$anime, $stats] = withActivity(function () use ($malId) {
-            $client = new MalClient();
+            $client = malClient();
             return [
                 $client->getAnime(new AnimeRequest($malId)),
                 $client->getAnimeStats(new AnimeStatsRequest($malId)),
@@ -269,7 +303,7 @@ if (preg_match('#^/anime/(\d+)/people$#', $path, $match)) {
     $malId = (int) $match[1];
     try {
         $result = withActivity(function () use ($malId) {
-            $client = new MalClient();
+            $client = malClient();
             return $client->getAnimeCharactersAndStaff(new AnimeCharactersAndStaffRequest($malId));
         });
         respond([
@@ -290,7 +324,7 @@ if (preg_match('#^/anime/(\d+)/trailers$#', $path, $match)) {
     $malId = (int) $match[1];
     try {
         $result = withActivity(function () use ($malId) {
-            $client = new MalClient();
+            $client = malClient();
             return $client->getAnimeVideos(new AnimeVideosRequest($malId));
         });
         respond([
@@ -312,7 +346,7 @@ if (preg_match('#^/anime/(\d+)/episodes$#', $path, $match)) {
     $page = max(1, (int) ($_GET['page'] ?? 1));
     try {
         $result = withActivity(function () use ($malId, $page) {
-            $client = new MalClient();
+            $client = malClient();
             return $client->getAnimeEpisodes(new AnimeEpisodesRequest($malId, $page));
         });
         respond([
@@ -337,7 +371,7 @@ if (preg_match('#^/anime/(\d+)/episodes/(\d+)$#', $path, $match)) {
     $episode = (int) $match[2];
     try {
         $result = withActivity(function () use ($malId, $episode) {
-            $client = new MalClient();
+            $client = malClient();
             return $client->getAnimeEpisode(new AnimeEpisodeRequest($malId, $episode));
         });
         respond([

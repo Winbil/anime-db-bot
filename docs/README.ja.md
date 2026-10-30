@@ -146,7 +146,9 @@ git clone git@github.com:Winbil/anime-db-bot.git
 cd anime-db-bot
 
 cp -R .env.example.d .env.d
+cp -R .proxies.example.d .proxies.d
 # .env.d/telegram.env を編集し、少なくとも BOT_TOKEN を設定します。
+# Proxy 設定は optional で、example の entry は既定で無効/コメント状態です。
 
 ./scripts/setup.sh
 ./scripts/check.sh
@@ -185,7 +187,29 @@ Runtime environment parsing は `core/settings.py` に集約されています�
 | `BANS_DB_PATH` | いいえ | Moderation ban 用 SQLite path。 |
 | `MAPPINGS_DB_PATH` | いいえ | Runtime cross-ID mapping database。 |
 
-`.env`、`.env.d/`、bot token、access token、password、private credentials は commit しないでください。
+`.env`、`.env.d/`、`.proxies.d/`、bot token、access token、password、proxy credentials、private credentials は commit しないでください。
+
+### Source ごとの proxy pool
+
+Outbound proxy は `.proxies.d/` で runtime source ごとに独立して設定できます。各 source には固定 TOML file があり、`telegram.toml` は Telegram bot 自体に適用されます。Template は `.proxies.example.d/` にあります。対応 scheme は `http`, `socks4`, `socks5` です。
+
+```toml
+enabled = true
+
+[[proxy]]
+name = "primary"
+enabled = true
+url = "socks5://user:password@127.0.0.1:1080"
+
+[[proxy]]
+name = "backup"
+enabled = false
+url = "http://127.0.0.1:8080"
+```
+
+Profile は独立しています。`mal.toml` は MAL のみ、`anilist.toml` は AniList のみに作用します。複数の有効 entry は round-robin で選ばれ、network/proxy failure の場合は残りの有効 proxy を順に試します。同じ URL を異なる `name` で複数登録できるため、同一 endpoint を繰り返して rotation の weight を増やすこともできます。Profile または個別 entry を `enabled = false` で無効化できます。有効 proxy が1つ以上ある profile は、すべて失敗しても **direct connection へ暗黙 fallback しません**。Active proxy がない場合のみ direct access になります。変更は bot restart 後に反映されます。`telegram.toml` に active proxy がある場合、この bot は設定済みの local/shared `telegram-bot-api` を意図的に bypass し、独自 proxy pool 経由で official `api.telegram.org` に接続します。これにより同じ local server を使う他の bot には影響しません。`jikan.toml` も特別扱いで、Python → local Jikan の loopback hop は direct のまま、選択された proxy を Jikan に渡して outbound MyAnimeList scrape に適用します。
+
+固定 profile は `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `bahamut`, `baha_anime_skip`, `skipdb` です。その他の TOML file は無視されます。`.proxies.d/` は credential を含み得るため gitignored で、`start.sh` は directory を mode `700`、既知 file を `600` に保ちます。
 
 ### AniDB
 

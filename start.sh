@@ -21,8 +21,13 @@ fail() {
 [[ -f "$SCRIPT_DIR/requirements.lock" ]] || fail "requirements.lock not found."
 [[ -d "$SCRIPT_DIR/.env.example.d" ]] || fail ".env.example.d not found."
 ENV_FILES=(telegram.env sources.env timestamps.env rate-limits.env mappings.env storage.env logging.env runtime.env)
+PROXY_FILES=(telegram.toml shikimori.toml mal.toml anilist.toml kitsu.toml anidb.toml anisearch.toml jikan.toml aniskip.toml anime_skip.toml bahamut.toml baha_anime_skip.toml skipdb.toml)
 for env_name in "${ENV_FILES[@]}"; do
     [[ -f "$SCRIPT_DIR/.env.example.d/$env_name" ]] || fail ".env.example.d/$env_name not found."
+done
+[[ -d "$SCRIPT_DIR/.proxies.example.d" ]] || fail ".proxies.example.d not found."
+for proxy_name in "${PROXY_FILES[@]}"; do
+    [[ -f "$SCRIPT_DIR/.proxies.example.d/$proxy_name" ]] || fail ".proxies.example.d/$proxy_name not found."
 done
 command -v python3 >/dev/null 2>&1 || fail "python3 is not installed."
 command -v tmux >/dev/null 2>&1 || fail "tmux is not installed. Install it first, for example: sudo apt install tmux"
@@ -60,6 +65,20 @@ PYTHON="$VENV_DIR/bin/python"
 
 info "Using Python: $($PYTHON --version 2>&1)"
 
+if [[ ! -d "$SCRIPT_DIR/.proxies.d" ]]; then
+    mkdir -m 700 "$SCRIPT_DIR/.proxies.d"
+    for proxy_name in "${PROXY_FILES[@]}"; do
+        cp "$SCRIPT_DIR/.proxies.example.d/$proxy_name" "$SCRIPT_DIR/.proxies.d/$proxy_name"
+    done
+    info "Created .proxies.d from .proxies.example.d (all proxy entries disabled by default)."
+fi
+chmod 700 "$SCRIPT_DIR/.proxies.d"
+for proxy_name in "${PROXY_FILES[@]}"; do
+    if [[ -f "$SCRIPT_DIR/.proxies.d/$proxy_name" ]]; then
+        chmod 600 "$SCRIPT_DIR/.proxies.d/$proxy_name"
+    fi
+done
+
 HAS_SPLIT_CONFIG=0
 for env_name in "${ENV_FILES[@]}"; do
     if [[ -f "$SCRIPT_DIR/.env.d/$env_name" ]]; then
@@ -78,18 +97,22 @@ if [[ ! -f "$SCRIPT_DIR/.env" && "$HAS_SPLIT_CONFIG" -eq 0 ]]; then
     fail "Add BOT_TOKEN to .env.d/telegram.env, then run ./start.sh again."
 fi
 
+
 if ! CONFIG_SUMMARY="$("$PYTHON" - <<'PYCONFIG'
+from core.proxy_config import load_proxy_settings
 from core.settings import get_settings
 
 settings = get_settings()
+proxy_settings = load_proxy_settings()
 print(settings.logging.directory)
 print("1" if settings.telegram.bot_token else "0")
 print("1" if settings.sources.mal_client_id else "0")
 print("1" if settings.sources.anidb_client else "0")
 print(settings.sources.jikan_port)
+print(sum(1 for name in proxy_settings.profiles if proxy_settings.active(name)))
 PYCONFIG
 )"; then
-    fail "Configuration loading failed. Check .env.d and legacy .env for duplicate or invalid settings."
+    fail "Configuration loading failed. Check .env.d, legacy .env, and .proxies.d for duplicate or invalid settings."
 fi
 mapfile -t CONFIG_LINES <<<"$CONFIG_SUMMARY"
 
@@ -103,6 +126,7 @@ if [[ "$LOG_DIR" != /* ]]; then
 fi
 export LOG_DIR
 export JIKAN_PORT="${JIKAN_PORT:-${CONFIG_LINES[4]:-8091}}"
+info "Proxy profiles with enabled entries: ${CONFIG_LINES[5]:-0}."
 
 if [[ "${CONFIG_LINES[2]:-0}" != "1" ]]; then
     info "MAL_CLIENT_ID is empty: MyAnimeList search and metadata will be unavailable."
