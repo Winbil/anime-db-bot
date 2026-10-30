@@ -10,6 +10,7 @@ from aiogram.types import (
 )
 
 from bots.telegram.callbacks import KeyedPageCallback, resolve_key_or_legacy_index
+from bots.telegram.pagination import card_picker_callback
 from bots.telegram.card.runtime.state import AnimeCardSession
 from bots.telegram.card.views.renderer import (
     edit_standard_text,
@@ -194,7 +195,12 @@ def _episode_keyboard(
         )
     current_episode = view_page + 1
     center = f"{current_episode}/{total_episodes if total_episodes else '?'}"
-    nav.append(InlineKeyboardButton(text=center, callback_data="noop"))
+    center_callback = (
+        card_picker_callback(token, f"ap~{backend}", view_page, total_episodes)
+        if total_episodes and total_episodes > 1
+        else "noop"
+    )
+    nav.append(InlineKeyboardButton(text=center, callback_data=center_callback))
     if has_next:
         nav.append(
             InlineKeyboardButton(

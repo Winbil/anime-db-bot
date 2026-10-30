@@ -3,6 +3,7 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bots.telegram.callbacks import KeyedPageCallback, SectionSourceCallback
+from bots.telegram.pagination import card_picker_callback
 from bots.telegram.card.ui.constants import (
     ALL_SOURCE_LABELS,
     SOURCE_SELECTABLE_SECTIONS,
@@ -105,7 +106,9 @@ def navigation_keyboard(
         nav.append(
             InlineKeyboardButton(
                 text=f"{page + 1}/{page_count}",
-                callback_data="noop",
+                callback_data=card_picker_callback(
+                    token, f"av~{current_section}", page, page_count
+                ),
             )
         )
         if page + 1 < page_count:
@@ -172,7 +175,9 @@ def description_keyboard(
         nav.append(
             InlineKeyboardButton(
                 text=f"{page + 1}/{page_count}",
-                callback_data="noop",
+                callback_data=card_picker_callback(
+                    token, f"ad~{source_key}", page, page_count
+                ),
             )
         )
         if page + 1 < page_count:
@@ -226,7 +231,9 @@ def source_section_keyboard(
         nav.append(
             InlineKeyboardButton(
                 text=f"{page + 1}/{page_count}",
-                callback_data="noop",
+                callback_data=card_picker_callback(
+                    token, f"as~{section}~{source_key}", page, page_count
+                ),
             )
         )
         if page + 1 < page_count:

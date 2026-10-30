@@ -11,6 +11,7 @@ from aiogram.types import (
 )
 
 from bots.telegram.callbacks import KeyedPageCallback, resolve_key_or_legacy_index
+from bots.telegram.pagination import card_picker_callback
 from bots.telegram.card.views.renderer import (
     edit_standard_text,
     plain_text_to_rich_html,
@@ -308,10 +309,20 @@ def _keyboard(
                 text="◀️", callback_data=_callback(token, source_key, page - 1)
             )
         )
+    without_count = max(0, shown - page) if page > 0 else max(0, shown)
+    picker_route = (
+        f"pv~av~characters~{without_count}"
+        if source_key is None
+        else f"pv~ac~{source_key}~{without_count}"
+    )
     nav.append(
         InlineKeyboardButton(
             text=text("characters", "shown", locale=locale, shown=shown, total=total),
-            callback_data="noop",
+            callback_data=(
+                card_picker_callback(token, picker_route, max(0, shown - 1), total)
+                if total > 1 and shown > 0
+                else "noop"
+            ),
         )
     )
     if page < max_page:

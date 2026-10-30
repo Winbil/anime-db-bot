@@ -10,6 +10,7 @@ from aiogram.types import (
 )
 
 from bots.telegram.callbacks import KeyedPageCallback, resolve_key_or_legacy_index
+from bots.telegram.pagination import card_picker_callback
 from bots.telegram.card.views.renderer import (
     edit_standard_text,
     plain_text_to_rich_html,
@@ -166,7 +167,9 @@ def _source_keyboard(
         nav.append(
             InlineKeyboardButton(
                 text=f"{page + 1}/{page_count}",
-                callback_data="noop",
+                callback_data=card_picker_callback(
+                    token, f"at~{source_key}", page, page_count
+                ),
             )
         )
         if page + 1 < page_count:

@@ -5,6 +5,7 @@ import html
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputRichMessage
 
 from bots.telegram.callbacks import SectionSourceCallback, ViewCallback
+from bots.telegram.pagination import card_picker_callback
 from bots.telegram.card.ui.constants import ALL_SOURCE_LABELS
 from bots.telegram.card.views.renderer import plain_text_to_rich_html
 from bots.telegram.card.ui.selectors import source_options
@@ -166,6 +167,12 @@ def _keyboard(
                 callback_data=_page_callback(token, section, source_key, page - 1),
             )
         )
+    without_count = max(0, shown - page) if page > 0 else max(0, shown)
+    picker_route = (
+        f"pv~av~{section}~{without_count}"
+        if source_key is None
+        else f"pv~as~{section}~{source_key}~{without_count}"
+    )
     nav.append(
         InlineKeyboardButton(
             text=text(
@@ -175,7 +182,11 @@ def _keyboard(
                 shown=shown,
                 total=total,
             ),
-            callback_data="noop",
+            callback_data=(
+                card_picker_callback(token, picker_route, max(0, shown - 1), total)
+                if total > 1 and shown > 0
+                else "noop"
+            ),
         )
     )
     if page < max_page or has_more:

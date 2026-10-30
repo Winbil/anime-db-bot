@@ -7,10 +7,12 @@ from aiogram.types import CallbackQuery, Message
 from bots.telegram.callbacks import (
     EpisodeDetailCallback,
     KeyedPageCallback,
+    PagePickerCallback,
     SectionSourceCallback,
     ViewCallback,
     resolve_key_or_legacy_index,
 )
+from bots.telegram.pagination import card_picker_keyboard
 from bots.telegram.card.features.characters import edit_characters_view
 from bots.telegram.card.features.descriptions import ensure_descriptions_loaded
 from bots.telegram.card.features.popularity import ensure_popularity_loaded
@@ -87,6 +89,34 @@ def build_dispatcher(mode_name: str, state: TelegramCardState) -> Dispatcher:
     @dp.callback_query(F.data == "noop")
     async def noop_callback(callback: CallbackQuery) -> None:
         await callback.answer()
+
+    @dp.callback_query(F.data.startswith("cp:"))
+    async def card_page_picker_callback_handler(callback: CallbackQuery) -> None:
+        locale = get_user_locale(callback.from_user.id)
+        data = PagePickerCallback.parse(callback.data, prefix="cp")
+        if data is None:
+            await callback.answer(
+                text("card", "invalid_command", locale=locale), show_alert=True
+            )
+            return
+        session = _session_for_callback(callback, data.token, state)
+        if session is None:
+            raw_session = state.anime_sessions.get(data.token)
+            key = "not_owner" if raw_session is not None else "expired"
+            await callback.answer(text("card", key, locale=locale), show_alert=True)
+            return
+        if callback.message is None:
+            await callback.answer()
+            return
+        try:
+            keyboard = card_picker_keyboard(data, locale=locale)
+        except ValueError:
+            await callback.answer(
+                text("card", "invalid_command", locale=locale), show_alert=True
+            )
+            return
+        await callback.answer()
+        await callback.message.edit_reply_markup(reply_markup=keyboard)
 
     @dp.callback_query(F.data.startswith("ad:"))
     async def description_source_callback_handler(callback: CallbackQuery) -> None:
