@@ -37,41 +37,7 @@ jobs:
         run: python -m compileall -q bots core localization mappings search services sources tests scripts
 
       - name: Run unit tests
-        if: runner.os != 'Windows'
         run: python -m unittest discover -s tests -v
-
-      - name: Windows tests A-F
-        id: windows_af
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        run: python -m unittest discover -s tests -p 'test_[a-f]*.py' -v
-
-      - name: Windows tests G-M
-        id: windows_gm
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        run: python -m unittest discover -s tests -p 'test_[g-m]*.py' -v
-
-      - name: Windows tests N-S
-        id: windows_ns
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        run: python -m unittest discover -s tests -p 'test_[n-s]*.py' -v
-
-      - name: Windows tests T-Z
-        id: windows_tz
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        run: python -m unittest discover -s tests -p 'test_[t-z]*.py' -v
-
-      - name: Fail if a Windows test group failed
-        if: >-
-          runner.os == 'Windows' &&
-          (steps.windows_af.outcome == 'failure' ||
-           steps.windows_gm.outcome == 'failure' ||
-           steps.windows_ns.outcome == 'failure' ||
-           steps.windows_tz.outcome == 'failure')
-        run: exit 1
 
       - name: Validate PowerShell launcher syntax
         if: runner.os == 'Windows'
