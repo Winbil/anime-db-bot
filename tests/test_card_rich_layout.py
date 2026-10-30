@@ -2,9 +2,19 @@ from __future__ import annotations
 
 import unittest
 
-from bots.telegram.card.views.renderer import anime_sections, main_rich, rich_view, source_section_text
+from bots.telegram.card.views.renderer import (
+    anime_sections,
+    main_rich,
+    rich_view,
+    source_section_text,
+)
 from bots.telegram.card.ui.selectors import source_section_sources
-from core.models import AggregatedAnime, BroadcastSlot, PopularityRanking, PopularityStats
+from core.models import (
+    AggregatedAnime,
+    BroadcastSlot,
+    PopularityRanking,
+    PopularityStats,
+)
 
 
 class CardRichLayoutTests(unittest.TestCase):
@@ -61,16 +71,26 @@ class CardRichLayoutTests(unittest.TestCase):
                     list_users=110000,
                     scoring_users=75000,
                     favorites=3500,
-                    status_distribution={"watching": 12000, "completed": 70000, "planned": 28000},
+                    status_distribution={
+                        "watching": 12000,
+                        "completed": 70000,
+                        "planned": 28000,
+                    },
                     score_distribution={10: 15000, 9: 30000, 8: 30000},
                     rankings=[
-                        PopularityRanking(rank=4, kind="popular", year=2026, season="spring"),
+                        PopularityRanking(
+                            rank=4, kind="popular", year=2026, season="spring"
+                        ),
                     ],
                 ),
                 "Shikimori": PopularityStats(
                     list_users=95000,
                     scoring_users=62000,
-                    status_distribution={"watching": 9000, "completed": 65000, "planned": 21000},
+                    status_distribution={
+                        "watching": 9000,
+                        "completed": 65000,
+                        "planned": 21000,
+                    },
                     score_distribution={10: 12000, 9: 25000, 8: 25000},
                 ),
             },
@@ -85,36 +105,66 @@ class CardRichLayoutTests(unittest.TestCase):
             },
         )
 
-    def test_main_rich_uses_native_tables_and_places_actions_before_data(self) -> None:
+    def test_main_rich_places_actions_under_their_data_categories(self) -> None:
         anime = self._sample()
         main_text = anime_sections(anime, locale="ru")["main"]
         rich_message = main_rich("card-token", anime, main_text, locale="ru")
 
         html = rich_message.html or ""
         self.assertIn("<table bordered striped compact>", html)
-        self.assertIn("<caption><b>Основное</b></caption>", html)
-        self.assertIn("<caption><b>Выход</b></caption>", html)
-        self.assertIn("<caption><b>Производство</b></caption>", html)
-        self.assertIn("<caption><b>Оценка</b></caption>", html)
+        captions = ["Основное", "Выход", "Производство", "Оценка", "Источники"]
+        for caption in captions:
+            self.assertIn(f"<caption><b>{caption}</b></caption>", html)
         self.assertNotIn("<caption><b>Популярность</b></caption>", html)
         self.assertNotIn("Оценка и популярность", html)
         self.assertIn(">Средняя оценка</th>", html)
         self.assertNotIn(">Место в рейтинге</th>", html)
-        self.assertIn("<caption><b>Источники</b></caption>", html)
         self.assertIn(">Статус</th>", html)
         self.assertIn(">выходит</td>", html)
+        self.assertNotIn("<h3>Подробнее</h3>", html)
 
-        first_table = html.index("<table")
-        for section in ("description", "popularity", "episodes", "trailers", "staff", "voices", "characters", "titles", "screenshots", "links"):
-            self.assertLess(
-                html.index(f"av:card-token:{section}:0"),
-                first_table,
-                msg=f"{section} quick action must stay above the data tables",
+        categories = {
+            "Основное": ("titles", "description"),
+            "Выход": ("episodes", "screenshots", "trailers"),
+            "Производство": ("staff", "voices", "characters"),
+            "Оценка": ("popularity",),
+            "Источники": ("links",),
+        }
+        starts = {
+            caption: html.index(f"<caption><b>{caption}</b></caption>")
+            for caption in captions
+        }
+        for index, caption in enumerate(captions):
+            end = (
+                starts[captions[index + 1]] if index + 1 < len(captions) else len(html)
             )
+            for section in categories[caption]:
+                position = html.index(f"av:card-token:{section}:0")
+                self.assertGreater(position, starts[caption])
+                self.assertLess(position, end)
 
         self.assertIn("<tg-button-row", html)
         self.assertNotIn("выбрать источник", html)
         self.assertNotIn("нажмите, чтобы открыть", html)
+
+    def test_main_rich_keeps_category_actions_when_table_data_is_empty(self) -> None:
+        anime = AggregatedAnime(title="Example")
+        main_text = anime_sections(anime, locale="ru")["main"]
+        html = main_rich("card-token", anime, main_text, locale="ru").html or ""
+
+        for caption in ("Выход", "Производство", "Оценка", "Источники"):
+            self.assertIn(f"<h3>{caption}</h3>", html)
+        for section in (
+            "episodes",
+            "screenshots",
+            "trailers",
+            "staff",
+            "voices",
+            "characters",
+            "popularity",
+            "links",
+        ):
+            self.assertIn(f"av:card-token:{section}:0", html)
 
     def test_popularity_section_is_source_scoped(self) -> None:
         anime = self._sample()
