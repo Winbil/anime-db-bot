@@ -37,7 +37,7 @@ class TelegramTransport:
         token = self._settings.bot_token
         if not token:
             raise RuntimeError(
-                "BOT_TOKEN is not set. Copy .env.example to .env and add the bot token."
+                "BOT_TOKEN is not set. Copy .env.example.d to .env.d and add the token to telegram.env."
             )
         return token
 

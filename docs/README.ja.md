@@ -145,8 +145,8 @@ Docker がなくてもボットは起動できます。その場合、公式 MAL
 git clone git@github.com:Winbil/anime-db-bot.git
 cd anime-db-bot
 
-cp .env.example .env
-# .env を編集し、少なくとも BOT_TOKEN を設定します。
+cp -R .env.example.d .env.d
+# .env.d/telegram.env を編集し、少なくとも BOT_TOKEN を設定します。
 
 ./scripts/setup.sh
 ./scripts/check.sh
@@ -167,7 +167,7 @@ Runtime log は `logs/YYYY.MM.DD/` 配下で用途別に分割されます。`bo
 
 ## 設定
 
-Runtime environment parsing は `core/settings.py` に集約されています。`.env.example` にすべての設定項目と安全な default が記載されています。
+Runtime environment parsing は `core/settings.py` に集約されています。新規環境では `.env.example.d/` を `.env.d/` にコピーします。読み込むのは固定された `telegram.env`、`sources.env`、`timestamps.env`、`rate-limits.env`、`mappings.env`、`storage.env`、`logging.env`、`runtime.env` だけで、`backup.env` のような追加ファイルは無視されます。project config file 間の重複 key は起動エラーになり、実際の process environment variable が最優先です。単一の `.env` は移行互換性のためだけに残されています。
 
 ### 主な環境変数
 
@@ -185,7 +185,7 @@ Runtime environment parsing は `core/settings.py` に集約されています�
 | `BANS_DB_PATH` | いいえ | Moderation ban 用 SQLite path。 |
 | `MAPPINGS_DB_PATH` | いいえ | Runtime cross-ID mapping database。 |
 
-`.env`、bot token、access token、password、private credentials は commit しないでください。
+`.env`、`.env.d/`、bot token、access token、password、private credentials は commit しないでください。
 
 ### AniDB
 

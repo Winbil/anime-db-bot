@@ -141,8 +141,8 @@ The application can still run without Docker; MAL remains available through its 
 git clone git@github.com:Winbil/anime-db-bot.git
 cd anime-db-bot
 
-cp .env.example .env
-# Edit .env and add at least BOT_TOKEN.
+cp -R .env.example.d .env.d
+# Edit .env.d/telegram.env and add at least BOT_TOKEN.
 
 ./scripts/setup.sh
 ./scripts/check.sh
@@ -165,7 +165,7 @@ Runtime logs are split by responsibility under `logs/YYYY.MM.DD/`: `bot.log` con
 
 ## Configuration
 
-All runtime environment parsing is centralized in `core/settings.py`. Start from `.env.example`; it documents every supported setting and safe default.
+All runtime environment parsing is centralized in `core/settings.py`. New deployments copy `.env.example.d/` to `.env.d/`. Only the fixed files `telegram.env`, `sources.env`, `timestamps.env`, `rate-limits.env`, `mappings.env`, `storage.env`, `logging.env`, and `runtime.env` are loaded; stray files such as `backup.env` are ignored. Duplicate keys across project config files fail startup, while real process environment variables have the highest priority. A monolithic `.env` remains supported only as a migration path.
 
 ### Essential settings
 
@@ -183,7 +183,7 @@ All runtime environment parsing is centralized in `core/settings.py`. Start from
 | `BANS_DB_PATH` | No | SQLite path for moderation bans. |
 | `MAPPINGS_DB_PATH` | No | Runtime cross-ID mapping database. |
 
-Do not commit `.env`, bot tokens, access tokens, passwords, or private API credentials.
+Do not commit `.env`, `.env.d/`, bot tokens, access tokens, passwords, or private API credentials.
 
 ### AniDB
 
