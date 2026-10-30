@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+from core.sqlite import managed_sqlite_connection
 from mappings.config import MappingSourceSpec
 from mappings.database import MappingDatabaseBuilder, MappingRecord
 from mappings.updater import _source_due, update_mapping_database
@@ -62,7 +63,7 @@ class MappingUpdaterTests(unittest.TestCase):
             self.assertIsNone(update_mapping_database(force=False))
 
         self.assertEqual(self.path.stat().st_ino, inode_before)
-        with sqlite3.connect(self.path) as conn:
+        with managed_sqlite_connection(sqlite3.connect(self.path)) as conn:
             checked = conn.execute(
                 "SELECT downloaded_at FROM datasets WHERE name=?", (spec.name,)
             ).fetchone()[0]

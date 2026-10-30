@@ -1,9 +1,5 @@
 name: CI
 
-permissions:
-  contents: read
-  checks: write
-
 on:
   push:
     branches: [main]
@@ -41,46 +37,7 @@ jobs:
         run: python -m compileall -q bots core localization mappings search services sources tests scripts
 
       - name: Run unit tests
-        if: runner.os != 'Windows'
         run: python -m unittest discover -s tests -v
-
-      - name: Run Windows unit tests with failure capture
-        id: windows_tests
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          python -m unittest discover -s tests -v *> windows-tests.log
-          $testExit = $LASTEXITCODE
-          Get-Content windows-tests.log
-          exit $testExit
-
-      - name: Publish Windows failure diagnostic
-        if: runner.os == 'Windows' && steps.windows_tests.outcome == 'failure'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const lines = fs.readFileSync('windows-tests.log', 'utf8').split(/\r?\n/);
-            const tail = lines.slice(-180).join('\n');
-            await github.rest.checks.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              name: `windows-debug-${process.env.PYTHON_VERSION || 'unknown'}`,
-              head_sha: context.sha,
-              status: 'completed',
-              conclusion: 'neutral',
-              output: {
-                title: `Windows ${process.env.PYTHON_VERSION || 'unknown'} unittest failure`,
-                summary: `\`\`\`text\n${tail}\n\`\`\``
-              }
-            });
-        env:
-          PYTHON_VERSION: ${{ matrix.python-version }}
-
-      - name: Fail Windows job after diagnostic
-        if: runner.os == 'Windows' && steps.windows_tests.outcome == 'failure'
-        run: exit 1
 
       - name: Validate PowerShell launcher syntax
         if: runner.os == 'Windows'
