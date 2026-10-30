@@ -6,7 +6,7 @@
 
 # anime-db-bot
 
-> Telegram-бот с независимым от конкретной базы поиском аниме и агрегацией метаданных из MyAnimeList/Jikan, AniList, Shikimori, AniDB и AniSearch.
+> Telegram-бот с независимым от конкретной базы поиском аниме и агрегацией метаданных из MyAnimeList/Jikan, AniList, Shikimori, Kitsu, AniDB и AniSearch.
 
 [![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
@@ -19,7 +19,7 @@
 
 ## Возможности
 
-- **Мульти-source поиск** — Shikimori, MyAnimeList и AniList работают через единый `/anime` flow.
+- **Мульти-source поиск** — Shikimori, MyAnimeList, AniList и Kitsu работают через единый `/anime` flow.
 - **Source-independent identity** — `AnimeIdentity` хранит равноправные external IDs без глобального primary ID.
 - **Консервативный cross-ID mapping** — runtime mapping direct-only, conflict-aware, с provenance и аудируемыми manual overrides.
 - **Агрегированная карточка** — данные успешных metadata sources нормализуются и объединяются с сохранением provenance.
@@ -36,9 +36,12 @@
 | Shikimori | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
 | MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
 | AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
+| Kitsu | ✓ | ✓ | — | — | ✓ | ✓ | — | ✓ | ✓ |
 | AniDB | — | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ |
 | AniSearch | — | ✓ | ✓ | ✓ | — | ✓ | — | ✓ | ✓ |
 | SkipDB (dormant) | — | — | — | — | — | — | — | — | — |
+
+Kitsu подключён как identity-native публичный JSON:API источник. Обычные read-only GET-запросы не требуют OAuth; подтверждённые Kitsu ID уже участвуют в `mappings.db`, а сам Kitsu возвращает прямые mappings к MAL/AniList/AniDB. Сейчас Kitsu даёт поиск, metadata, popularity, description, эпизоды и YouTube-трейлер при наличии. People/characters намеренно пока не заявлены как capability, потому что эти relationships у Kitsu часто неполные.
 
 AniDB опционален и включается только при настроенном `ANIDB_CLIENT`. Jikan **не является отдельной identity-базой**: это локальный backend MAL для данных, которых нет в официальном MAL API. Licensors для main card и lazy popularity statistics теперь используют разные local endpoints, поэтому score distribution больше не парсится на initial card path. AniSearch подключён как identity-native источник Database API через подтверждённые `anisearch` edges из mappings.db. Публичного query-search endpoint у AniSearch нет, поэтому он не добавляется в быстрый `/anime <title>` поиск. Так как AniSearch помещает ID и `/full` в одну строгую rate-limit группу, источник делает один cached `/full` запрос на тайтл, но не подмешивает heavy fields в initial aggregation; people/characters/episodes затем используют тот же payload без второго сетевого ожидания. Пока учитываются только английская и японская локализации AniSearch. Без токена запросы ID-family дополнительно выдерживают документированный интервал 10 секунд (5 секунд с валидным токеном); synopsis от AniSearch всегда сопровождается требуемой прямой ссылкой на запись AniSearch. Поддержка SkipDB сохранена в кодовой базе как dormant IMDb-backed provider, но намеренно не зарегистрирована в runtime: текущее покрытие anime skip-segments слишком мало, чтобы показывать источник пользователю. Parser/settings/tests остаются на месте, чтобы SkipDB можно было быстро включить позже, если покрытие заметно вырастет. Данные SkipDB распространяются по ODbL 1.0 + reciprocity.
 
@@ -61,6 +64,7 @@ AnimeAggregator
       │
       ├── Shikimori
       ├── AniList
+      ├── Kitsu
       ├── MAL / Jikan
       └── AniDB (optional)
       │
@@ -95,6 +99,7 @@ Cross-source merge работает консервативно:
 /anime mal:37430
 /anime anilist:<id>
 /anime shikimori:<id>
+/anime kitsu:<id>
 ```
 
 `/anime <title>` параллельно опрашивает зарегистрированные search providers и до Telegram-пагинации собирает bounded query-scoped result set. Relevance учитывает titles, aliases, native/romaji варианты, prefix/token matches, transliteration и консервативный similarity fallback.
@@ -169,6 +174,7 @@ Runtime-логи разделены по назначению в `logs/YYYY.MM.D
 | `ANIDB_CLIENT` | Нет | Включает AniDB HTTP API metadata/people/episodes. |
 | `ANIDB_CLIENT_VERSION` | Нет | Версия зарегистрированного AniDB HTTP client; default `1`. |
 | `ANILIST_ACCESS_TOKEN` | Нет | Optional AniList token для authenticated access. |
+| `KITSU_API_URL` | Нет | Base URL публичного Kitsu JSON:API; default `https://kitsu.io/api/edge`. |
 | `ADMIN_TELEGRAM_USER_IDS` | Нет | Telegram user IDs администраторов. |
 | `TELEGRAM_BOT_API_URL` | Нет | Custom/self-hosted Telegram Bot API endpoint. |
 | `USER_SETTINGS_DB_PATH` | Нет | SQLite для user settings и known-user registry. |
@@ -215,6 +221,7 @@ deploy/systemd/anime-db-bot-jikan-update.{service,timer}
 /anime mal:<id>
 /anime anilist:<id>
 /anime shikimori:<id>
+/anime kitsu:<id>
 /cancel
 ```
 
@@ -294,7 +301,7 @@ anime-db-bot/
 │   ├── search/          # search orchestration и query expansion
 │   └── users/           # access control, bans и persistent user settings
 ├── sources/
-│   ├── providers/       # MAL, AniList, Shikimori, AniDB, AniSearch и Jikan adapters
+│   ├── providers/       # MAL, AniList, Shikimori, Kitsu, AniDB, AniSearch и Jikan adapters
 │   └── runtime/         # source catalog, registries и resilience wrappers
 ├── tests/               # unit, integration, wiring и regression tests
 ├── jikan_service/       # локальный Jikan/MAL supplement service
@@ -365,11 +372,14 @@ Pull requests приветствуются. Перед изменениями п
 - [MyAnimeList](https://myanimelist.net/)
 - [Jikan](https://jikan.moe/)
 - [AniList](https://anilist.co/)
+- [Kitsu](https://kitsu.app/) — публичный read-only JSON:API; для обычных GET-запросов OAuth не нужен
 - [Shikimori](https://shikimori.one/)
 - [AniDB](https://anidb.net/)
 - [AniSearch](https://www.anisearch.com/) — Database API metadata; attribution and synopsis-link requirements apply
 - [SkipDB](https://skipdb.tv/) — skip-segment data under ODbL 1.0 + reciprocity
 
 Cross-ID mapping строится из нескольких community datasets. Для каждого upstream service/dataset действуют его собственные условия использования, rate limits и требования к attribution.
+
+Публичные read-only GET-запросы Kitsu используются без OAuth credentials. Runtime применяет собственные консервативные rate limits и не полагается на недокументированный серверный лимит.
 
 Read-only запросы к AniSearch Database API не требуют OAuth. `ANISEARCH_APP_ID` и `ANISEARCH_APP_SECRET` — необязательные OAuth-реквизиты приложения для будущих пользовательских функций AniSearch; с обычными запросами базы они не отправляются.

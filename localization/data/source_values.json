@@ -215,5 +215,42 @@
         "Other": "other"
       }
     }
+  },
+  "kitsu": {
+    "subtype": {
+      "domain": "anime_kind",
+      "values": {
+        "TV": "tv",
+        "tv": "tv",
+        "movie": "movie",
+        "OVA": "ova",
+        "ova": "ova",
+        "ONA": "ona",
+        "ona": "ona",
+        "special": "special",
+        "music": "music_video"
+      }
+    },
+    "status": {
+      "domain": "anime_status",
+      "values": {
+        "finished": "finished",
+        "current": "airing",
+        "upcoming": "announced",
+        "unreleased": "announced",
+        "tba": "announced",
+        "cancelled": "cancelled",
+        "canceled": "cancelled"
+      }
+    },
+    "rating": {
+      "domain": "rating",
+      "values": {
+        "G": "g",
+        "PG": "pg",
+        "R": "r",
+        "R18": "rx"
+      }
+    }
   }
 }

@@ -28,7 +28,7 @@ class SourceCatalogTests(unittest.TestCase):
     def test_fast_search_comes_from_declared_search_capabilities(self) -> None:
         self.assertEqual(
             DEFAULT_SEARCH_PROVIDER_KEYS,
-            (SourceKey.SHIKIMORI, SourceKey.MAL, SourceKey.ANILIST),
+            (SourceKey.SHIKIMORI, SourceKey.MAL, SourceKey.ANILIST, SourceKey.KITSU),
         )
         self.assertEqual(
             source_keys_with(SourceCapability.SEARCH),
@@ -65,6 +65,7 @@ class SourceCatalogTests(unittest.TestCase):
         mal = descriptor_for(SourceKey.MAL)
         anilist = descriptor_for(SourceKey.ANILIST)
         anidb = descriptor_for(SourceKey.ANIDB)
+        kitsu = descriptor_for(SourceKey.KITSU)
 
         self.assertTrue(shikimori.supports(SourceCapability.SCREENSHOTS))
         self.assertTrue(shikimori.supports(SourceCapability.POPULARITY))
@@ -74,6 +75,14 @@ class SourceCatalogTests(unittest.TestCase):
         self.assertTrue(anilist.supports(SourceCapability.POPULARITY))
         self.assertTrue(anilist.supports(SourceCapability.DESCRIPTION))
         self.assertTrue(anidb.supports(SourceCapability.DESCRIPTION))
+        self.assertTrue(kitsu.supports(SourceCapability.SEARCH))
+        self.assertTrue(kitsu.supports(SourceCapability.METADATA))
+        self.assertTrue(kitsu.supports(SourceCapability.EPISODES))
+        self.assertTrue(kitsu.supports(SourceCapability.TRAILERS))
+        self.assertTrue(kitsu.supports(SourceCapability.POPULARITY))
+        self.assertTrue(kitsu.supports(SourceCapability.DESCRIPTION))
+        self.assertFalse(kitsu.supports(SourceCapability.PEOPLE))
+        self.assertFalse(kitsu.supports(SourceCapability.CHARACTERS))
 
     def test_declared_runtime_capabilities_have_factories(self) -> None:
         for registration in SOURCE_CATALOG:
@@ -89,7 +98,7 @@ class SourceCatalogTests(unittest.TestCase):
 
     def test_backend_order_preserves_existing_ui_contract(self) -> None:
         trailer_keys = [source.backend_key for source in get_trailer_sources()]
-        self.assertEqual(trailer_keys, ["shikimori", "anilist", "jikan"])
+        self.assertEqual(trailer_keys, ["shikimori", "anilist", "jikan", "kitsu"])
         episode_keys = [source.backend_key for source in get_episode_sources()]
         self.assertEqual(episode_keys[0], "jikan")
         self.assertIn("anisearch", episode_keys)

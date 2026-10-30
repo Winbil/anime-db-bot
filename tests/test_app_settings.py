@@ -26,6 +26,11 @@ class AppSettingsTests(unittest.TestCase):
                 "MAL_CLIENT_ID": "mal-client",
                 "UPSTREAM_RATE_LIMIT_ANILIST_PER_MINUTE": "77",
                 "UPSTREAM_RATE_LIMIT_ANILIST_PEOPLE_PER_MINUTE": "13",
+                "KITSU_API_URL": "https://kitsu.example/api/edge/",
+                "KITSU_REQUEST_TIMEOUT_SECONDS": "14.5",
+                "KITSU_CACHE_TTL_SECONDS": "5432",
+                "UPSTREAM_RATE_LIMIT_KITSU_PER_MINUTE": "44",
+                "UPSTREAM_RATE_LIMIT_KITSU_EPISODES_PER_MINUTE": "33",
                 "ANISEARCH_API_URL": "https://anisearch.example/api/",
                 "ANISEARCH_APP_ID": "anisearch-app-id",
                 "ANISEARCH_APP_SECRET": "anisearch-app-secret",
@@ -68,6 +73,13 @@ class AppSettingsTests(unittest.TestCase):
         self.assertEqual(settings.sources.mal_client_id, "mal-client")
         self.assertEqual(settings.rate_limits.source_limit("anilist"), 77)
         self.assertEqual(settings.rate_limits.operation_limit("anilist", "people"), 13)
+        self.assertEqual(
+            settings.sources.kitsu_api_url, "https://kitsu.example/api/edge"
+        )
+        self.assertEqual(settings.sources.kitsu_request_timeout_seconds, 14.5)
+        self.assertEqual(settings.sources.kitsu_cache_ttl_seconds, 5432.0)
+        self.assertEqual(settings.rate_limits.source_limit("kitsu"), 44)
+        self.assertEqual(settings.rate_limits.operation_limit("kitsu", "episodes"), 33)
         self.assertEqual(
             settings.sources.anisearch_api_url, "https://anisearch.example/api"
         )

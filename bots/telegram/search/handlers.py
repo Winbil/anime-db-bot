@@ -55,6 +55,8 @@ PROVIDER_ALIASES = {
     "шикимори": "shikimori",
     "anilist": "anilist",
     "ani": "anilist",
+    "kitsu": "kitsu",
+    "kit": "kitsu",
 }
 
 _SOURCE_LABELS = {
@@ -62,6 +64,7 @@ _SOURCE_LABELS = {
     "myanimelist": MAL_SOURCE_NAME,
     "anilist": "AniList",
     "shikimori": "Shikimori",
+    "kitsu": "Kitsu",
 }
 
 _DIRECT_ID_RE = re.compile(r"^(?:(?P<source>[a-zA-Z0-9_-]+):)?(?P<id>[0-9]+)$")

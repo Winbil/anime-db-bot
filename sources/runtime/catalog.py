@@ -15,6 +15,7 @@ from core.settings import SourceSettings, get_settings
 from core.source_keys import SourceKey, normalize_source_key
 from core.source_names import MAL_SOURCE_NAME
 from search.providers.anilist import AniListSearchProvider
+from search.providers.kitsu import KitsuSearchProvider
 from search.providers.mal import MALSearchProvider
 from search.providers.shikimori import ShikimoriSearchProvider
 from services.runtime.source_health import SourceHealthRegistry
@@ -22,6 +23,7 @@ from sources.providers.anidb import AniDBSource
 from sources.providers.anilist import AniListSource
 from sources.providers.anisearch import AniSearchSource
 from sources.providers.jikan import JikanSource
+from sources.providers.kitsu import KitsuSource
 from sources.providers.mal import MALSource
 from sources.providers.shikimori import ShikimoriSource
 from sources.providers.trailers import AniListTrailerSource, ShikimoriTrailerSource
@@ -145,6 +147,22 @@ SOURCE_CATALOG: tuple[SourceRegistration, ...] = (
         search_factory=AniListSearchProvider,
         metadata_factory=AniListSource,
         trailer_backends=(BackendRegistration(20, AniListTrailerSource),),
+    ),
+    SourceRegistration(
+        descriptor=_descriptor(
+            SourceKey.KITSU,
+            "Kitsu",
+            SourceCapability.SEARCH,
+            SourceCapability.METADATA,
+            SourceCapability.TRAILERS,
+            SourceCapability.EPISODES,
+            SourceCapability.POPULARITY,
+            SourceCapability.DESCRIPTION,
+        ),
+        search_factory=KitsuSearchProvider,
+        metadata_factory=KitsuSource,
+        trailer_backends=(BackendRegistration(40, KitsuSource),),
+        episode_backends=(BackendRegistration(40, KitsuSource),),
     ),
     SourceRegistration(
         descriptor=_descriptor(

@@ -14,6 +14,7 @@ class SourceKey(StrEnum):
     SHIKIMORI = "shikimori"
     MAL = "mal"
     ANILIST = "anilist"
+    KITSU = "kitsu"
     ANIDB = "anidb"
     ANISEARCH = "anisearch"
     IMDB = "imdb"

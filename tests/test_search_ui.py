@@ -32,6 +32,7 @@ class UnifiedSearchUiTests(unittest.TestCase):
             ("shikimori", "mal"),
         )
         self.assertEqual(search_ui._parse_scope("ani"), ("anilist",))
+        self.assertEqual(search_ui._parse_scope("kit"), ("kitsu",))
         self.assertEqual(search_ui._parse_scope("all"), search_ui.ALL_PROVIDER_KEYS)
         self.assertIsNone(search_ui._parse_scope("unknown-source"))
 
@@ -42,7 +43,7 @@ class UnifiedSearchUiTests(unittest.TestCase):
         )
         self.assertEqual(
             search_ui.DEFAULT_SEARCH_PROVIDER_KEYS,
-            ("shikimori", "mal", "anilist"),
+            ("shikimori", "mal", "anilist", "kitsu"),
         )
 
     def test_default_scope_reuses_shared_search_service(self) -> None:
@@ -58,7 +59,7 @@ class UnifiedSearchUiTests(unittest.TestCase):
         self.assertIs(service, default_service)
 
     def test_direct_id_parser_supports_plain_and_explicit_ids(self) -> None:
-        supported = ("mal", "anilist", "shikimori")
+        supported = ("mal", "anilist", "shikimori", "kitsu")
         self.assertEqual(
             search_ui._parse_direct_query("37430", supported),
             (None, "37430"),
@@ -70,6 +71,10 @@ class UnifiedSearchUiTests(unittest.TestCase):
         self.assertEqual(
             search_ui._parse_direct_query("ani:101280", supported),
             ("anilist", "101280"),
+        )
+        self.assertEqual(
+            search_ui._parse_direct_query("kitsu:44196", supported),
+            ("kitsu", "44196"),
         )
         self.assertIsNone(search_ui._parse_direct_query("futuredb:42", supported))
         self.assertIsNone(search_ui._parse_direct_query("Tensei Slime", supported))
