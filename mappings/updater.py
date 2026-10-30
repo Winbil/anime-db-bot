@@ -13,6 +13,7 @@ from pathlib import Path
 import httpx
 
 from core.http_config import USER_AGENT
+from core.sqlite import managed_sqlite_connection
 from mappings.config import (
     SOURCE_SPECS,
     MappingSourceSpec,
@@ -76,7 +77,9 @@ def _dataset_state(path: Path) -> dict[str, tuple[str, str]]:
         return {}
     uri = f"file:{path.resolve().as_posix()}?mode=ro"
     try:
-        with sqlite3.connect(uri, uri=True, timeout=5.0) as conn:
+        with managed_sqlite_connection(
+            sqlite3.connect(uri, uri=True, timeout=5.0)
+        ) as conn:
             return {
                 str(name): (str(sha256), str(downloaded_at))
                 for name, sha256, downloaded_at in conn.execute(
@@ -142,7 +145,7 @@ def _acquire_lock(lock_path: Path) -> int | None:
 def _touch_checked_sources(path: Path, names: set[str], checked_at: str) -> None:
     if not names or not path.is_file():
         return
-    with sqlite3.connect(path, timeout=5.0) as conn:
+    with managed_sqlite_connection(sqlite3.connect(path, timeout=5.0)) as conn:
         conn.executemany(
             "UPDATE datasets SET downloaded_at=? WHERE name=?",
             [(checked_at, name) for name in sorted(names)],

@@ -127,46 +127,58 @@ The main card stays metadata-first. The following sections are loaded only when 
 
 Foreign dub credits are not mixed into the original Japanese voice list. Localization/ADR staff is excluded from the primary production staff list.
 
-## Requirements
+## Requirements and platform support
 
-Recommended environment:
+The Python runtime is designed for **Linux, macOS, and native Windows** with Python **3.11, 3.12, 3.13, or 3.14**. GitHub Actions runs the full unit suite on all three operating-system families for every supported Python version.
 
-- Linux server;
-- Python **3.11, 3.12, 3.13, or 3.14**;
-- Git;
-- `tmux` for the bundled `start.sh` runtime;
-- Docker + Docker Compose for the optional local Jikan supplement.
+- **Linux** — primary production platform; the cross-platform launcher works on mainstream distributions as long as a supported CPython build is available. The bundled `start.sh` remains a Linux-oriented `tmux` production helper.
+- **macOS** — supported through the Python launcher; `start.command` is provided as a convenience wrapper. `systemd` maintenance units do not apply on macOS.
+- **Windows (native)** — supported through the Python launcher, `start.ps1`, or `start.cmd`; WSL is not required.
+- **Docker + Docker Compose** — optional on every platform and used only for the local Jikan supplement. The bot still works without Docker; official MAL remains available while Jikan-only supplemental features are disabled.
+- **systemd** — optional Linux-only deployment/maintenance integration under `deploy/systemd/`.
 
-The application can still run without Docker; MAL remains available through its official API, while Jikan-only supplemental features are disabled.
+Run `python scripts/project.py doctor` (or the same command with your active Python interpreter) to check the basic runtime/dependency compatibility of a machine.
 
 ## Quick start
 
-```bash
+Clone the repository first:
+
+```text
 git clone git@github.com:Winbil/anime-db-bot.git
 cd anime-db-bot
-
-cp -R .env.example.d .env.d
-cp -R .proxies.example.d .proxies.d
-cp -R .user-agents.example.d .user-agents.d
-# Edit .env.d/telegram.env and add at least BOT_TOKEN.
-# Proxy files are optional; their example entries are disabled/commented by default.
-
-./scripts/setup.sh
-./scripts/check.sh
-./start.sh
 ```
 
-`start.sh` starts the Telegram bot in a detached `tmux` session and attempts to start the local Jikan container when Docker Compose is available.
+The canonical launcher is `scripts/project.py`. It creates `.venv`, installs locked dependencies, creates missing config directories from the committed examples without overwriting existing values, and understands the native virtual-environment layout on Unix and Windows.
 
-Useful runtime commands:
+Linux / macOS:
 
 ```bash
-tmux attach -t anime-db-bot
-TODAY="$(date '+%Y.%m.%d')"
-tail -f "logs/$TODAY/bot.log"
-tail -f "logs/$TODAY/users.log"
-tail -f "logs/$TODAY/api.log"
+python3 scripts/project.py setup
+# Edit .env.d/telegram.env and add at least BOT_TOKEN.
+python3 scripts/project.py check
+python3 scripts/project.py run       # foreground
+python3 scripts/project.py start     # background + PID file
 ```
+
+Windows PowerShell / Command Prompt:
+
+```powershell
+py -3 scripts\project.py setup
+# Edit .env.d\telegram.env and add at least BOT_TOKEN.
+py -3 scripts\project.py check
+py -3 scripts\project.py run
+.\start.ps1                         # background
+```
+
+`start.cmd` is available for Command Prompt, and macOS can use `./start.command`. Background processes started by the cross-platform launcher are managed with:
+
+```text
+python scripts/project.py status
+python scripts/project.py stop
+python scripts/project.py restart
+```
+
+Linux production deployments may keep using `./start.sh`; it preserves the existing detached `tmux` workflow. Runtime logs remain under `logs/YYYY.MM.DD/`, while the generic background launcher also writes its inherited stdout/stderr to `logs/launcher.log`.
 
 Runtime logs are split by responsibility under `logs/YYYY.MM.DD/`: `bot.log` contains application/runtime events, `users.log` contains Telegram user-action tracing, `api.log` contains outbound source/API/retry/health events, and `errors.log` duplicates all `ERROR+` records for quick diagnostics. The directory switches automatically after local midnight without restarting the bot.
 
@@ -392,38 +404,29 @@ The mapping updater streams several external datasets into SQLite, records prove
 
 Manual directional overrides support `accept` and `reject`, carry author/reason/timestamp metadata, and preserve append-only history across rebuilds.
 
-Maintenance commands:
+Maintenance commands are available through the cross-platform launcher:
 
-```bash
-./scripts/update-mappings.sh
-.venv/bin/python -m mappings --status
-.venv/bin/python -m mappings --override-list
-.venv/bin/python -m mappings --override-history
+```text
+python scripts/project.py mappings --status
+python scripts/project.py mappings --override-list
+python scripts/project.py mappings --override-history
 ```
+
+The Unix `./scripts/update-mappings.sh` wrapper remains available for existing deployments.
 
 ## Development
 
-Set up the locked environment:
+Use the same launcher on every supported OS:
 
-```bash
-./scripts/setup.sh
+```text
+python scripts/project.py setup --dev
+python scripts/project.py check
+python scripts/project.py doctor
 ```
 
-Run the normal local checks:
+On Windows, `py -3 scripts\project.py ...` may be used instead of `python`. The Unix `./scripts/setup.sh` and `./scripts/check.sh` files are convenience wrappers around the same implementation. Direct virtual-environment commands remain available at `.venv/bin/python` on Unix and `.venv\Scripts\python.exe` on Windows.
 
-```bash
-./scripts/check.sh
-```
-
-Useful direct commands:
-
-```bash
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python -m compileall -q bots core localization mappings search services sources tests
-.venv/bin/python -m pip check
-```
-
-GitHub Actions requires Python 3.11, 3.12, 3.13, and 3.14 to pass. The quality job additionally runs Ruff correctness checks, formatter checks for the typed foundation, mypy for the typed foundation, full tests with a coverage gate of at least 70%, and ShellCheck for shell scripts.
+GitHub Actions requires the full unit suite to pass on **Ubuntu, macOS, and Windows** for Python 3.11, 3.12, 3.13, and 3.14. Each matrix job also runs the cross-platform launcher doctor. The Linux quality job additionally runs Ruff correctness checks, formatter checks for the typed foundation, mypy for the typed foundation, full tests with a coverage gate of at least 70%, and ShellCheck for Unix shell wrappers.
 
 ## Contributing
 

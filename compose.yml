@@ -6,7 +6,8 @@ services:
       dockerfile: jikan_service/Dockerfile
     container_name: anime-db-bot-Jikan
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "127.0.0.1:${JIKAN_PORT:-8091}:${JIKAN_PORT:-8091}"
     environment:
       JIKAN_PORT: ${JIKAN_PORT:-8091}
     healthcheck:

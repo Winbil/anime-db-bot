@@ -27,7 +27,7 @@ class AppSettingsTests(unittest.TestCase):
                 "LOG_MAX_BYTES": "12345",
                 "LOG_BACKUPS": "2",
                 "TELEGRAM_BOT_API_LOCAL": "true",
-                "TELEGRAM_BOT_API_LOCAL_FILE_ROOT": "/srv/telegram-bot-api",
+                "TELEGRAM_BOT_API_LOCAL_FILE_ROOT": "telegram-local-files",
                 "TELEGRAM_SESSION_TTL_SECONDS": "90",
                 "ADMIN_TELEGRAM_USER_IDS": "1, 2;3\n2",
                 "MAPPINGS_AUTO_UPDATE": "0",
@@ -83,7 +83,7 @@ class AppSettingsTests(unittest.TestCase):
         self.assertTrue(settings.telegram.bot_api_local)
         self.assertEqual(
             settings.telegram.bot_api_local_file_root,
-            Path("/srv/telegram-bot-api"),
+            ROOT_DIR / Path("telegram-local-files"),
         )
         self.assertEqual(settings.telegram.session_ttl_seconds, 90)
         self.assertEqual(settings.telegram.admin_user_ids, (1, 2, 3))

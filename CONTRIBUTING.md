@@ -11,29 +11,32 @@ Thanks for contributing. The project favors small, reviewable changes that prese
 
 ## Development setup
 
-```bash
+The canonical development launcher is cross-platform:
+
+```text
 git clone https://github.com/Winbil/anime-db-bot.git
 cd anime-db-bot
-cp -R .env.example.d .env.d
-# Add BOT_TOKEN to .env.d/telegram.env when you want to run the bot.
-./scripts/setup.sh
 ```
 
-A real `BOT_TOKEN` is only required when you want to run the Telegram bot. Never commit `.env`, `.env.d/`, `.proxies.d / .user-agents.d/`, tokens, passwords, proxy credentials, API keys, or private deployment details.
-
-Run the standard checks before submitting a pull request:
+Linux / macOS:
 
 ```bash
-./scripts/check.sh
+python3 scripts/project.py setup --dev
+python3 scripts/project.py check
 ```
 
-Useful direct checks:
+Windows native:
 
-```bash
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python -m compileall -q bots core localization mappings search services sources tests
-.venv/bin/python -m pip check
+```powershell
+py -3 scripts\project.py setup --dev
+py -3 scripts\project.py check
 ```
+
+The setup command creates `.venv` and missing `.env.d`, `.proxies.d`, and `.user-agents.d` files from committed examples without overwriting existing values. Add `BOT_TOKEN` to `.env.d/telegram.env` only when you want to run the Telegram bot. Never commit `.env`, `.env.d/`, `.proxies.d/`, `.user-agents.d/`, tokens, passwords, proxy credentials, API keys, or private deployment details.
+
+The Unix `./scripts/setup.sh` and `./scripts/check.sh` files remain thin convenience wrappers around the same Python launcher.
+
+Useful direct checks use the native virtual-environment Python (`.venv/bin/python` on Unix, `.venv\Scripts\python.exe` on Windows).
 
 ## Project rules
 

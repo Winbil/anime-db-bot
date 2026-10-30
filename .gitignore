@@ -9,6 +9,7 @@ data/*.sqlite3
 data/*.sqlite3-*
 data/mappings/
 data/anidb/
+data/runtime/
 __pycache__/
 *.py[cod]
 .pytest_cache/

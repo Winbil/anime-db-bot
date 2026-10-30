@@ -125,44 +125,58 @@ Hard caps защищают upstream quotas. Если бот не может до
 
 Иностранные дубляжные роли не смешиваются с оригинальным японским voice list. Localization/ADR staff исключается из основного production staff.
 
-## Требования
+## Требования и поддержка ОС
 
-Рекомендуемое окружение:
+Python-runtime рассчитан на **Linux, macOS и нативный Windows** с Python **3.11, 3.12, 3.13 или 3.14**. GitHub Actions прогоняет полный unit suite на всех трёх семействах ОС для каждой поддерживаемой версии Python.
 
-- Linux server;
-- Python **3.11, 3.12, 3.13 или 3.14**;
-- Git;
-- `tmux` для bundled `start.sh`;
-- Docker + Docker Compose для опционального локального Jikan supplement.
+- **Linux** — основная production-платформа. Кроссплатформенный launcher должен работать на большинстве современных дистрибутивов при наличии поддерживаемого CPython. `start.sh` остаётся Linux-oriented helper для существующего production-запуска через `tmux`.
+- **macOS** — поддерживается через Python launcher; для удобства есть `start.command`. `systemd`-юниты на macOS не применяются.
+- **Windows native** — поддерживается через Python launcher, `start.ps1` или `start.cmd`; WSL не требуется.
+- **Docker + Docker Compose** — необязательны на всех ОС и нужны только для локального Jikan supplement. Без Docker официальный MAL продолжает работать, отключаются лишь Jikan-only дополнения.
+- **systemd** — необязательная Linux-only обвязка из `deploy/systemd/`.
 
-Без Docker бот также работает: официальный MAL API остаётся доступным, а Jikan-only дополнения отключаются.
+Для быстрой проверки окружения можно выполнить `python scripts/project.py doctor` активным Python-интерпретатором.
 
 ## Быстрый старт
 
-```bash
+Сначала клонируйте репозиторий:
+
+```text
 git clone git@github.com:Winbil/anime-db-bot.git
 cd anime-db-bot
-
-cp -R .env.example.d .env.d
-cp -R .proxies.example.d .proxies.d
-cp -R .user-agents.example.d .user-agents.d
-# Отредактируйте .env.d/telegram.env и как минимум добавьте BOT_TOKEN.
-# Proxy-конфиги опциональны; примерные записи по умолчанию выключены/закомментированы.
-
-./scripts/setup.sh
-./scripts/check.sh
-./start.sh
 ```
 
-`start.sh` запускает Telegram-бота в detached `tmux` session и пытается поднять локальный Jikan container, если Docker Compose доступен.
+Канонический launcher — `scripts/project.py`. Он создаёт `.venv`, устанавливает locked dependencies, создаёт отсутствующие конфиги из example-файлов без перезаписи существующих значений и сам выбирает `bin/python` на Unix или `Scripts/python.exe` на Windows.
+
+Linux / macOS:
 
 ```bash
-tmux attach -t anime-db-bot
-TODAY="$(date '+%Y.%m.%d')"
-tail -f "logs/$TODAY/bot.log"
-tail -f "logs/$TODAY/users.log"
-tail -f "logs/$TODAY/api.log"
+python3 scripts/project.py setup
+# Добавьте как минимум BOT_TOKEN в .env.d/telegram.env.
+python3 scripts/project.py check
+python3 scripts/project.py run       # foreground
+python3 scripts/project.py start     # background + PID file
 ```
+
+Windows PowerShell / Command Prompt:
+
+```powershell
+py -3 scripts\project.py setup
+# Добавьте как минимум BOT_TOKEN в .env.d\telegram.env.
+py -3 scripts\project.py check
+py -3 scripts\project.py run
+.\start.ps1                         # background
+```
+
+Для Command Prompt есть `start.cmd`, для macOS — `./start.command`. Background-процесс, запущенный общим launcher, управляется командами:
+
+```text
+python scripts/project.py status
+python scripts/project.py stop
+python scripts/project.py restart
+```
+
+Linux production может по-прежнему использовать `./start.sh`, сохраняя текущий detached `tmux` workflow. Основные runtime-логи остаются в `logs/YYYY.MM.DD/`, а generic background launcher дополнительно пишет stdout/stderr в `logs/launcher.log`.
 
 Runtime-логи разделены по назначению в `logs/YYYY.MM.DD/`: `bot.log` содержит события приложения/runtime, `users.log` — действия пользователей Telegram, `api.log` — outbound source/API/retry/health события, а `errors.log` дополнительно дублирует все записи `ERROR+` для быстрой диагностики. После локальной полуночи следующая запись автоматически попадёт в новый дневной каталог без перезапуска бота.
 
@@ -352,29 +366,29 @@ Updater потоково загружает несколько внешних da
 
 Manual directional overrides поддерживают `accept`/`reject`, author/reason/timestamp и append-only history.
 
-```bash
-./scripts/update-mappings.sh
-.venv/bin/python -m mappings --status
-.venv/bin/python -m mappings --override-list
-.venv/bin/python -m mappings --override-history
+Кроссплатформенные команды обслуживания mappings:
+
+```text
+python scripts/project.py mappings --status
+python scripts/project.py mappings --override-list
+python scripts/project.py mappings --override-history
 ```
+
+Unix-wrapper `./scripts/update-mappings.sh` сохранён для существующих deployment'ов.
 
 ## Разработка
 
-```bash
-./scripts/setup.sh
-./scripts/check.sh
+На всех поддерживаемых ОС используется один launcher:
+
+```text
+python scripts/project.py setup --dev
+python scripts/project.py check
+python scripts/project.py doctor
 ```
 
-Дополнительные команды:
+На Windows вместо `python` можно использовать `py -3`. Unix-файлы `./scripts/setup.sh` и `./scripts/check.sh` являются convenience-wrapper'ами над тем же Python-кодом. Нативный Python из venv находится в `.venv/bin/python` на Unix и `.venv\Scripts\python.exe` на Windows.
 
-```bash
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python -m compileall -q bots core localization mappings search services sources tests
-.venv/bin/python -m pip check
-```
-
-GitHub Actions требует успешное прохождение Python 3.11, 3.12, 3.13 и 3.14. Quality job также запускает Ruff, formatter check typed foundation, mypy typed foundation, полный suite с coverage gate `>=70%` и ShellCheck.
+GitHub Actions требует успешного прохождения полного unit suite на **Ubuntu, macOS и Windows** для Python 3.11, 3.12, 3.13 и 3.14. Каждый matrix job также запускает cross-platform launcher doctor. Linux quality job дополнительно запускает Ruff, formatter check typed foundation, mypy typed foundation, полный suite с coverage gate `>=70%` и ShellCheck для Unix-wrapper'ов.
 
 ## Участие в разработке
 
