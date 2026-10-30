@@ -45,6 +45,23 @@ class LocalizationCatalogTests(unittest.TestCase):
         self.assertEqual(canonical_genre("Action", locale="en"), "Action")
         self.assertEqual(canonical_genre("Action", locale="ja"), "アクション")
 
+    def test_kitsu_category_aliases_are_localized(self) -> None:
+        expected = {
+            "Fantasy World": ("fantasy_world", "Фэнтезийный мир", "ファンタジー世界"),
+            "Parody": ("parody", "Пародия", "パロディ"),
+            "Swordplay": ("swordplay", "Бои на мечах", "剣術"),
+            "School Life": ("school_life", "Школьная жизнь", "学園生活"),
+            "Elf": ("elf", "Эльфы", "エルフ"),
+            "Harem": ("harem", "Гарем", "ハーレム"),
+            "Juujin": ("beastfolk", "Зверолюди", "獣人"),
+            "Vampires": ("vampire", "Вампиры", "吸血鬼"),
+        }
+        for raw, (key, ru, ja) in expected.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(canonical_genre_key(raw), key)
+                self.assertEqual(canonical_genre(raw, locale="ru"), ru)
+                self.assertEqual(canonical_genre(raw, locale="ja"), ja)
+
     def test_role_aliases_resolve_to_canonical_keys(self) -> None:
         self.assertEqual(canonical_role_key("Director"), "director")
         self.assertEqual(canonical_role("Director"), "Director")
