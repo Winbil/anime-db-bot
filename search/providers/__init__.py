@@ -1,4 +1,5 @@
-"""Dedicated anime search providers.
+"""Dedicated anime search-provider adapters.
 
-Search providers only discover MAL IDs. Metadata sources live separately in sources/.
+Search discovery is separate from metadata loading; candidates carry source-native
+IDs plus any explicit peer mappings returned by the upstream provider.
 """

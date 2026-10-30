@@ -161,6 +161,9 @@ class SourceSettings:
     anilist_access_token: str
     anilist_people_max_pages: int
     anilist_people_cache_ttl_seconds: float
+    kitsu_api_url: str
+    kitsu_request_timeout_seconds: float
+    kitsu_cache_ttl_seconds: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,6 +215,7 @@ class AppSettings:
         )
         source_defaults = {
             "anilist": 80,
+            "kitsu": 60,
             "shikimori": 240,
             "mal": 120,
             "jikan": 30,
@@ -236,6 +240,9 @@ class AppSettings:
         upstream_per_source["anime_skip"] = min(60, upstream_per_source["anime_skip"])
         operation_defaults = {
             ("anilist", "people"): 20,
+            ("kitsu", "search"): 60,
+            ("kitsu", "episodes"): 60,
+            ("kitsu", "trailers"): 60,
             ("shikimori", "people"): 60,
             ("jikan", "metadata"): 20,
             ("jikan", "people"): 15,
@@ -516,6 +523,22 @@ class AppSettings:
                 anilist_people_cache_ttl_seconds=_float(
                     values,
                     "ANILIST_PEOPLE_CACHE_TTL_SECONDS",
+                    21600.0,
+                ),
+                kitsu_api_url=_raw(
+                    values,
+                    "KITSU_API_URL",
+                    "https://kitsu.io/api/edge",
+                ).rstrip("/"),
+                kitsu_request_timeout_seconds=_float(
+                    values,
+                    "KITSU_REQUEST_TIMEOUT_SECONDS",
+                    20.0,
+                    3.0,
+                ),
+                kitsu_cache_ttl_seconds=_float(
+                    values,
+                    "KITSU_CACHE_TTL_SECONDS",
                     21600.0,
                 ),
             ),
