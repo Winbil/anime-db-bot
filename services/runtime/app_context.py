@@ -9,6 +9,7 @@ from core.contracts import AnimeSearchProvider, AnimeSource
 from core.http_client import HttpClientPool, activate_http_pool
 from core.proxy_config import ProxySettings, load_proxy_settings
 from core.settings import AppSettings, get_settings
+from core.user_agent_config import UserAgentSettings, load_user_agent_settings
 from core.source_keys import SourceKey
 from mappings.resolver import MappingResolver
 from services.users.bans import SQLiteBanStore, activate_ban_store
@@ -51,6 +52,7 @@ class AppContext:
 
     settings: AppSettings
     proxy_settings: ProxySettings
+    user_agent_settings: UserAgentSettings
     http: HttpClientPool
     source_health: SourceHealthRegistry
     user_settings_store: SQLiteUserSettingsStore
@@ -78,10 +80,12 @@ class AppContext:
         cls,
         settings: AppSettings | None = None,
         proxy_settings: ProxySettings | None = None,
+        user_agent_settings: UserAgentSettings | None = None,
     ) -> "AppContext":
         settings = settings or get_settings()
         proxy_settings = proxy_settings or load_proxy_settings()
-        http = HttpClientPool(proxy_settings)
+        user_agent_settings = user_agent_settings or load_user_agent_settings()
+        http = HttpClientPool(proxy_settings, user_agent_settings)
         source_health = SourceHealthRegistry(
             failure_threshold=settings.source_health.failure_threshold,
             cooldown_seconds=settings.source_health.cooldown_seconds,
@@ -103,6 +107,7 @@ class AppContext:
         return cls(
             settings=settings,
             proxy_settings=proxy_settings,
+            user_agent_settings=user_agent_settings,
             http=http,
             source_health=source_health,
             user_settings_store=user_settings_store,

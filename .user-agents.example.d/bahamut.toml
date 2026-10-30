@@ -1,0 +1,17 @@
+# Profile: bahamut
+# No active custom entry means the built-in anime-db-bot User-Agent is used.
+# Higher priority wins; entries tied at the highest priority are rotated.
+
+enabled = true
+
+# [[user_agent]]
+# name = "primary"
+# enabled = true
+# priority = 100
+# value = "Mozilla/5.0 custom-primary"
+
+# [[user_agent]]
+# name = "secondary"
+# enabled = false
+# priority = 50
+# value = "Mozilla/5.0 custom-secondary"

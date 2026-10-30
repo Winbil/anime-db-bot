@@ -8,10 +8,14 @@ from aiogram.exceptions import TelegramNetworkError
 from aiogram.methods import GetMe
 
 from bots.telegram.transports.official import OfficialTelegramTransport
-from bots.telegram.transports.proxy_session import ProxyPoolAiohttpSession
+from bots.telegram.transports.proxy_session import (
+    ProxyPoolAiohttpSession,
+    UserAgentPoolAiohttpSession,
+)
 from bots.telegram.transports.tgapi import LocalTelegramTransport
 from core.proxy_config import ProxyEntry, ProxyProfile
 from core.settings import TelegramSettings
+from core.user_agent_config import UserAgentEntry, UserAgentProfile
 
 
 def telegram_settings(
@@ -34,12 +38,22 @@ class TelegramTransportCreationTests(unittest.TestCase):
     def test_official_transport_creates_default_aiogram_bot(self) -> None:
         bot_object = object()
         transport = OfficialTelegramTransport(telegram_settings())
-        with patch(
-            "bots.telegram.transports.official.Bot", return_value=bot_object
-        ) as bot_cls:
+        session_object = object()
+        with (
+            patch(
+                "bots.telegram.transports.official.UserAgentPoolAiohttpSession",
+                return_value=session_object,
+            ) as session_cls,
+            patch(
+                "bots.telegram.transports.official.Bot", return_value=bot_object
+            ) as bot_cls,
+        ):
             self.assertIs(transport.create_bot(), bot_object)
 
-        bot_cls.assert_called_once_with(token="123456:TEST_TOKEN")
+        session_cls.assert_called_once_with(())
+        bot_cls.assert_called_once_with(
+            token="123456:TEST_TOKEN", session=session_object
+        )
 
     def test_local_transport_creates_custom_api_session(self) -> None:
         api_object = object()
@@ -57,7 +71,7 @@ class TelegramTransportCreationTests(unittest.TestCase):
                 return_value=api_object,
             ) as from_base,
             patch(
-                "bots.telegram.transports.tgapi.AiohttpSession",
+                "bots.telegram.transports.tgapi.UserAgentPoolAiohttpSession",
                 return_value=session_object,
             ) as session_cls,
             patch(
@@ -71,7 +85,7 @@ class TelegramTransportCreationTests(unittest.TestCase):
             "http://127.0.0.1:8081",
             is_local=True,
         )
-        session_cls.assert_called_once_with(api=api_object)
+        session_cls.assert_called_once_with((), api=api_object)
         bot_cls.assert_called_once_with(
             token="123456:TEST_TOKEN",
             session=session_object,
@@ -97,10 +111,37 @@ class TelegramTransportCreationTests(unittest.TestCase):
         ):
             self.assertIs(transport.create_bot(), bot_object)
 
-        session_cls.assert_called_once_with(proxies)
+        session_cls.assert_called_once_with(proxies, user_agents=())
         bot_cls.assert_called_once_with(
             token="123456:TEST_TOKEN",
             session=session_object,
+        )
+
+    def test_official_transport_uses_top_priority_user_agents(self) -> None:
+        profile = UserAgentProfile(
+            name="telegram",
+            user_agents=(
+                UserAgentEntry("low", "UA-low", priority=1),
+                UserAgentEntry("high-a", "UA-high-a", priority=10),
+                UserAgentEntry("high-b", "UA-high-b", priority=10),
+            ),
+        )
+        session_object = object()
+        bot_object = object()
+        transport = OfficialTelegramTransport(
+            telegram_settings(), user_agent_profile=profile
+        )
+        with (
+            patch(
+                "bots.telegram.transports.official.UserAgentPoolAiohttpSession",
+                return_value=session_object,
+            ) as session_cls,
+            patch("bots.telegram.transports.official.Bot", return_value=bot_object),
+        ):
+            self.assertIs(transport.create_bot(), bot_object)
+        session_cls.assert_called_once_with(profile.preferred)
+        self.assertEqual(
+            [entry.name for entry in profile.preferred], ["high-a", "high-b"]
         )
 
     def test_transport_uses_frozen_settings_not_environment(self) -> None:
@@ -143,7 +184,7 @@ class TelegramTransportLifecycleTests(unittest.IsolatedAsyncioTestCase):
             make_request=AsyncMock(return_value="ok"),
             close=AsyncMock(),
         )
-        session._sessions = (first, second)
+        session._sessions = ((first,), (second,))
 
         self.assertEqual(await session.make_request(SimpleNamespace(), method), "ok")
         self.assertEqual(await session.make_request(SimpleNamespace(), method), "ok")

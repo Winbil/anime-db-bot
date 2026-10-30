@@ -6,6 +6,7 @@ from aiogram import Bot
 
 from core.proxy_config import ProxyProfile
 from core.settings import TelegramSettings
+from core.user_agent_config import UserAgentProfile
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,9 +28,13 @@ class TelegramTransport:
         self,
         settings: TelegramSettings,
         proxy_profile: ProxyProfile | None = None,
+        user_agent_profile: UserAgentProfile | None = None,
     ) -> None:
         self._settings = settings
         self._proxy_profile = proxy_profile or ProxyProfile(name="telegram")
+        self._user_agent_profile = user_agent_profile or UserAgentProfile(
+            name="telegram"
+        )
 
     @property
     def settings(self) -> TelegramSettings:
@@ -38,6 +43,10 @@ class TelegramTransport:
     @property
     def proxy_profile(self) -> ProxyProfile:
         return self._proxy_profile
+
+    @property
+    def user_agent_profile(self) -> UserAgentProfile:
+        return self._user_agent_profile
 
     @property
     def endpoint_label(self) -> str:

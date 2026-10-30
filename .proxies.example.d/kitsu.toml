@@ -8,14 +8,17 @@ enabled = true
 # [[proxy]]
 # name = "http-1"
 # enabled = true
+# priority = 100
 # url = "http://user:password@127.0.0.1:8080"
 
 # [[proxy]]
 # name = "socks4-1"
 # enabled = false
+# priority = 50
 # url = "socks4://127.0.0.1:1080"
 
 # [[proxy]]
 # name = "socks5-1"
 # enabled = false
+# priority = 10
 # url = "socks5://user:password@127.0.0.1:1080"

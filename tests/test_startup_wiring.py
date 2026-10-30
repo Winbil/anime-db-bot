@@ -30,6 +30,7 @@ from core.contracts import AnimeSearchProvider, AnimeSource
 from core.http_config import USER_AGENT
 from core.proxy_config import ProxyEntry, ProxyProfile
 from core.settings import TelegramSettings
+from core.user_agent_config import UserAgentEntry, UserAgentProfile
 from core.models import (
     AggregatedAnime,
     AnimeRecord,
@@ -128,10 +129,18 @@ class StartupWiringTests(unittest.TestCase):
                 proxies=(ProxyEntry("proxy", "socks5://127.0.0.1:1080"),),
             ),
         )
+        custom_ua = select_transport(
+            local_settings,
+            user_agent_profile=UserAgentProfile(
+                name="telegram",
+                user_agents=(UserAgentEntry("custom", "UA-custom", priority=100),),
+            ),
+        )
 
         self.assertIsInstance(official, OfficialTelegramTransport)
         self.assertIsInstance(local, LocalTelegramTransport)
         self.assertIsInstance(proxied, OfficialTelegramTransport)
+        self.assertIsInstance(custom_ua, OfficialTelegramTransport)
         self.assertEqual(len(proxied.proxy_profile.active), 1)
 
     def test_canonicalization_contracts(self) -> None:

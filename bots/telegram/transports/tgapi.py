@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from aiogram import Bot
-from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 
 from bots.telegram.transports import TelegramTransport
+from bots.telegram.transports.proxy_session import UserAgentPoolAiohttpSession
 
 
 class LocalTelegramTransport(TelegramTransport):
@@ -35,5 +35,8 @@ class LocalTelegramTransport(TelegramTransport):
             self.api_url,
             is_local=self.is_local,
         )
-        session = AiohttpSession(api=api)
+        session = UserAgentPoolAiohttpSession(
+            self.user_agent_profile.preferred,
+            api=api,
+        )
         return Bot(token=self.bot_token(), session=session)

@@ -19,7 +19,7 @@ cp -R .env.example.d .env.d
 ./scripts/setup.sh
 ```
 
-A real `BOT_TOKEN` is only required when you want to run the Telegram bot. Never commit `.env`, `.env.d/`, `.proxies.d/`, tokens, passwords, proxy credentials, API keys, or private deployment details.
+A real `BOT_TOKEN` is only required when you want to run the Telegram bot. Never commit `.env`, `.env.d/`, `.proxies.d / .user-agents.d/`, tokens, passwords, proxy credentials, API keys, or private deployment details.
 
 Run the standard checks before submitting a pull request:
 

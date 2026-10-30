@@ -3,7 +3,10 @@ from __future__ import annotations
 from aiogram import Bot
 
 from bots.telegram.transports import TelegramTransport
-from bots.telegram.transports.proxy_session import ProxyPoolAiohttpSession
+from bots.telegram.transports.proxy_session import (
+    ProxyPoolAiohttpSession,
+    UserAgentPoolAiohttpSession,
+)
 
 
 class OfficialTelegramTransport(TelegramTransport):
@@ -18,9 +21,10 @@ class OfficialTelegramTransport(TelegramTransport):
 
     def create_bot(self) -> Bot:
         proxies = self.proxy_profile.active
-        if not proxies:
-            return Bot(token=self.bot_token())
-        return Bot(
-            token=self.bot_token(),
-            session=ProxyPoolAiohttpSession(proxies),
+        user_agents = self.user_agent_profile.preferred
+        session = (
+            ProxyPoolAiohttpSession(proxies, user_agents=user_agents)
+            if proxies
+            else UserAgentPoolAiohttpSession(user_agents)
         )
+        return Bot(token=self.bot_token(), session=session)

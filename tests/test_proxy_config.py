@@ -140,8 +140,27 @@ url = "socks4://127.0.0.1:1080"
         ).read_text(encoding="utf-8")
 
         self.assertIn("HTTP_X_ANIME_DB_BOT_PROXY", router)
-        self.assertIn("new CurlHttpClient(['proxy' => $proxy])", router)
+        self.assertIn("HTTP_X_ANIME_DB_BOT_USER_AGENT", router)
+        self.assertIn("new CurlHttpClient($options)", router)
         self.assertEqual(router.count("$client = malClient();"), 7)
+
+    def test_priority_orders_higher_proxies_before_lower_tiers(self) -> None:
+        entries = (
+            ProxyEntry("low", "http://127.0.0.1:8001", priority=10),
+            ProxyEntry("high-a", "http://127.0.0.1:8002", priority=100),
+            ProxyEntry("high-b", "http://127.0.0.1:8003", priority=100),
+        )
+        pool = HttpClientPool(
+            ProxySettings({"mal": ProxyProfile(name="mal", proxies=entries)})
+        )
+        self.assertEqual(
+            [entry.name for _, entry in pool._proxy_order("mal")],
+            ["high-a", "high-b", "low"],
+        )
+        self.assertEqual(
+            [entry.name for _, entry in pool._proxy_order("mal")],
+            ["high-b", "high-a", "low"],
+        )
 
     def test_invalid_scheme_and_duplicate_names_fail_fast(self) -> None:
         with TemporaryDirectory() as temp_dir:

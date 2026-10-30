@@ -13,6 +13,7 @@ from httpx_socks import AsyncProxyTransport
 from core.http_config import USER_AGENT
 from core.proxy_config import ProxyEntry, ProxySettings
 from core.source_errors import error_for_response, normalize_source_error
+from core.user_agent_config import UserAgentEntry, UserAgentSettings
 
 _PROXY_FAILOVER_STATUSES = frozenset({407, 502, 503, 504})
 
@@ -26,10 +27,16 @@ class HttpClientPool:
     for transport/proxy failures.
     """
 
-    def __init__(self, proxy_settings: ProxySettings | None = None) -> None:
+    def __init__(
+        self,
+        proxy_settings: ProxySettings | None = None,
+        user_agent_settings: UserAgentSettings | None = None,
+    ) -> None:
         self._proxy_settings = proxy_settings or ProxySettings.empty()
+        self._user_agent_settings = user_agent_settings or UserAgentSettings.empty()
         self._clients: dict[tuple[str, str], httpx.AsyncClient] = {}
-        self._proxy_cursor: dict[str, int] = {}
+        self._proxy_cursor: dict[tuple[str, int], int] = {}
+        self._user_agent_cursor: dict[str, int] = {}
         self._closed = False
 
     def _client(
@@ -63,12 +70,26 @@ class HttpClientPool:
         proxies = self._proxy_settings.active(source)
         if not proxies:
             return ()
-        start = self._proxy_cursor.get(source, 0) % len(proxies)
-        self._proxy_cursor[source] = (start + 1) % len(proxies)
-        return tuple(
-            ((start + offset) % len(proxies), proxies[(start + offset) % len(proxies)])
-            for offset in range(len(proxies))
-        )
+        indexed = tuple(enumerate(proxies))
+        ordered: list[tuple[int, ProxyEntry]] = []
+        for priority in sorted({entry.priority for entry in proxies}, reverse=True):
+            tier = tuple(item for item in indexed if item[1].priority == priority)
+            cursor_key = (source, priority)
+            start = self._proxy_cursor.get(cursor_key, 0) % len(tier)
+            self._proxy_cursor[cursor_key] = (start + 1) % len(tier)
+            ordered.extend(
+                tier[(start + offset) % len(tier)] for offset in range(len(tier))
+            )
+        return tuple(ordered)
+
+    def _user_agent(self, profile: str) -> UserAgentEntry:
+        source = (profile or "default").strip().casefold() or "default"
+        entries = self._user_agent_settings.preferred(source)
+        if not entries:
+            return UserAgentEntry(name="default", value=USER_AGENT, priority=0)
+        start = self._user_agent_cursor.get(source, 0) % len(entries)
+        self._user_agent_cursor[source] = (start + 1) % len(entries)
+        return entries[start]
 
     @staticmethod
     def _proxy_log_fields(
@@ -79,6 +100,7 @@ class HttpClientPool:
         return {
             "proxy": proxy.name,
             "proxy_scheme": proxy.scheme,
+            "proxy_priority": proxy.priority,
             "proxy_attempt": attempt,
         }
 
@@ -100,10 +122,17 @@ class HttpClientPool:
         )
         started = time.monotonic()
         last_error: BaseException | None = None
+        user_agent = self._user_agent(source)
+        base_headers = dict(kwargs.get("headers") or {})
+        for header_name in tuple(base_headers):
+            if str(header_name).casefold() == "user-agent":
+                base_headers.pop(header_name)
+        base_headers["User-Agent"] = user_agent.value
 
         for attempt_number, (proxy_slot, proxy) in enumerate(attempts, 1):
             attempt_started = time.monotonic()
             request_kwargs = dict(kwargs)
+            request_kwargs["headers"] = dict(base_headers)
             client_proxy = proxy
             client_proxy_slot = proxy_slot
             if source == "jikan" and proxy is not None:
@@ -118,6 +147,14 @@ class HttpClientPool:
                 request_kwargs["headers"] = headers
                 client_proxy = None
                 client_proxy_slot = -1
+            if source == "jikan":
+                headers = dict(request_kwargs.get("headers") or {})
+                headers["X-Anime-DB-Bot-User-Agent"] = (
+                    base64.urlsafe_b64encode(user_agent.value.encode("latin-1"))
+                    .decode("ascii")
+                    .rstrip("=")
+                )
+                request_kwargs["headers"] = headers
             try:
                 response = await self._client(
                     source,
@@ -143,6 +180,12 @@ class HttpClientPool:
                             "duration_ms": round(
                                 (time.monotonic() - attempt_started) * 1000, 3
                             ),
+                            "user_agent": user_agent.name,
+                            "user_agent_priority": user_agent.priority,
+                            "user_agent": user_agent.name,
+                            "user_agent_priority": user_agent.priority,
+                            "user_agent": user_agent.name,
+                            "user_agent_priority": user_agent.priority,
                             **self._proxy_log_fields(proxy, attempt_number),
                         },
                     )
@@ -161,6 +204,10 @@ class HttpClientPool:
                         "outcome": "error",
                         "error_type": type(error).__name__,
                         "duration_ms": round((time.monotonic() - started) * 1000, 3),
+                        "user_agent": user_agent.name,
+                        "user_agent_priority": user_agent.priority,
+                        "user_agent": user_agent.name,
+                        "user_agent_priority": user_agent.priority,
                         **self._proxy_log_fields(proxy, attempt_number),
                     },
                 )
@@ -182,6 +229,10 @@ class HttpClientPool:
                         "duration_ms": round(
                             (time.monotonic() - attempt_started) * 1000, 3
                         ),
+                        "user_agent": user_agent.name,
+                        "user_agent_priority": user_agent.priority,
+                        "user_agent": user_agent.name,
+                        "user_agent_priority": user_agent.priority,
                         **self._proxy_log_fields(proxy, attempt_number),
                     },
                 )
@@ -204,6 +255,10 @@ class HttpClientPool:
                         "error_type": type(error).__name__,
                         "status_code": response.status_code,
                         "duration_ms": duration_ms,
+                        "user_agent": user_agent.name,
+                        "user_agent_priority": user_agent.priority,
+                        "user_agent": user_agent.name,
+                        "user_agent_priority": user_agent.priority,
                         **self._proxy_log_fields(proxy, attempt_number),
                     },
                 )
@@ -217,6 +272,8 @@ class HttpClientPool:
                     "outcome": "success",
                     "status_code": response.status_code,
                     "duration_ms": duration_ms,
+                    "user_agent": user_agent.name,
+                    "user_agent_priority": user_agent.priority,
                     **self._proxy_log_fields(proxy, attempt_number),
                 },
             )

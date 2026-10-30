@@ -69,13 +69,38 @@ function upstreamProxyUrl(): ?string
     return $decoded;
 }
 
+function upstreamUserAgent(): ?string
+{
+    $encoded = trim((string) ($_SERVER['HTTP_X_ANIME_DB_BOT_USER_AGENT'] ?? ''));
+    if ($encoded === '') {
+        return null;
+    }
+    $padding = strlen($encoded) % 4;
+    if ($padding !== 0) {
+        $encoded .= str_repeat('=', 4 - $padding);
+    }
+    $decoded = base64_decode(strtr($encoded, '-_', '+/'), true);
+    if ($decoded === false || $decoded === '' || str_contains($decoded, "\r") || str_contains($decoded, "\n")) {
+        throw new InvalidArgumentException('Invalid upstream User-Agent header encoding.');
+    }
+    return $decoded;
+}
+
 function malClient(): MalClient
 {
     $proxy = upstreamProxyUrl();
-    if ($proxy === null) {
+    $userAgent = upstreamUserAgent();
+    if ($proxy === null && $userAgent === null) {
         return new MalClient();
     }
-    return new MalClient(new CurlHttpClient(['proxy' => $proxy]));
+    $options = [];
+    if ($proxy !== null) {
+        $options['proxy'] = $proxy;
+    }
+    if ($userAgent !== null) {
+        $options['headers'] = ['User-Agent: '.$userAgent];
+    }
+    return new MalClient(new CurlHttpClient($options));
 }
 
 function episodeListItemToArray(object $item): array
