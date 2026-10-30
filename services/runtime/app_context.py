@@ -13,6 +13,7 @@ from mappings.resolver import MappingResolver
 from services.users.bans import SQLiteBanStore, activate_ban_store
 from services.media.characters import CharacterService
 from services.identity.direct_lookup import DirectIdLookupService
+from services.media.episode_segments import EpisodeSegmentService
 from services.media.episodes import EpisodeService
 from services.identity.resolver import IdentityResolver
 from services.identity.aggregator import AnimeAggregator
@@ -40,6 +41,7 @@ from sources.runtime.catalog import (
     get_sources,
     get_trailer_sources,
 )
+from sources.runtime.segment_registry import get_episode_segment_sources
 
 
 @dataclass(slots=True)
@@ -61,6 +63,7 @@ class AppContext:
     aggregator: AnimeAggregator
     character_service: CharacterService
     episode_service: EpisodeService
+    episode_segment_service: EpisodeSegmentService
     trailer_service: TrailerService
     screenshot_service: ScreenshotService
     popularity_service: PopularityService
@@ -108,6 +111,9 @@ class AppContext:
             episode_service=EpisodeService(
                 get_episode_sources(settings.sources, source_health)
             ),
+            episode_segment_service=EpisodeSegmentService(
+                get_episode_segment_sources()
+            ),
             trailer_service=TrailerService(
                 get_trailer_sources(settings.sources, source_health)
             ),
@@ -128,6 +134,7 @@ class AppContext:
         resources = [
             *self.sources,
             *self.episode_service.sources,
+            *self.episode_segment_service.sources,
             *self.trailer_service.sources,
         ]
         for resource in resources:

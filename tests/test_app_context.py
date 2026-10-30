@@ -6,6 +6,7 @@ from bots.telegram.card.runtime import service as card_service
 from services.users import bans as bans_service
 from services.runtime import rate_limits as rate_limits_service
 from services.users import settings as user_settings_service
+from core.identity import AnimeIdentity
 from core.settings import AppSettings
 from mappings import database as mapping_database_module
 from mappings import resolver as mapping_resolver_module
@@ -37,6 +38,12 @@ class AppContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(context.sources)
         self.assertTrue(context.search_service.provider_name)
         self.assertIsNotNone(context.people_progress_service)
+        self.assertEqual(
+            context.episode_segment_service.available_backends(
+                AnimeIdentity({"mal": "1"})
+            ),
+            ["aniskip"],
+        )
         self.assertEqual(
             context.source_health.failure_threshold,
             context.settings.source_health.failure_threshold,
