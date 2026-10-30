@@ -108,6 +108,8 @@ Hard caps защищают upstream quotas. Если бот не может до
 
 `/anime` без аргументов открывает интерактивный выбор источников. Pending input привязан к паре user/chat, автоматически истекает и отменяется через `/cancel`.
 
+`/anime` также поддерживает поиск по изображению: можно прикрепить картинку к команде или передать публичную ссылку на изображение. Бот показывает только те image-search сервисы, у которых сейчас доступна квота: trace.moe, What Anime Is This или оба сразу. Одинаковые ответы объединяются строго по подтверждённому AniList ID, а кандидаты показываются постранично как в обычном поиске; полная карточка открывается только после нажатия **Подробнее**. В превью остаются источник совпадения, similarity, серия и таймкод. Кнопка **Нет нужного тайтла?** позволяет повторить поиск с новым выбором сервиса или отменить его. Загруженные raster-изображения перед отправкой нормализуются в JPEG.
+
 ## Lazy-разделы карточки
 
 Основная карточка остаётся metadata-first. Только по запросу загружаются:
@@ -178,6 +180,9 @@ Runtime-логи разделены по назначению в `logs/YYYY.MM.D
 | `ANIDB_CLIENT_VERSION` | Нет | Версия зарегистрированного AniDB HTTP client; default `1`. |
 | `ANILIST_ACCESS_TOKEN` | Нет | Optional AniList token для authenticated access. |
 | `KITSU_API_URL` | Нет | Base URL публичного Kitsu JSON:API; default `https://kitsu.io/api/edge`. |
+| `TRACE_MOE_API_KEY` | Нет | Optional API key trace.moe; без ключа используется free-mode, фактическая квота читается из `/me`. |
+| `WHATANIMEISTHIS_API_KEY` | Нет | Optional API key What Anime Is This; без ключа используется guest-mode. |
+| `IMAGE_SEARCH_DB_PATH` | Нет | SQLite для persistent учёта ограниченной image-search квоты. |
 | `ADMIN_TELEGRAM_USER_IDS` | Нет | Telegram user IDs администраторов. |
 | `TELEGRAM_BOT_API_URL` | Нет | Custom/self-hosted Telegram Bot API endpoint. |
 | `USER_SETTINGS_DB_PATH` | Нет | SQLite для user settings и known-user registry. |
@@ -208,7 +213,7 @@ url = "http://127.0.0.1:8080"
 
 Профили полностью независимы: `mal.toml` действует только на MAL, `anilist.toml` — только на AniList и т.д. Несколько включённых записей выбираются round-robin, а при сетевой/proxy-ошибке запрос пробует оставшиеся включённые прокси. Одинаковые URL разрешены, если у записей разные `name`, поэтому повторением одного endpoint можно намеренно увеличить его вес в ротации. `enabled = false` выключает либо весь профиль, либо конкретную запись. Если у профиля есть хотя бы один активный proxy, при отказе всех прокси **нет скрытого fallback на прямое соединение**; напрямую source ходит только когда активных proxy нет. Изменения proxy-конфигов применяются после перезапуска бота. Если в `telegram.toml` есть активные прокси, именно этот бот намеренно обходит настроенный локальный/общий `telegram-bot-api` и подключается к официальному `api.telegram.org` через свой proxy-pool — так прокси не влияет на другие боты, использующие тот же локальный сервер. `jikan.toml` тоже обрабатывается специально: Python → локальный Jikan остаётся direct, а выбранный proxy передаётся внутрь Jikan и применяется уже к его исходящему запросу в MyAnimeList.
 
-Фиксированные профили: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `bahamut`, `baha_anime_skip`, `skipdb`. Посторонние TOML-файлы игнорируются. `.proxies.d/` gitignored, потому что в URL могут быть логин/пароль; `start.sh` выставляет каталогу mode `700`, известным файлам — `600`.
+Фиксированные профили: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `bahamut`, `baha_anime_skip`, `skipdb`, `trace_moe`, `whatanimeisthis`. Посторонние TOML-файлы игнорируются. `.proxies.d/` gitignored, потому что в URL могут быть логин/пароль; `start.sh` выставляет каталогу mode `700`, известным файлам — `600`.
 
 ### AniDB
 

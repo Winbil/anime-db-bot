@@ -83,6 +83,41 @@ class DirectIdLookupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(anilist.calls, ["30"])
         self.assertNotIn("10", anilist.calls)
 
+    async def test_preview_lookup_can_skip_cross_source_metadata_enrichment(self) -> None:
+        mal = FakeSource(
+            "mal",
+            "MyAnimeList",
+            {
+                "10": record(
+                    "MyAnimeList",
+                    "10",
+                    title="Preview Only",
+                    external_ids={"mal": "10", "anilist": "30"},
+                )
+            },
+        )
+        anilist = FakeSource(
+            "anilist",
+            "AniList",
+            {
+                "30": record(
+                    "AniList",
+                    "30",
+                    title="Should Not Load",
+                    external_ids={"anilist": "30", "mal": "10"},
+                )
+            },
+        )
+        service = DirectIdLookupService((mal, anilist))
+
+        result = await service.lookup(
+            "10", source_keys=("mal",), enrich_candidates=False
+        )
+
+        self.assertEqual(len(result.items), 1)
+        self.assertEqual(result.items[0].title, "Preview Only")
+        self.assertEqual(anilist.calls, [])
+
     async def test_confirmed_cross_ids_merge_direct_hits(self) -> None:
         mal = FakeSource(
             "mal",

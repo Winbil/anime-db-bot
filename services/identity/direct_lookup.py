@@ -138,6 +138,7 @@ class DirectIdLookupService:
         external_id: str | int,
         *,
         source_keys: tuple[str, ...] | list[str] | None = None,
+        enrich_candidates: bool = True,
     ) -> SearchResultSet:
         value = str(external_id).strip()
         if not value:
@@ -177,7 +178,7 @@ class DirectIdLookupService:
                 continue
             candidates.append(_candidate_from_record(record))
 
-        if candidates:
+        if candidates and enrich_candidates:
             candidates = list(
                 await asyncio.gather(
                     *(self.enrich_candidate(candidate) for candidate in candidates)

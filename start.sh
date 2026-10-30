@@ -21,8 +21,8 @@ fail() {
 [[ -f "$SCRIPT_DIR/requirements.lock" ]] || fail "requirements.lock not found."
 [[ -d "$SCRIPT_DIR/.env.example.d" ]] || fail ".env.example.d not found."
 ENV_FILES=(telegram.env sources.env timestamps.env rate-limits.env mappings.env storage.env logging.env runtime.env)
-PROXY_FILES=(telegram.toml shikimori.toml mal.toml anilist.toml kitsu.toml anidb.toml anisearch.toml jikan.toml aniskip.toml anime_skip.toml bahamut.toml baha_anime_skip.toml skipdb.toml)
-USER_AGENT_FILES=(telegram.toml shikimori.toml mal.toml anilist.toml kitsu.toml anidb.toml anisearch.toml jikan.toml aniskip.toml anime_skip.toml bahamut.toml baha_anime_skip.toml skipdb.toml)
+PROXY_FILES=(telegram.toml shikimori.toml mal.toml anilist.toml kitsu.toml anidb.toml anisearch.toml jikan.toml aniskip.toml anime_skip.toml bahamut.toml baha_anime_skip.toml skipdb.toml trace_moe.toml whatanimeisthis.toml)
+USER_AGENT_FILES=(telegram.toml shikimori.toml mal.toml anilist.toml kitsu.toml anidb.toml anisearch.toml jikan.toml aniskip.toml anime_skip.toml bahamut.toml baha_anime_skip.toml skipdb.toml trace_moe.toml whatanimeisthis.toml)
 for env_name in "${ENV_FILES[@]}"; do
     [[ -f "$SCRIPT_DIR/.env.example.d/$env_name" ]] || fail ".env.example.d/$env_name not found."
 done
@@ -72,30 +72,26 @@ info "Using Python: $($PYTHON --version 2>&1)"
 
 if [[ ! -d "$SCRIPT_DIR/.proxies.d" ]]; then
     mkdir -m 700 "$SCRIPT_DIR/.proxies.d"
-    for proxy_name in "${PROXY_FILES[@]}"; do
-        cp "$SCRIPT_DIR/.proxies.example.d/$proxy_name" "$SCRIPT_DIR/.proxies.d/$proxy_name"
-    done
     info "Created .proxies.d from .proxies.example.d (all proxy entries disabled by default)."
 fi
 chmod 700 "$SCRIPT_DIR/.proxies.d"
 for proxy_name in "${PROXY_FILES[@]}"; do
-    if [[ -f "$SCRIPT_DIR/.proxies.d/$proxy_name" ]]; then
-        chmod 600 "$SCRIPT_DIR/.proxies.d/$proxy_name"
+    if [[ ! -f "$SCRIPT_DIR/.proxies.d/$proxy_name" ]]; then
+        cp "$SCRIPT_DIR/.proxies.example.d/$proxy_name" "$SCRIPT_DIR/.proxies.d/$proxy_name"
     fi
+    chmod 600 "$SCRIPT_DIR/.proxies.d/$proxy_name"
 done
 
 if [[ ! -d "$SCRIPT_DIR/.user-agents.d" ]]; then
     mkdir -m 700 "$SCRIPT_DIR/.user-agents.d"
-    for user_agent_name in "${USER_AGENT_FILES[@]}"; do
-        cp "$SCRIPT_DIR/.user-agents.example.d/$user_agent_name" "$SCRIPT_DIR/.user-agents.d/$user_agent_name"
-    done
     info "Created .user-agents.d from .user-agents.example.d (built-in anime-db-bot UA remains the default)."
 fi
 chmod 700 "$SCRIPT_DIR/.user-agents.d"
 for user_agent_name in "${USER_AGENT_FILES[@]}"; do
-    if [[ -f "$SCRIPT_DIR/.user-agents.d/$user_agent_name" ]]; then
-        chmod 600 "$SCRIPT_DIR/.user-agents.d/$user_agent_name"
+    if [[ ! -f "$SCRIPT_DIR/.user-agents.d/$user_agent_name" ]]; then
+        cp "$SCRIPT_DIR/.user-agents.example.d/$user_agent_name" "$SCRIPT_DIR/.user-agents.d/$user_agent_name"
     fi
+    chmod 600 "$SCRIPT_DIR/.user-agents.d/$user_agent_name"
 done
 
 HAS_SPLIT_CONFIG=0

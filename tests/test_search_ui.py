@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import inspect
+from io import BytesIO
 import unittest
 from unittest.mock import patch
 
 from aiogram import Dispatcher
+from PIL import Image
 
 from bots.telegram.search import handlers as search_ui
 from core.models import SearchCandidate
@@ -159,6 +161,71 @@ class UnifiedSearchUiTests(unittest.TestCase):
             "telegram-file-id",
         )
 
+    def test_uploaded_webp_is_normalized_to_jpeg(self) -> None:
+        source = BytesIO()
+        Image.new("RGBA", (32, 24), (255, 0, 0, 128)).save(source, format="WEBP")
+        normalized = search_ui._normalize_uploaded_image(source.getvalue())
+        with Image.open(BytesIO(normalized)) as image:
+            self.assertEqual(image.format, "JPEG")
+            self.assertEqual(image.mode, "RGB")
+            self.assertEqual(image.size, (32, 24))
+
+    def test_image_url_and_source_keyboard_support_quota_hiding(self) -> None:
+        self.assertTrue(search_ui._is_image_url("https://example.com/frame.webp?x=1"))
+        self.assertFalse(search_ui._is_image_url("not a url"))
+        availability = {
+            "trace_moe": search_ui.ImageSearchAvailability(
+                "trace_moe", "trace.moe", True, 7, 100
+            ),
+            "whatanimeisthis": search_ui.ImageSearchAvailability(
+                "whatanimeisthis", "What Anime Is This", False, 0, 5
+            ),
+        }
+        keyboard = search_ui._image_source_keyboard("token", availability, "ru")
+        self.assertIsNotNone(keyboard)
+        labels = [button.text for row in keyboard.inline_keyboard for button in row]
+        self.assertIn("trace.moe · 7/100", labels)
+        self.assertNotIn("What Anime Is This · 0", labels)
+        self.assertNotIn("Оба источника", labels)
+
+    def test_image_preview_includes_evidence_and_retry_entrypoint(self) -> None:
+        candidate = SearchCandidate(
+            title="Example",
+            external_ids={"anilist": "42"},
+        )
+        match = search_ui.ImageSearchMatch(
+            "trace_moe",
+            "trace.moe",
+            "42",
+            0.934,
+            episode="3",
+            from_seconds=75.2,
+        )
+        session = search_ui.SearchSession(
+            query="image",
+            owner_user_id=1,
+            items=[candidate],
+            image_matches=[[match]],
+            image_input_token="input-token",
+        )
+        value = search_ui._preview_text(
+            session, candidate, locale="ru", matches=[match]
+        )
+        keyboard = search_ui._preview_keyboard(
+            "result-token",
+            0,
+            1,
+            complete=True,
+            locale="ru",
+            image_search=True,
+        )
+        self.assertIn("Результат поиска по изображению", value)
+        self.assertIn("trace.moe: 93.4% · серия 3 · таймкод 1:15", value)
+        self.assertEqual(keyboard.inline_keyboard[-1][0].text, "Нет нужного тайтла?")
+        self.assertEqual(
+            keyboard.inline_keyboard[-1][0].callback_data, "in:result-token"
+        )
+
     def test_legacy_search_command_is_not_registered(self) -> None:
         source = inspect.getsource(search_ui.register_search_handlers)
         self.assertNotIn('Command("search")', source)
@@ -178,6 +245,8 @@ class UnifiedSearchUiTests(unittest.TestCase):
                 str(key): provider
                 for key, provider in get_search_provider_map().items()
             },
+            image_search_service=object(),
+            image_search_max_bytes=20 * 1024 * 1024,
             input_ttl_seconds=300,
         )
 
@@ -187,7 +256,7 @@ class UnifiedSearchUiTests(unittest.TestCase):
         )
         self.assertEqual(
             len(dispatcher.callback_query.handlers) - initial_callback_handlers,
-            5,
+            10,
         )
 
     def test_search_ui_keeps_card_runtime_outside_search_module(self) -> None:
@@ -215,6 +284,8 @@ class UnifiedSearchUiTests(unittest.TestCase):
                 default_service=SearchService(tuple(providers.values())),
                 direct_lookup=DirectIdLookupService((DummyDirectSource(),)),
                 provider_map=providers,
+                image_search_service=object(),
+                image_search_max_bytes=20 * 1024 * 1024,
                 input_ttl_seconds=300,
             )
 

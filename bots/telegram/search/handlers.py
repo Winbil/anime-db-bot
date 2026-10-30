@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import secrets
+from io import BytesIO
+from pathlib import Path
+from urllib.parse import urlsplit
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
-from aiogram import Dispatcher, F
+from aiogram import Bot, Dispatcher, F
 from aiogram.filters import BaseFilter, Command
 from aiogram.filters.command import CommandObject
+from PIL import Image, ImageOps, UnidentifiedImageError
+
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -30,18 +36,26 @@ from bots.telegram.callbacks import (
 from bots.telegram.pagination import search_picker_callback, search_picker_keyboard
 from bots.telegram.card.views.renderer import plain_text_to_rich_html
 from core.contracts import AnimeSearchProvider
+from core.image_search import (
+    ImageSearchAvailability,
+    ImageSearchInput,
+    ImageSearchMatch,
+    ImageSearchResultSet,
+)
 from core.models import SearchCandidate, SearchResultSet
 from core.source_names import MAL_SOURCE_NAME
 from localization import text
 from search.registry import DEFAULT_SEARCH_PROVIDER_KEYS
 from services.identity.direct_lookup import DirectIdLookupService
 from services.search.service import SearchService
+from services.search.image_service import ImageSearchService
 from services.search.expansion import expand_text_search
 from services.users.settings import get_user_locale
 
 MAX_SEARCH_SESSIONS = 200
 MAX_SCOPE_SESSIONS = 200
 MAX_PENDING_INPUTS = 500
+MAX_IMAGE_INPUTS = 100
 
 
 ALL_PROVIDER_KEYS = tuple(str(key) for key in DEFAULT_SEARCH_PROVIDER_KEYS)
@@ -78,12 +92,25 @@ class SearchSession:
     complete: bool = True
     errors: dict[str, str] = field(default_factory=dict)
     poster_file_ids: dict[str, str] = field(default_factory=dict)
+    image_matches: list[list[ImageSearchMatch]] = field(default_factory=list)
+    image_input_token: str | None = None
 
 
 @dataclass(slots=True)
 class ScopeSelectionSession:
     owner_user_id: int
     chat_id: int
+
+
+@dataclass(slots=True)
+class ImageInputSession:
+    owner_user_id: int
+    chat_id: int
+    url: str | None = None
+    file_id: str | None = None
+    filename: str = "image.jpg"
+    content_type: str = "image/jpeg"
+    file_size: int | None = None
 
 
 @dataclass(slots=True)
@@ -100,6 +127,7 @@ class SearchUiState:
     sessions: ExpiringSessionStore[SearchSession]
     scope_sessions: ExpiringSessionStore[ScopeSelectionSession]
     pending_inputs: ExpiringSessionStore[PendingAnimeInput]
+    image_inputs: ExpiringSessionStore[ImageInputSession]
     service_cache: dict[tuple[str, ...], SearchService] = field(default_factory=dict)
 
     @classmethod
@@ -118,6 +146,11 @@ class SearchUiState:
                 max_entries=MAX_PENDING_INPUTS,
                 ttl_seconds=input_ttl,
                 name="search_input",
+            ),
+            image_inputs=ExpiringSessionStore(
+                max_entries=MAX_IMAGE_INPUTS,
+                ttl_seconds=input_ttl,
+                name="image_search_input",
             ),
         )
 
@@ -235,6 +268,279 @@ def _scope_keyboard(token: str, locale: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _is_image_url(value: str) -> bool:
+    raw = (value or "").strip()
+    if not raw or any(character.isspace() for character in raw):
+        return False
+    try:
+        parsed = urlsplit(raw)
+    except ValueError:
+        return False
+    return parsed.scheme.casefold() in {"http", "https"} and bool(parsed.netloc)
+
+
+def _image_input_from_message(
+    message: Message, query: str = ""
+) -> ImageInputSession | None:
+    if query and _is_image_url(query):
+        return ImageInputSession(
+            owner_user_id=message.from_user.id if message.from_user else 0,
+            chat_id=message.chat.id,
+            url=query.strip(),
+        )
+    media_message = message
+    if (
+        not message.photo
+        and message.document is None
+        and message.reply_to_message is not None
+    ):
+        media_message = message.reply_to_message
+    if media_message.photo:
+        photo = media_message.photo[-1]
+        return ImageInputSession(
+            owner_user_id=message.from_user.id if message.from_user else 0,
+            chat_id=message.chat.id,
+            file_id=photo.file_id,
+            filename="telegram-photo.jpg",
+            content_type="image/jpeg",
+            file_size=photo.file_size,
+        )
+    document = media_message.document
+    image_extensions = {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".webp",
+        ".gif",
+        ".bmp",
+        ".tif",
+        ".tiff",
+        ".avif",
+        ".heic",
+        ".heif",
+        ".jxl",
+        ".ico",
+        ".apng",
+    }
+    document_name = str(getattr(document, "file_name", "") or "")
+    document_suffix = Path(document_name).suffix.casefold()
+    document_mime = str(getattr(document, "mime_type", "") or "").casefold()
+    if document is not None and (
+        document_mime.startswith("image/") or document_suffix in image_extensions
+    ):
+        return ImageInputSession(
+            owner_user_id=message.from_user.id if message.from_user else 0,
+            chat_id=message.chat.id,
+            file_id=document.file_id,
+            filename=document.file_name or "telegram-image",
+            content_type=document.mime_type or "application/octet-stream",
+            file_size=document.file_size,
+        )
+    return None
+
+
+def _remember_image_input(state: SearchUiState, value: ImageInputSession) -> str:
+    token = secrets.token_urlsafe(6)
+    state.image_inputs[token] = value
+    return token
+
+
+def _image_source_keyboard(
+    token: str,
+    availability: Mapping[str, ImageSearchAvailability],
+    locale: str,
+) -> InlineKeyboardMarkup | None:
+    ordered_keys = ("trace_moe", "whatanimeisthis")
+    available = [
+        availability[key]
+        for key in ordered_keys
+        if key in availability and availability[key].available
+    ]
+    if not available:
+        return None
+    rows: list[list[InlineKeyboardButton]] = []
+    for item in available:
+        label = item.display_name
+        if item.remaining is not None and item.limit is not None:
+            label = f"{label} · {item.remaining}/{item.limit}"
+        elif item.remaining is not None:
+            label = f"{label} · {item.remaining}"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=label,
+                    callback_data=TokenValueCallback(
+                        "is", token, item.provider_key
+                    ).encode(),
+                )
+            ]
+        )
+    if len(available) > 1:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_ui(locale, "image_both"),
+                    callback_data=TokenValueCallback("is", token, "both").encode(),
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=_ui(locale, "cancel"),
+                callback_data=TokenCallback("ix", token).encode(),
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _image_not_found_keyboard(token: str, locale: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=_ui(locale, "image_not_found"),
+                    callback_data=TokenCallback("in", token).encode(),
+                )
+            ]
+        ]
+    )
+
+
+def _image_retry_keyboard(token: str, locale: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=_ui(locale, "image_retry"),
+                    callback_data=TokenCallback("ir", token).encode(),
+                ),
+                InlineKeyboardButton(
+                    text=_ui(locale, "image_cancel"),
+                    callback_data=TokenCallback("ic", token).encode(),
+                ),
+            ]
+        ]
+    )
+
+
+def _format_image_seconds(value: float | None) -> str | None:
+    if value is None or value < 0:
+        return None
+    total = max(0, int(value))
+    hours, remainder = divmod(total, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
+
+
+def _image_match_text(match: ImageSearchMatch, locale: str) -> str:
+    base = _ui(
+        locale,
+        "image_match",
+        source=match.provider_name,
+        similarity=f"{match.similarity * 100:.1f}",
+    )
+    details: list[str] = []
+    if match.episode:
+        details.append(_ui(locale, "image_episode", episode=match.episode))
+    timestamp = _format_image_seconds(match.from_seconds)
+    if timestamp:
+        details.append(_ui(locale, "image_timestamp", time=timestamp))
+    return " · ".join([base, *details])
+
+
+def _normalize_uploaded_image(content: bytes) -> bytes:
+    """Decode a Telegram image and re-encode one safe raster frame as JPEG."""
+    try:
+        with Image.open(BytesIO(content)) as source:
+            source.seek(0)
+            if int(source.width) * int(source.height) > 50_000_000:
+                raise ValueError("image_dimensions_too_large")
+            frame = ImageOps.exif_transpose(source.copy())
+            frame.thumbnail((4096, 4096))
+            if frame.mode != "RGB":
+                frame = frame.convert("RGB")
+            output = BytesIO()
+            frame.save(output, format="JPEG", quality=90, optimize=True)
+            normalized = output.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise ValueError("image_invalid") from exc
+    if not normalized:
+        raise ValueError("image_invalid")
+    return normalized
+
+
+async def _materialize_image_input(
+    bot: Bot,
+    value: ImageInputSession,
+    *,
+    max_bytes: int,
+) -> ImageSearchInput:
+    if value.url:
+        return ImageSearchInput(url=value.url)
+    if not value.file_id:
+        raise ValueError("Telegram image has no file ID")
+    if value.file_size is not None and value.file_size > max_bytes:
+        raise ValueError("image_too_large")
+    telegram_file = await bot.get_file(value.file_id)
+    remote_size = getattr(telegram_file, "file_size", None)
+    if remote_size is not None and int(remote_size) > max_bytes:
+        raise ValueError("image_too_large")
+    file_path = str(getattr(telegram_file, "file_path", "") or "").strip()
+    if not file_path:
+        raise RuntimeError("Telegram did not return an image file path")
+    target = BytesIO()
+    await bot.download_file(file_path, destination=target, timeout=45)
+    content = target.getvalue()
+    if not content:
+        raise RuntimeError("Downloaded Telegram image is empty")
+    if len(content) > max_bytes:
+        raise ValueError("image_too_large")
+    try:
+        normalized = await asyncio.to_thread(_normalize_uploaded_image, content)
+    except ValueError:
+        # Pillow covers the common raster formats (including animated formats via
+        # their first frame). For an uncommon image codec, preserve the original
+        # bytes and let the selected upstream decide whether it can decode them
+        # instead of rejecting the file locally.
+        return ImageSearchInput(
+            content=content,
+            filename=value.filename or "telegram-image",
+            content_type=value.content_type or "application/octet-stream",
+        )
+    if len(normalized) > max_bytes:
+        raise ValueError("image_too_large")
+    return ImageSearchInput(
+        content=normalized,
+        filename="anime-search.jpg",
+        content_type="image/jpeg",
+    )
+
+
+async def _show_image_source_chooser(
+    message: Message,
+    token: str,
+    image_search_service: ImageSearchService,
+    *,
+    locale: str,
+    edit: bool,
+) -> None:
+    availability = await image_search_service.availability()
+    keyboard = _image_source_keyboard(token, availability, locale)
+    value = (
+        _ui(locale, "image_choose_source")
+        if keyboard is not None
+        else _ui(locale, "image_no_sources")
+    )
+    if edit:
+        await message.edit_text(value, reply_markup=keyboard)
+    else:
+        await message.answer(value, reply_markup=keyboard)
+
+
 def _waiting_keyboard(token: str, locale: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -255,6 +561,7 @@ def _preview_keyboard(
     *,
     complete: bool,
     locale: str,
+    image_search: bool = False,
 ) -> InlineKeyboardMarkup:
     nav: list[InlineKeyboardButton] = []
     if index > 0:
@@ -282,17 +589,25 @@ def _preview_keyboard(
             )
         )
 
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            nav,
+    rows = [
+        nav,
+        [
+            InlineKeyboardButton(
+                text=_ui(locale, "details"),
+                callback_data=TokenIndexCallback("sd", token, index).encode(),
+            )
+        ],
+    ]
+    if image_search:
+        rows.append(
             [
                 InlineKeyboardButton(
-                    text=_ui(locale, "details"),
-                    callback_data=TokenIndexCallback("sd", token, index).encode(),
+                    text=_ui(locale, "image_not_found"),
+                    callback_data=TokenCallback("in", token).encode(),
                 )
-            ],
-        ]
-    )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _preview_text(
@@ -300,10 +615,20 @@ def _preview_text(
     candidate: SearchCandidate,
     *,
     locale: str,
+    matches: list[ImageSearchMatch] | None = None,
 ) -> str:
-    lines = [_ui(locale, "result"), "", candidate.title]
+    lines = [
+        _ui(locale, "image_result")
+        if session.image_input_token
+        else _ui(locale, "result"),
+        "",
+        candidate.title,
+    ]
     if candidate.year:
         lines.append(_ui(locale, "year", year=candidate.year))
+    if matches:
+        lines.extend(["", _ui(locale, "image_matches")])
+        lines.extend(_image_match_text(match, locale) for match in matches)
 
     lines.extend(["", _ui(locale, "ids")])
     if candidate.external_ids:
@@ -405,6 +730,25 @@ def _remember_results(
     return token
 
 
+def _remember_image_results(
+    state: SearchUiState,
+    owner_user_id: int,
+    input_token: str,
+    result_set: ImageSearchResultSet,
+) -> str:
+    token = secrets.token_urlsafe(6)
+    state.sessions[token] = SearchSession(
+        query="image",
+        owner_user_id=int(owner_user_id),
+        items=[item.candidate for item in result_set.items],
+        complete=True,
+        errors=dict(result_set.errors),
+        image_matches=[list(item.matches) for item in result_set.items],
+        image_input_token=input_token,
+    )
+    return token
+
+
 def _remember_scope(state: SearchUiState, owner_user_id: int, chat_id: int) -> str:
     token = secrets.token_urlsafe(6)
     state.scope_sessions[token] = ScopeSelectionSession(
@@ -464,21 +808,30 @@ async def _send_preview(
                 locale=locale,
                 sources=", ".join(session.errors),
             )
+        keyboard = (
+            _image_not_found_keyboard(token, locale)
+            if session.image_input_token
+            else None
+        )
         if edit:
-            await message.edit_text(value, reply_markup=None)
+            await message.edit_text(value, reply_markup=keyboard)
         else:
-            await message.answer(value)
+            await message.answer(value, reply_markup=keyboard)
         return
 
     index = max(0, min(index, len(session.items) - 1))
     candidate = session.items[index]
-    text_value = _preview_text(session, candidate, locale=locale)
+    matches = (
+        session.image_matches[index] if index < len(session.image_matches) else None
+    )
+    text_value = _preview_text(session, candidate, locale=locale, matches=matches)
     keyboard = _preview_keyboard(
         token,
         index,
         len(session.items),
         complete=session.complete,
         locale=locale,
+        image_search=bool(session.image_input_token),
     )
     poster_url = _preview_poster_url(candidate)
 
@@ -610,6 +963,53 @@ async def _execute_query(
     await _send_preview(message, token, state.sessions[token], 0, edit=False)
 
 
+async def _execute_image_search(
+    message: Message,
+    bot: Bot,
+    input_token: str,
+    owner_user_id: int,
+    provider_keys: tuple[str, ...],
+    *,
+    image_search_service: ImageSearchService,
+    image_search_max_bytes: int,
+    state: SearchUiState,
+) -> None:
+    locale = get_user_locale(owner_user_id)
+    stored = state.image_inputs.get(input_token)
+    if stored is None:
+        await message.edit_text(_ui(locale, "expired"), reply_markup=None)
+        return
+    try:
+        image = await _materialize_image_input(
+            bot,
+            stored,
+            max_bytes=max(1024, int(image_search_max_bytes)),
+        )
+    except ValueError as exc:
+        key = "image_too_large" if str(exc) == "image_too_large" else "image_invalid"
+        await message.edit_text(_ui(locale, key), reply_markup=None)
+        return
+    except Exception:
+        logging.error("Could not load image-search input", exc_info=True)
+        await message.edit_text(_ui(locale, "image_download_failed"), reply_markup=None)
+        return
+
+    try:
+        result_set = await image_search_service.search(image, provider_keys)
+    except Exception:
+        logging.error("Image anime search failed", exc_info=True)
+        await message.edit_text(_ui(locale, "image_failed"), reply_markup=None)
+        return
+
+    token = _remember_image_results(
+        state,
+        owner_user_id,
+        input_token,
+        result_set,
+    )
+    await _send_preview(message, token, state.sessions[token], 0, edit=True)
+
+
 def register_search_handlers(
     dp: Dispatcher,
     *,
@@ -617,6 +1017,8 @@ def register_search_handlers(
     default_service: SearchService,
     direct_lookup: DirectIdLookupService,
     provider_map: Mapping[str, AnimeSearchProvider],
+    image_search_service: ImageSearchService,
+    image_search_max_bytes: int,
     input_ttl_seconds: int,
 ) -> SearchUiState:
     """Register the single public anime-search command and its interactive flow."""
@@ -628,6 +1030,17 @@ def register_search_handlers(
         user_id = message.from_user.id if message.from_user else 0
         locale = get_user_locale(user_id)
         query = (command.args or "").strip()
+        image_input = _image_input_from_message(message, query)
+        if image_input is not None:
+            token = _remember_image_input(state, image_input)
+            await _show_image_source_chooser(
+                message,
+                token,
+                image_search_service,
+                locale=locale,
+                edit=False,
+            )
+            return
 
         if query:
             await _execute_query(
@@ -742,6 +1155,7 @@ def register_search_handlers(
     @dp.message(PendingAnimeInputFilter(state))
     async def pending_anime_input_handler(message: Message) -> None:
         user_id = message.from_user.id if message.from_user else 0
+        locale = get_user_locale(user_id)
         pending = state.pending_inputs.get(_pending_key(user_id))
         if pending is None or pending.chat_id != message.chat.id:
             return
@@ -749,6 +1163,17 @@ def register_search_handlers(
         _clear_pending(state, user_id)
         query = (message.text or "").strip()
         if not query:
+            return
+        image_input = _image_input_from_message(message, query)
+        if image_input is not None:
+            token = _remember_image_input(state, image_input)
+            await _show_image_source_chooser(
+                message,
+                token,
+                image_search_service,
+                locale=locale,
+                edit=False,
+            )
             return
 
         await _execute_query(
@@ -762,6 +1187,168 @@ def register_search_handlers(
             provider_map=provider_map,
             state=state,
         )
+
+    @dp.callback_query(F.data.startswith("is:"))
+    async def image_source_callback(callback: CallbackQuery, bot: Bot) -> None:
+        locale = get_user_locale(callback.from_user.id)
+        data = TokenValueCallback.parse(callback.data, prefix="is")
+        if data is None:
+            await callback.answer(_ui(locale, "image_invalid"), show_alert=True)
+            return
+        stored = state.image_inputs.get(data.token)
+        if stored is None:
+            await callback.answer(_ui(locale, "expired"), show_alert=True)
+            return
+        if stored.owner_user_id != callback.from_user.id:
+            await callback.answer(
+                text("card", "not_owner", locale=locale), show_alert=True
+            )
+            return
+        if callback.message is None:
+            await callback.answer()
+            return
+
+        availability = await image_search_service.availability()
+        available_keys = tuple(
+            key
+            for key in ("trace_moe", "whatanimeisthis")
+            if key in availability and availability[key].available
+        )
+        if data.value == "both":
+            selected = available_keys
+        elif data.value in available_keys:
+            selected = (data.value,)
+        else:
+            selected = ()
+        if not selected:
+            await callback.answer(
+                _ui(locale, "image_source_unavailable"), show_alert=True
+            )
+            await _show_image_source_chooser(
+                callback.message,
+                data.token,
+                image_search_service,
+                locale=locale,
+                edit=True,
+            )
+            return
+
+        await callback.answer()
+        await callback.message.edit_text(
+            _ui(locale, "image_searching"), reply_markup=None
+        )
+        await _execute_image_search(
+            callback.message,
+            bot,
+            data.token,
+            callback.from_user.id,
+            selected,
+            image_search_service=image_search_service,
+            image_search_max_bytes=image_search_max_bytes,
+            state=state,
+        )
+
+    @dp.callback_query(F.data.startswith("ix:"))
+    async def image_source_cancel_callback(callback: CallbackQuery) -> None:
+        locale = get_user_locale(callback.from_user.id)
+        data = TokenCallback.parse(callback.data, prefix="ix")
+        if data is None:
+            await callback.answer()
+            return
+        stored = state.image_inputs.get(data.token)
+        if stored is not None and stored.owner_user_id != callback.from_user.id:
+            await callback.answer(
+                text("card", "not_owner", locale=locale), show_alert=True
+            )
+            return
+        try:
+            del state.image_inputs[data.token]
+        except KeyError:
+            pass
+        await callback.answer()
+        if callback.message is not None:
+            await callback.message.edit_text(
+                _ui(locale, "cancelled"), reply_markup=None
+            )
+
+    @dp.callback_query(F.data.startswith("in:"))
+    async def image_not_found_callback(callback: CallbackQuery) -> None:
+        locale = get_user_locale(callback.from_user.id)
+        data = TokenCallback.parse(callback.data, prefix="in")
+        if data is None:
+            await callback.answer()
+            return
+        session = state.sessions.get(data.token)
+        if session is None or not session.image_input_token:
+            await callback.answer(_ui(locale, "expired"), show_alert=True)
+            return
+        if session.owner_user_id != callback.from_user.id:
+            await callback.answer(
+                text("card", "not_owner", locale=locale), show_alert=True
+            )
+            return
+        await callback.answer()
+        if callback.message is not None:
+            await callback.message.edit_reply_markup(
+                reply_markup=_image_retry_keyboard(data.token, locale)
+            )
+
+    @dp.callback_query(F.data.startswith("ir:"))
+    async def image_retry_callback(callback: CallbackQuery) -> None:
+        locale = get_user_locale(callback.from_user.id)
+        data = TokenCallback.parse(callback.data, prefix="ir")
+        if data is None:
+            await callback.answer()
+            return
+        session = state.sessions.get(data.token)
+        if session is None or not session.image_input_token:
+            await callback.answer(_ui(locale, "expired"), show_alert=True)
+            return
+        if session.owner_user_id != callback.from_user.id:
+            await callback.answer(
+                text("card", "not_owner", locale=locale), show_alert=True
+            )
+            return
+        if state.image_inputs.get(session.image_input_token) is None:
+            await callback.answer(_ui(locale, "expired"), show_alert=True)
+            return
+        await callback.answer()
+        if callback.message is not None:
+            await _show_image_source_chooser(
+                callback.message,
+                session.image_input_token,
+                image_search_service,
+                locale=locale,
+                edit=True,
+            )
+
+    @dp.callback_query(F.data.startswith("ic:"))
+    async def image_result_cancel_callback(callback: CallbackQuery) -> None:
+        locale = get_user_locale(callback.from_user.id)
+        data = TokenCallback.parse(callback.data, prefix="ic")
+        if data is None:
+            await callback.answer()
+            return
+        session = state.sessions.get(data.token)
+        if session is not None and session.owner_user_id != callback.from_user.id:
+            await callback.answer(
+                text("card", "not_owner", locale=locale), show_alert=True
+            )
+            return
+        if session is not None and session.image_input_token:
+            try:
+                del state.image_inputs[session.image_input_token]
+            except KeyError:
+                pass
+        try:
+            del state.sessions[data.token]
+        except KeyError:
+            pass
+        await callback.answer()
+        if callback.message is not None:
+            await callback.message.edit_text(
+                _ui(locale, "cancelled"), reply_markup=None
+            )
 
     @dp.callback_query(F.data.startswith("sp:"))
     async def search_page_picker_callback_handler(callback: CallbackQuery) -> None:

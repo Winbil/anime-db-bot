@@ -108,6 +108,10 @@ Hard page/item caps protect upstream quotas. When the bot cannot prove that the 
 
 Running `/anime` without arguments opens an interactive source selector. Pending input is scoped to the user/chat pair, expires automatically, and can be cancelled with `/cancel`.
 
+`/anime` also supports reverse image search. Attach an image to the command or pass a public image URL and the bot offers only image-search backends whose quota is currently available: trace.moe, What Anime Is This, or both. Results are resolved through confirmed AniList IDs and shown as the normal paginated candidate preview; the full metadata card is opened only after the user chooses **Details**. Matching evidence (provider, similarity, episode, timestamp) is kept on the preview. The **Not the title you need?** action allows another source attempt or cancellation without bypassing provider quotas. Uploaded raster images are normalized to JPEG before outbound search.
+
+Image-search credentials are optional. trace.moe runs anonymously when `TRACE_MOE_API_KEY` is empty and reads the real current quota from `/me`; configured keys are sent as `x-trace-key`, so partner/donor quotas are discovered rather than hard-coded. What Anime Is This runs as a guest when `WHATANIMEISTHIS_API_KEY` is empty and uses `Authorization: Bearer ...` when a key is present. Because its public API does not expose API-key credit state, the bot maintains a conservative persistent local daily counter: defaults are 5 guest searches and 10 API-key searches, and both ceilings are configurable for accounts with different credit policies. Set `WHATANIMEISTHIS_API_DAILY_LIMIT=0` to disable the local API-key ceiling and rely on the service's own credit/quota errors. A server-side quota response immediately marks that backend unavailable for the current local quota period.
+
 ## Lazy card sections
 
 The main card stays metadata-first. The following sections are loaded only when requested:
@@ -180,6 +184,9 @@ All runtime environment parsing is centralized in `core/settings.py`. New deploy
 | `ANIDB_CLIENT_VERSION` | No | Registered AniDB HTTP API client version; defaults to `1`. |
 | `ANILIST_ACCESS_TOKEN` | No | Optional AniList token when authenticated access is desired. |
 | `KITSU_API_URL` | No | Kitsu public JSON:API base URL; defaults to `https://kitsu.io/api/edge`. |
+| `TRACE_MOE_API_KEY` | No | Optional trace.moe API key (`x-trace-key`); free mode works without it and quota is read from `/me`. |
+| `WHATANIMEISTHIS_API_KEY` | No | Optional What Anime Is This API key sent as `Authorization: Bearer ...`; free guest mode works without it. |
+| `IMAGE_SEARCH_DB_PATH` | No | SQLite path for conservative persistent image-search quota accounting. |
 | `ADMIN_TELEGRAM_USER_IDS` | No | Comma/space/semicolon-separated Telegram admin user IDs. |
 | `TELEGRAM_BOT_API_URL` | No | Custom/self-hosted Telegram Bot API endpoint. |
 | `USER_SETTINGS_DB_PATH` | No | SQLite path for per-user settings and known-user registry. |
@@ -210,7 +217,7 @@ url = "http://127.0.0.1:8080"
 
 Profiles are independent: `mal.toml` affects only MAL, `anilist.toml` only AniList, and so on. Higher `priority` values are tried before lower values regardless of TOML order. Entries tied at the same priority are round-robin selected; lower-priority tiers are used only as failover after the higher tier fails. Duplicate proxy URLs are allowed when they have distinct entry names, so repeating an endpoint can intentionally give it more rotation weight. `enabled = false` can disable either the whole profile or an individual entry. If at least one proxy entry is active for a profile, that profile does **not** silently fall back to the direct connection when all proxies fail; direct access is used only when the profile has no active proxies. Proxy configuration is loaded at process startup, so edits take effect after a bot restart. When `telegram.toml` has active proxies, this bot intentionally bypasses any configured local/shared `telegram-bot-api` endpoint and talks to the official `api.telegram.org` through its own proxy pool; this keeps the proxy scoped to this bot instead of changing other bots that share the local server. `jikan.toml` is also special: the Python hop to the loopback Jikan service stays direct, while the selected proxy is forwarded to the local Jikan service and applied to its outbound MyAnimeList scrape.
 
-Fixed runtime profiles are: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `bahamut`, `baha_anime_skip`, and `skipdb`. Stray TOML files are ignored. Proxy files may contain credentials and are gitignored; `start.sh` keeps `.proxies.d` at mode `700` and known profile files at mode `600`.
+Fixed runtime profiles are: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `bahamut`, `baha_anime_skip`, `skipdb`, `trace_moe`, and `whatanimeisthis`. Stray TOML files are ignored. Proxy files may contain credentials and are gitignored; `start.sh` keeps `.proxies.d` at mode `700` and known profile files at mode `600`.
 
 ### Per-source User-Agent profiles
 

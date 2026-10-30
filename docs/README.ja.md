@@ -112,6 +112,8 @@ Hard cap によって upstream quota を保護します。最終件数を保証�
 
 引数なしの `/anime` は対話式 source selector を開きます。Pending input は user/chat の組み合わせにスコープされ、自動で期限切れになり、`/cancel` でキャンセルできます。
 
+`/anime` は画像による逆引き検索にも対応します。コマンドに画像を添付するか公開画像 URL を渡すと、現在クォータが残っている trace.moe、What Anime Is This、または両方だけが選択肢に表示されます。同一結果は確認済み AniList ID でのみ統合し、通常検索と同じ候補ページを表示します。完全なメタデータカードは **詳細** を選んだ後にだけ開きます。候補には検索元、類似度、話数、タイムスタンプを表示し、**探している作品ではありませんか？** から再検索またはキャンセルできます。アップロード画像は外部検索前に JPEG へ正規化されます。
+
 ## Lazy card sections
 
 メインカードは metadata-first のままです。以下の情報は必要になった時だけ読み込みます。
@@ -212,7 +214,7 @@ url = "http://127.0.0.1:8080"
 
 Profile は独立しています。`mal.toml` は MAL のみ、`anilist.toml` は AniList のみに作用します。複数の有効 entry は round-robin で選ばれ、network/proxy failure の場合は残りの有効 proxy を順に試します。同じ URL を異なる `name` で複数登録できるため、同一 endpoint を繰り返して rotation の weight を増やすこともできます。Profile または個別 entry を `enabled = false` で無効化できます。有効 proxy が1つ以上ある profile は、すべて失敗しても **direct connection へ暗黙 fallback しません**。Active proxy がない場合のみ direct access になります。変更は bot restart 後に反映されます。`telegram.toml` に active proxy がある場合、この bot は設定済みの local/shared `telegram-bot-api` を意図的に bypass し、独自 proxy pool 経由で official `api.telegram.org` に接続します。これにより同じ local server を使う他の bot には影響しません。`jikan.toml` も特別扱いで、Python → local Jikan の loopback hop は direct のまま、選択された proxy を Jikan に渡して outbound MyAnimeList scrape に適用します。
 
-固定 profile は `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `bahamut`, `baha_anime_skip`, `skipdb` です。その他の TOML file は無視されます。`.proxies.d/` は credential を含み得るため gitignored で、`start.sh` は directory を mode `700`、既知 file を `600` に保ちます。
+固定 profile は `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `bahamut`, `baha_anime_skip`, `skipdb`, `trace_moe`, `whatanimeisthis` です。その他の TOML file は無視されます。`.proxies.d/` は credential を含み得るため gitignored で、`start.sh` は directory を mode `700`、既知 file を `600` に保ちます。
 
 ### AniDB
 
