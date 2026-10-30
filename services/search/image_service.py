@@ -73,6 +73,23 @@ class ImageSearchService:
                 if previous is None or match.similarity > previous.similarity:
                     by_provider[match.provider_key] = match
 
+        # A visually perfect image match is strong enough to suppress weaker
+        # candidates. Keep every provider match attached to that same AniList
+        # identity, but avoid resolving unrelated lower-confidence titles.
+        perfect_ids = {
+            anilist_id
+            for anilist_id, by_provider in grouped.items()
+            if any(
+                _is_perfect_match(match.similarity) for match in by_provider.values()
+            )
+        }
+        if perfect_ids:
+            grouped = {
+                anilist_id: by_provider
+                for anilist_id, by_provider in grouped.items()
+                if anilist_id in perfect_ids
+            }
+
         async def resolve(
             anilist_id: str, matches: list[ImageSearchMatch]
         ) -> ImageSearchCandidate:
@@ -145,6 +162,11 @@ class ImageSearchService:
             )
         )
         return ImageSearchResultSet(items=list(resolved), errors=errors)
+
+
+def _is_perfect_match(similarity: float) -> bool:
+    """Match the UI's one-decimal percentage display for a visible 100.0%."""
+    return float(similarity) >= 0.9995
 
 
 def _dedupe(values) -> list[str]:
