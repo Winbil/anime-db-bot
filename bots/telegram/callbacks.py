@@ -223,6 +223,50 @@ class TokenIndexCallback:
 
 
 @dataclass(frozen=True, slots=True)
+class PagePickerCallback:
+    prefix: str
+    token: str
+    route: str
+    current: int
+    total: int
+    window: int = 0
+
+    def encode(self) -> str:
+        total = max(1, int(self.total))
+        current = max(0, min(int(self.current), total - 1))
+        if not self.route:
+            raise ValueError("Page-picker route must not be empty")
+        return _encode(
+            [
+                self.prefix,
+                self.token,
+                self.route,
+                str(current),
+                str(total),
+                str(max(0, int(self.window))),
+            ]
+        )
+
+    @classmethod
+    def parse(cls, raw: str | None, *, prefix: str) -> "PagePickerCallback | None":
+        parts = (raw or "").split(":")
+        if len(parts) != 6 or parts[0] != prefix or not parts[1] or not parts[2]:
+            return None
+        current = _non_negative(parts[3])
+        total = _non_negative(parts[4])
+        window = _non_negative(parts[5])
+        if (
+            current is None
+            or total is None
+            or total <= 0
+            or current >= total
+            or window is None
+        ):
+            return None
+        return cls(prefix, parts[1], parts[2], current, total, window)
+
+
+@dataclass(frozen=True, slots=True)
 class SettingsCallback:
     action: str
     value: str | None = None

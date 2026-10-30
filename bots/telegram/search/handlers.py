@@ -22,10 +22,12 @@ from aiogram.types import (
 
 from bots.session_store import ExpiringSessionStore
 from bots.telegram.callbacks import (
+    PagePickerCallback,
     TokenCallback,
     TokenIndexCallback,
     TokenValueCallback,
 )
+from bots.telegram.pagination import search_picker_callback, search_picker_keyboard
 from bots.telegram.card.views.renderer import plain_text_to_rich_html
 from core.contracts import AnimeSearchProvider
 from core.models import SearchCandidate, SearchResultSet
@@ -264,7 +266,9 @@ def _preview_keyboard(
     nav.append(
         InlineKeyboardButton(
             text=f"{index + 1}/{total}{suffix}",
-            callback_data="noop",
+            callback_data=(
+                search_picker_callback(token, index, total) if total > 1 else "noop"
+            ),
         )
     )
     if index + 1 < total:
@@ -754,6 +758,49 @@ def register_search_handlers(
             direct_lookup=direct_lookup,
             provider_map=provider_map,
             state=state,
+        )
+
+    @dp.callback_query(F.data.startswith("sp:"))
+    async def search_page_picker_callback_handler(callback: CallbackQuery) -> None:
+        locale = get_user_locale(callback.from_user.id)
+        data = PagePickerCallback.parse(callback.data, prefix="sp")
+        if data is None:
+            await callback.answer(
+                text("search", "invalid_page", locale=locale), show_alert=True
+            )
+            return
+        session = state.sessions.get(data.token)
+        if session is None:
+            await callback.answer(
+                text("search", "expired", locale=locale), show_alert=True
+            )
+            return
+        if session.owner_user_id != callback.from_user.id:
+            await callback.answer(
+                text("card", "not_owner", locale=locale), show_alert=True
+            )
+            return
+        if callback.message is None:
+            await callback.answer()
+            return
+        if not session.items:
+            await callback.answer(
+                text("search", "result_unavailable", locale=locale), show_alert=True
+            )
+            return
+        current = max(0, min(data.current, len(session.items) - 1))
+        total = len(session.items)
+        picker = PagePickerCallback(
+            "sp",
+            data.token,
+            "sr",
+            current,
+            total,
+            data.window,
+        )
+        await callback.answer()
+        await callback.message.edit_reply_markup(
+            reply_markup=search_picker_keyboard(picker, locale=locale)
         )
 
     @dp.callback_query(F.data.startswith("sr:"))

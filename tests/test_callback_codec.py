@@ -5,6 +5,7 @@ import unittest
 from bots.telegram.callbacks import (
     EpisodeDetailCallback,
     KeyedPageCallback,
+    PagePickerCallback,
     SectionSourceCallback,
     SettingsCallback,
     TokenCallback,
@@ -69,6 +70,14 @@ class CallbackCodecTests(unittest.TestCase):
         result = TokenIndexCallback("sr", "abc", 4)
         self.assertEqual(result.encode(), "sr:abc:4")
         self.assertEqual(TokenIndexCallback.parse(result.encode(), prefix="sr"), result)
+
+    def test_page_picker_codec_preserves_route_and_window(self) -> None:
+        value = PagePickerCallback("cp", "abc", "as~staff~anilist", 32, 75, 1)
+        self.assertEqual(value.encode(), "cp:abc:as~staff~anilist:32:75:1")
+        self.assertEqual(PagePickerCallback.parse(value.encode(), prefix="cp"), value)
+        self.assertIsNone(
+            PagePickerCallback.parse("cp:abc:as~staff~anilist:75:75:2", prefix="cp")
+        )
 
     def test_settings_callback_codec_preserves_wire_format(self) -> None:
         language = SettingsCallback("language")

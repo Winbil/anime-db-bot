@@ -112,6 +112,7 @@ class UnifiedSearchUiTests(unittest.TestCase):
 
         self.assertEqual(nav[0].text, "◀️")
         self.assertEqual(nav[1].text, "3/18+")
+        self.assertEqual(nav[1].callback_data, "sp:token:sr:2:18:0")
         self.assertEqual(nav[2].text, "▶️")
         self.assertEqual(keyboard.inline_keyboard[1][0].text, "Подробнее")
 
@@ -181,7 +182,7 @@ class UnifiedSearchUiTests(unittest.TestCase):
         )
         self.assertEqual(
             len(dispatcher.callback_query.handlers) - initial_callback_handlers,
-            4,
+            5,
         )
 
     def test_search_ui_keeps_card_runtime_outside_search_module(self) -> None:

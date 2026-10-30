@@ -162,7 +162,7 @@ class TrailerUiTests(unittest.TestCase):
 
         nav = keyboard.inline_keyboard[len(items)]
         self.assertEqual(nav[0].callback_data, "at:token:shikimori:0")
-        self.assertEqual(nav[1].callback_data, "noop")
+        self.assertEqual(nav[1].callback_data, "cp:token:at~shikimori:1:2:0")
         self.assertEqual(nav[1].text, "2/2")
         for row in keyboard.inline_keyboard[: len(items)]:
             self.assertTrue((row[0].url or "").startswith("https://"))

@@ -154,6 +154,7 @@ class EpisodeBackendTests(unittest.TestCase):
         }
         self.assertIn("ap:token:anidb:2", callbacks)
         self.assertTrue(any(button.text == "4/12" for button in flattened))
+        self.assertIn("cp:token:ap~anidb:3:12:0", callbacks)
         self.assertIn("ap:token:anidb:4", callbacks)
         self.assertIn("ap:token:jikan:3", callbacks)
         self.assertIn("ap:token:anidb:3", callbacks)
