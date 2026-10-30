@@ -136,12 +136,12 @@ class EpisodeBackendTests(unittest.TestCase):
         segment_service = EpisodeSegmentService([_SegmentSource()])
         keyboard = _episode_keyboard(
             "token",
-            [item],
             backends=["jikan", "anidb"],
             backend="anidb",
             segment_backends=["aniskip"],
             segment_backend="all",
             view_page=3,
+            total_episodes=12,
             has_prev=True,
             has_next=True,
             locale="ru",
@@ -153,6 +153,7 @@ class EpisodeBackendTests(unittest.TestCase):
             button.callback_data for button in flattened if button.callback_data
         }
         self.assertIn("ap:token:anidb:2", callbacks)
+        self.assertTrue(any(button.text == "4/12" for button in flattened))
         self.assertIn("ap:token:anidb:4", callbacks)
         self.assertIn("ap:token:jikan:3", callbacks)
         self.assertIn("ap:token:anidb:3", callbacks)

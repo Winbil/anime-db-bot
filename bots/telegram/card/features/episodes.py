@@ -169,13 +169,13 @@ def resolve_backend_selector(selector: str | None, backends: list[str]) -> str:
 
 def _episode_keyboard(
     token: str,
-    items: list[EpisodeRecord],
     *,
     backends: list[str],
     backend: str,
     segment_backends: list[str],
     segment_backend: str,
     view_page: int,
+    total_episodes: int | None,
     has_prev: bool,
     has_next: bool,
     locale: str,
@@ -192,11 +192,8 @@ def _episode_keyboard(
                 ).encode(),
             )
         )
-    center = (
-        _episode_reference(items[0])
-        if items
-        else text("card", "episodes_page", locale=locale, value=view_page + 1)
-    )
+    current_episode = view_page + 1
+    center = f"{current_episode}/{total_episodes if total_episodes else '?'}"
     nav.append(InlineKeyboardButton(text=center, callback_data="noop"))
     if has_next:
         nav.append(
@@ -440,6 +437,11 @@ async def edit_episodes_view(
 
     has_prev = view_page > 0
     has_next = offset + EPISODES_PER_VIEW < len(page.items) or page.has_next
+    total_episodes = session.anime.episodes_total
+    if not page.has_next:
+        backend_total = (page.page - 1) * UPSTREAM_PAGE_SIZE + len(page.items)
+        if backend_total > 0:
+            total_episodes = backend_total
     session.episode_view_page = view_page
 
     episode: EpisodeRecord | None = items[0] if items else None
@@ -483,12 +485,12 @@ async def edit_episodes_view(
 
     keyboard = _episode_keyboard(
         token,
-        items,
         backends=backends,
         backend=backend,
         segment_backends=segment_backends,
         segment_backend=selected_segment_backend,
         view_page=view_page,
+        total_episodes=total_episodes,
         has_prev=has_prev,
         has_next=has_next,
         locale=locale,
