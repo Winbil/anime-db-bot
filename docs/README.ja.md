@@ -186,6 +186,7 @@ Runtime environment parsing は `core/settings.py` に集約されています�
 | `KITSU_API_URL` | いいえ | Kitsu public JSON:API の base URL。default は `https://kitsu.io/api/edge`。 |
 | `ADMIN_TELEGRAM_USER_IDS` | いいえ | Telegram 管理者 user ID の一覧。 |
 | `TELEGRAM_BOT_API_URL` | いいえ | Custom/self-hosted Telegram Bot API endpoint。 |
+| `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | いいえ | Local Bot API コンテナ内の `/var/lib/telegram-bot-api` に対応する host directory。local `file_path` を読む場合に使用します。 |
 | `USER_SETTINGS_DB_PATH` | いいえ | User settings / known-user registry 用 SQLite path。 |
 | `BANS_DB_PATH` | いいえ | Moderation ban 用 SQLite path。 |
 | `MAPPINGS_DB_PATH` | いいえ | Runtime cross-ID mapping database。 |

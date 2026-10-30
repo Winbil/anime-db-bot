@@ -285,6 +285,7 @@ async def run_bot(
                 image_search_service=context.image_search_service,
                 image_search_max_bytes=context.settings.sources.image_search_max_bytes,
                 input_ttl_seconds=context.settings.telegram.anime_input_ttl_seconds,
+                telegram_local_file_root=context.settings.telegram.bot_api_local_file_root,
             )
 
             await dp.start_polling(bot)

@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import inspect
 from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from aiogram import Dispatcher
 from PIL import Image
@@ -294,6 +297,91 @@ class UnifiedSearchUiTests(unittest.TestCase):
         self.assertIsNot(first.sessions, second.sessions)
         self.assertIsNot(first.pending_inputs, second.pending_inputs)
         self.assertIsNot(first.service_cache, second.service_cache)
+
+
+class ImageMaterializationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_local_bot_api_container_path_maps_to_host_file_root(self) -> None:
+        source = BytesIO()
+        Image.new("RGB", (16, 12), (20, 40, 60)).save(source, format="PNG")
+        content = source.getvalue()
+
+        with TemporaryDirectory() as temp_dir:
+            local_root = Path(temp_dir)
+            relative = Path("123456/photos/file_0.png")
+            local_path = local_root / relative
+            local_path.parent.mkdir(parents=True)
+            local_path.write_bytes(content)
+
+            bot = SimpleNamespace(
+                get_file=AsyncMock(
+                    return_value=SimpleNamespace(
+                        file_path=f"/var/lib/telegram-bot-api/{relative.as_posix()}",
+                        file_size=len(content),
+                    )
+                ),
+                download_file=AsyncMock(
+                    side_effect=AssertionError("HTTP download must not be used")
+                ),
+            )
+            value = search_ui.ImageInputSession(
+                owner_user_id=1,
+                chat_id=1,
+                file_id="telegram-file-id",
+                filename="frame.png",
+                content_type="image/png",
+                file_size=len(content),
+            )
+
+            materialized = await search_ui._materialize_image_input(
+                bot,
+                value,
+                max_bytes=1024 * 1024,
+                telegram_local_file_root=local_root,
+            )
+
+        self.assertEqual(materialized.content_type, "image/jpeg")
+        self.assertEqual(materialized.filename, "anime-search.jpg")
+        self.assertTrue((materialized.content or b"").startswith(b"\xff\xd8"))
+        bot.download_file.assert_not_awaited()
+
+    async def test_regular_telegram_file_path_still_uses_bot_download(self) -> None:
+        source = BytesIO()
+        Image.new("RGB", (8, 8), (1, 2, 3)).save(source, format="JPEG")
+        content = source.getvalue()
+
+        async def download_file(file_path, *, destination, timeout):
+            self.assertEqual(file_path, "photos/file_7.jpg")
+            self.assertEqual(timeout, 45)
+            destination.write(content)
+            return destination
+
+        bot = SimpleNamespace(
+            get_file=AsyncMock(
+                return_value=SimpleNamespace(
+                    file_path="photos/file_7.jpg",
+                    file_size=len(content),
+                )
+            ),
+            download_file=AsyncMock(side_effect=download_file),
+        )
+        value = search_ui.ImageInputSession(
+            owner_user_id=1,
+            chat_id=1,
+            file_id="telegram-file-id",
+            filename="frame.jpg",
+            content_type="image/jpeg",
+            file_size=len(content),
+        )
+
+        materialized = await search_ui._materialize_image_input(
+            bot,
+            value,
+            max_bytes=1024 * 1024,
+        )
+
+        self.assertEqual(materialized.content_type, "image/jpeg")
+        self.assertTrue(materialized.content)
+        bot.download_file.assert_awaited_once()
 
 
 class InitialSearchPreviewTests(unittest.IsolatedAsyncioTestCase):
