@@ -17,6 +17,7 @@ from mappings.importers import (
     import_fribb,
     import_kometa,
     import_manami,
+    import_wikidata_bahamut,
 )
 from mappings.resolver import (
     MappingResolver,
@@ -350,6 +351,24 @@ class MappingImporterTests(unittest.TestCase):
         record = next(import_anibridge(anibridge))
         self.assertEqual(record.ids["anidb"], ("10",))
         self.assertEqual(record.ids["mal"], ("20",))
+
+        wikidata = self.root / "wikidata.json"
+        wikidata.write_text(json.dumps({
+            "results": {"bindings": [
+                {
+                    "item": {"value": "http://www.wikidata.org/entity/Q1"},
+                    "bahamut": {"value": "113142"},
+                    "mal": {"value": "47917"},
+                    "anilist": {"value": "130003"},
+                    "anidb": {"value": "16060"},
+                }
+            ]}
+        }), encoding="utf-8")
+        record = next(import_wikidata_bahamut(wikidata))
+        self.assertEqual(record.record_key, "Q1")
+        self.assertEqual(record.ids["bahamut"], ("113142",))
+        self.assertEqual(record.ids["mal"], ("47917",))
+        self.assertEqual(record.weight, 100)
 
 
 if __name__ == "__main__":

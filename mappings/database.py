@@ -269,6 +269,93 @@ class MappingDatabaseBuilder:
                 inserted = True
         return inserted
 
+    def copy_dataset_from(
+        self,
+        source_path: Path,
+        dataset_name: str,
+        *,
+        checked_at: str | None = None,
+    ) -> int:
+        """Copy one already-normalized dataset into a new atomic rebuild.
+
+        This lets source-specific refresh intervals coexist: datasets that are not
+        due for a network check keep their existing evidence without being
+        downloaded again.
+        """
+
+        source_path = Path(source_path)
+        if not source_path.is_file():
+            return 0
+        uri = f"file:{source_path.resolve().as_posix()}?mode=ro"
+        try:
+            with sqlite3.connect(uri, uri=True, timeout=5.0) as source:
+                source.execute("PRAGMA query_only=ON")
+                row = source.execute(
+                    """
+                    SELECT id, source_url, importer, license_note, sha256,
+                           downloaded_at, record_count
+                    FROM datasets WHERE name=?
+                    """,
+                    (dataset_name,),
+                ).fetchone()
+                if row is None:
+                    return 0
+                (
+                    source_dataset_id,
+                    source_url,
+                    importer,
+                    license_note,
+                    sha256,
+                    downloaded_at,
+                    record_count,
+                ) = row
+                cursor = self.conn.execute(
+                    """
+                    INSERT INTO datasets(
+                        name, source_url, importer, license_note, sha256,
+                        downloaded_at, record_count
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        dataset_name,
+                        source_url,
+                        importer,
+                        license_note,
+                        sha256,
+                        checked_at or downloaded_at,
+                        int(record_count or 0),
+                    ),
+                )
+                if cursor.lastrowid is None:
+                    raise RuntimeError("SQLite did not return a copied dataset row ID")
+                destination_dataset_id = int(cursor.lastrowid)
+                read_cursor = source.execute(
+                    """
+                    SELECT record_key, evidence_group, weight,
+                           a_provider, a_id, b_provider, b_id
+                    FROM edge_evidence WHERE dataset_id=?
+                    """,
+                    (source_dataset_id,),
+                )
+                while True:
+                    rows = read_cursor.fetchmany(5000)
+                    if not rows:
+                        break
+                    self.conn.executemany(
+                        """
+                        INSERT INTO edge_evidence(
+                            dataset_id, record_key, evidence_group, weight,
+                            a_provider, a_id, b_provider, b_id
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [(destination_dataset_id, *evidence) for evidence in rows],
+                    )
+                    self.conn.commit()
+                self.conn.commit()
+                return int(record_count or 0)
+        except sqlite3.OperationalError:
+            return 0
+
     def finalize(self, *, built_at: str) -> MappingBuildStats:
         self.conn.execute("DELETE FROM edges")
         self.conn.execute("DELETE FROM conflicts")

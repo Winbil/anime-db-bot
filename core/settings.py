@@ -111,6 +111,7 @@ class MappingSettings:
     db_path: Path
     auto_update: bool
     update_max_age_hours: float
+    wikidata_check_interval_hours: float
     check_interval_seconds: float
     request_timeout_seconds: float
     keep_downloads: bool
@@ -145,6 +146,11 @@ class SourceSettings:
     anime_skip_client_id: str
     anime_skip_request_timeout_seconds: float
     anime_skip_cache_ttl_seconds: float
+    bahamut_api_url: str
+    bahamut_request_timeout_seconds: float
+    bahamut_fallback_cache_ttl_seconds: float
+    baha_anime_skip_data_url: str
+    baha_anime_skip_cache_ttl_seconds: float
     shikimori_api_url: str
     shikimori_site_url: str
     shikimori_people_cache_ttl_seconds: float
@@ -213,6 +219,8 @@ class AppSettings:
             "anisearch": 12,
             "skipdb": 30,
             "anime_skip": 60,
+            "bahamut": 30,
+            "baha_anime_skip": 20,
         }
         upstream_per_source = {
             source: _int(
@@ -240,6 +248,9 @@ class AppSettings:
             ("skipdb", "episodes"): 30,
             ("skipdb", "episode"): 120,
             ("anime_skip", "episode_segments"): 60,
+            ("bahamut", "identity"): 20,
+            ("bahamut", "episodes"): 30,
+            ("baha_anime_skip", "episode_segments"): 20,
         }
         upstream_per_operation = {
             (source, operation): _int(
@@ -306,6 +317,12 @@ class AppSettings:
                     "MAPPINGS_UPDATE_MAX_AGE_HOURS",
                     24.0,
                     0.25,
+                ),
+                wikidata_check_interval_hours=_float(
+                    values,
+                    "MAPPINGS_WIKIDATA_CHECK_INTERVAL_HOURS",
+                    168.0,
+                    1.0,
                 ),
                 check_interval_seconds=_float(
                     values,
@@ -424,6 +441,32 @@ class AppSettings:
                 anime_skip_cache_ttl_seconds=_float(
                     values,
                     "ANIME_SKIP_CACHE_TTL_SECONDS",
+                    21600.0,
+                ),
+                bahamut_api_url=_raw(
+                    values,
+                    "BAHAMUT_API_URL",
+                    "https://api.gamer.com.tw/mobile_app/anime",
+                ).rstrip("/"),
+                bahamut_request_timeout_seconds=_float(
+                    values,
+                    "BAHAMUT_REQUEST_TIMEOUT_SECONDS",
+                    20.0,
+                    3.0,
+                ),
+                bahamut_fallback_cache_ttl_seconds=_float(
+                    values,
+                    "BAHAMUT_FALLBACK_CACHE_TTL_SECONDS",
+                    86400.0,
+                ),
+                baha_anime_skip_data_url=_raw(
+                    values,
+                    "BAHA_ANIME_SKIP_DATA_URL",
+                    "https://raw.githubusercontent.com/JacobLinCool/baha-anime-skip/main/packages/baha-anime-skip-db/data.json",
+                ),
+                baha_anime_skip_cache_ttl_seconds=_float(
+                    values,
+                    "BAHA_ANIME_SKIP_CACHE_TTL_SECONDS",
                     21600.0,
                 ),
                 shikimori_api_url=_raw(

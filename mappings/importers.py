@@ -28,7 +28,14 @@ def _values(value: Any, *, numeric: bool = False) -> tuple[str, ...]:
         text = str(raw or "").strip()
         if numeric and not text.isdigit():
             continue
-        if text and text.casefold() not in {"none", "null", "unknown", "hentai", "-1", "0"}:
+        if text and text.casefold() not in {
+            "none",
+            "null",
+            "unknown",
+            "hentai",
+            "-1",
+            "0",
+        }:
             key = text.casefold()
             if key not in seen:
                 seen.add(key)
@@ -213,9 +220,7 @@ def import_animap(path: Path) -> Iterator[MappingRecord]:
                 {
                     "anidb": _values(anime.get("anidb_id"), numeric=True),
                     "mal": _values(anime.get("mal_ids"), numeric=True),
-                    "tvdb": _values(
-                        [anime.get("tvdb_id"), *extra_tvdb], numeric=True
-                    ),
+                    "tvdb": _values([anime.get("tvdb_id"), *extra_tvdb], numeric=True),
                     "tmdb_movie": _values(tmdb_movies, numeric=True),
                     "imdb": _values(anime.get("imdb_ids")),
                 },
@@ -227,13 +232,21 @@ def import_animap(path: Path) -> Iterator[MappingRecord]:
 
 
 _URL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("anidb", re.compile(r"anidb\.net/(?:anime/|perl-bin/animedb\.pl\?show=anime&aid=)(\d+)", re.I)),
+    (
+        "anidb",
+        re.compile(
+            r"anidb\.net/(?:anime/|perl-bin/animedb\.pl\?show=anime&aid=)(\d+)", re.I
+        ),
+    ),
     ("anilist", re.compile(r"anilist\.co/anime/(\d+)", re.I)),
     ("mal", re.compile(r"myanimelist\.net/anime/(\d+)", re.I)),
     ("kitsu", re.compile(r"kitsu\.(?:app|io)/anime/([^/?#]+)", re.I)),
     ("animeplanet", re.compile(r"anime-planet\.com/anime/([^/?#]+)", re.I)),
     ("anisearch", re.compile(r"anisearch\.com/anime/(\d+)", re.I)),
-    ("ann", re.compile(r"animenewsnetwork\.com/encyclopedia/anime\.php\?id=(\d+)", re.I)),
+    (
+        "ann",
+        re.compile(r"animenewsnetwork\.com/encyclopedia/anime\.php\?id=(\d+)", re.I),
+    ),
     ("livechart", re.compile(r"livechart\.me/anime/(\d+)", re.I)),
     ("simkl", re.compile(r"simkl\.com/anime/(\d+)", re.I)),
     ("animecountdown", re.compile(r"animecountdown\.com/(\d+)", re.I)),
@@ -322,6 +335,65 @@ def import_anibridge(path: Path) -> Iterator[MappingRecord]:
                     yield record
 
 
+def import_wikidata_bahamut(path: Path) -> Iterator[MappingRecord]:
+    """Stream strict Bahamut animeSn mappings from a deterministic WDQS result."""
+
+    current_item: str | None = None
+    collected: dict[str, set[str]] = {}
+
+    def flush() -> MappingRecord | None:
+        if not current_item:
+            return None
+        ids = {
+            provider: tuple(sorted(values, key=lambda value: (len(value), value)))
+            for provider, values in collected.items()
+            if values
+        }
+        return _record(
+            current_item,
+            ids,
+            group="wikidata-bahamut",
+            weight=100,
+        )
+
+    with path.open("rb") as handle:
+        for binding in ijson.items(handle, "results.bindings.item"):
+            if not isinstance(binding, dict):
+                continue
+            item_value = binding.get("item")
+            item_uri = (
+                str(item_value.get("value") or "").strip()
+                if isinstance(item_value, dict)
+                else ""
+            )
+            item = item_uri.rsplit("/", 1)[-1]
+            if not item.startswith("Q"):
+                continue
+            if current_item is not None and item != current_item:
+                record = flush()
+                if record is not None:
+                    yield record
+                collected = {}
+            current_item = item
+
+            for provider, field in (
+                ("bahamut", "bahamut"),
+                ("mal", "mal"),
+                ("anilist", "anilist"),
+                ("anidb", "anidb"),
+            ):
+                raw = binding.get(field)
+                value = (
+                    str(raw.get("value") or "").strip() if isinstance(raw, dict) else ""
+                )
+                if value.isdigit() and int(value) > 0:
+                    collected.setdefault(provider, set()).add(value)
+
+    record = flush()
+    if record is not None:
+        yield record
+
+
 IMPORTERS = {
     "fribb": import_fribb,
     "kometa": import_kometa,
@@ -329,4 +401,5 @@ IMPORTERS = {
     "animap": import_animap,
     "manami": import_manami,
     "anibridge": import_anibridge,
+    "wikidata_bahamut": import_wikidata_bahamut,
 }

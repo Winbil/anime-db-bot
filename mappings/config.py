@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import quote
 
 from core.settings import get_settings
 
@@ -14,6 +15,22 @@ class MappingSourceSpec:
     required: bool
     license_note: str
     checksum_url: str | None = None
+    check_interval: str = "default"
+
+
+_WIKIDATA_BAHAMUT_QUERY = """
+SELECT ?item ?bahamut ?mal ?anilist ?anidb WHERE {
+  ?item wdt:P13424 ?bahamut .
+  OPTIONAL { ?item wdt:P4086 ?mal . }
+  OPTIONAL { ?item wdt:P8729 ?anilist . }
+  OPTIONAL { ?item wdt:P5646 ?anidb . }
+  FILTER(BOUND(?mal) || BOUND(?anilist) || BOUND(?anidb))
+}
+ORDER BY ?item ?bahamut ?mal ?anilist ?anidb
+""".strip()
+_WIKIDATA_BAHAMUT_URL = "https://query.wikidata.org/sparql?format=json&query=" + quote(
+    _WIKIDATA_BAHAMUT_QUERY, safe=""
+)
 
 
 SOURCE_SPECS: tuple[MappingSourceSpec, ...] = (
@@ -60,6 +77,14 @@ SOURCE_SPECS: tuple[MappingSourceSpec, ...] = (
         required=False,
         license_note="MIT repository; generated mapping data inherits upstream obligations.",
     ),
+    MappingSourceSpec(
+        name="Wikidata/Bahamut Animation Crazy",
+        url=_WIKIDATA_BAHAMUT_URL,
+        importer="wikidata_bahamut",
+        required=False,
+        license_note="Wikidata structured data is CC0 1.0.",
+        check_interval="wikidata",
+    ),
 )
 
 
@@ -85,6 +110,10 @@ def mappings_update_max_age_hours() -> float:
 
 def mappings_request_timeout_seconds() -> float:
     return get_settings().mappings.request_timeout_seconds
+
+
+def mappings_wikidata_check_interval_hours() -> float:
+    return get_settings().mappings.wikidata_check_interval_hours
 
 
 def mappings_check_interval_seconds() -> float:

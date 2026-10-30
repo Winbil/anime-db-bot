@@ -22,6 +22,7 @@ class AppSettingsTests(unittest.TestCase):
                 "ADMIN_TELEGRAM_USER_IDS": "1, 2;3\n2",
                 "MAPPINGS_AUTO_UPDATE": "0",
                 "MAPPINGS_CHECK_INTERVAL_SECONDS": "600",
+                "MAPPINGS_WIKIDATA_CHECK_INTERVAL_HOURS": "72",
                 "MAL_CLIENT_ID": "mal-client",
                 "UPSTREAM_RATE_LIMIT_ANILIST_PER_MINUTE": "77",
                 "UPSTREAM_RATE_LIMIT_ANILIST_PEOPLE_PER_MINUTE": "13",
@@ -41,6 +42,12 @@ class AppSettingsTests(unittest.TestCase):
                 "ANIME_SKIP_REQUEST_TIMEOUT_SECONDS": "11.5",
                 "ANIME_SKIP_CACHE_TTL_SECONDS": "2345",
                 "UPSTREAM_RATE_LIMIT_ANIME_SKIP_PER_MINUTE": "41",
+                "BAHAMUT_API_URL": "https://bahamut.example/api/",
+                "BAHAMUT_REQUEST_TIMEOUT_SECONDS": "9.5",
+                "BAHAMUT_FALLBACK_CACHE_TTL_SECONDS": "3456",
+                "BAHA_ANIME_SKIP_DATA_URL": "https://baha.example/data.json",
+                "BAHA_ANIME_SKIP_CACHE_TTL_SECONDS": "4567",
+                "UPSTREAM_RATE_LIMIT_BAHAMUT_PER_MINUTE": "17",
                 "SOURCE_HEALTH_FAILURE_THRESHOLD": "5",
                 "SOURCE_HEALTH_COOLDOWN_SECONDS": "42.5",
             }
@@ -57,6 +64,7 @@ class AppSettingsTests(unittest.TestCase):
         self.assertEqual(settings.telegram.admin_user_ids, (1, 2, 3))
         self.assertFalse(settings.mappings.auto_update)
         self.assertEqual(settings.mappings.check_interval_seconds, 600.0)
+        self.assertEqual(settings.mappings.wikidata_check_interval_hours, 72.0)
         self.assertEqual(settings.sources.mal_client_id, "mal-client")
         self.assertEqual(settings.rate_limits.source_limit("anilist"), 77)
         self.assertEqual(settings.rate_limits.operation_limit("anilist", "people"), 13)
@@ -80,6 +88,16 @@ class AppSettingsTests(unittest.TestCase):
         self.assertEqual(settings.sources.anime_skip_request_timeout_seconds, 11.5)
         self.assertEqual(settings.sources.anime_skip_cache_ttl_seconds, 2345.0)
         self.assertEqual(settings.rate_limits.source_limit("anime_skip"), 41)
+        self.assertEqual(
+            settings.sources.bahamut_api_url, "https://bahamut.example/api"
+        )
+        self.assertEqual(settings.sources.bahamut_request_timeout_seconds, 9.5)
+        self.assertEqual(settings.sources.bahamut_fallback_cache_ttl_seconds, 3456.0)
+        self.assertEqual(
+            settings.sources.baha_anime_skip_data_url, "https://baha.example/data.json"
+        )
+        self.assertEqual(settings.sources.baha_anime_skip_cache_ttl_seconds, 4567.0)
+        self.assertEqual(settings.rate_limits.source_limit("bahamut"), 17)
         self.assertEqual(settings.source_health.failure_threshold, 5)
         self.assertEqual(settings.source_health.cooldown_seconds, 42.5)
 
