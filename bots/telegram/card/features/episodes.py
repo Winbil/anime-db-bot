@@ -213,9 +213,7 @@ def _episode_keyboard(
         InlineKeyboardButton(
             text=("✓ " if candidate == backend else "")
             + service.display_name(candidate),
-            callback_data=KeyedPageCallback(
-                "ap", token, candidate, view_page
-            ).encode(),
+            callback_data=KeyedPageCallback("ap", token, candidate, view_page).encode(),
         )
         for candidate in backends
     ]
@@ -433,7 +431,10 @@ async def edit_episodes_view(
             except Exception:
                 logging.exception("Could not load final %s episode page", source_name)
         if page.items:
-            offset = min(offset if target_upstream == upstream_page else len(page.items) - 1, len(page.items) - 1)
+            offset = min(
+                offset if target_upstream == upstream_page else len(page.items) - 1,
+                len(page.items) - 1,
+            )
             view_page = (target_upstream - 1) * UPSTREAM_PAGE_SIZE + offset
             items = page.items[offset : offset + EPISODES_PER_VIEW]
 
