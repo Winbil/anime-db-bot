@@ -11,13 +11,17 @@ from core.identity import AnimeIdentity
 SEGMENT_MERGE_TOLERANCE_SECONDS = 5.0
 _KIND_ORDER = {
     "recap": 0,
-    "opening": 1,
-    "mixed_opening": 2,
-    "ending": 3,
-    "mixed_ending": 4,
-    "preview": 5,
-    "credits": 6,
-    "post_credits": 7,
+    "branding": 1,
+    "opening": 2,
+    "mixed_opening": 3,
+    "title_card": 4,
+    "transition": 5,
+    "filler": 6,
+    "ending": 7,
+    "mixed_ending": 8,
+    "preview": 9,
+    "credits": 10,
+    "post_credits": 11,
     "other": 99,
 }
 
@@ -47,8 +51,7 @@ def _compatible(left: EpisodeSegment, right: EpisodeSegment) -> bool:
         )
     if left.end_seconds is not None and right.end_seconds is not None:
         checks.append(
-            abs(left.end_seconds - right.end_seconds)
-            <= SEGMENT_MERGE_TOLERANCE_SECONDS
+            abs(left.end_seconds - right.end_seconds) <= SEGMENT_MERGE_TOLERANCE_SECONDS
         )
     return bool(checks) and all(checks)
 
@@ -90,14 +93,8 @@ def aggregate_segments(
             else:
                 target.append(segment)
         winner = max(clusters, key=len)
-        starts = [
-            value
-            for item in winner
-            if (value := item.start_seconds) is not None
-        ]
-        ends = [
-            value for item in winner if (value := item.end_seconds) is not None
-        ]
+        starts = [value for item in winner if (value := item.start_seconds) is not None]
+        ends = [value for item in winner if (value := item.end_seconds) is not None]
         sources = tuple(dict.fromkeys(item.source for item in winner))
         result.append(
             AggregatedEpisodeSegment(

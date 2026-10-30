@@ -36,6 +36,11 @@ class AppSettingsTests(unittest.TestCase):
                 "SKIPDB_REQUEST_TIMEOUT_SECONDS": "12.5",
                 "SKIPDB_CACHE_TTL_SECONDS": "1234",
                 "UPSTREAM_RATE_LIMIT_SKIPDB_PER_MINUTE": "29",
+                "ANIME_SKIP_API_URL": "https://anime-skip.example/api/",
+                "ANIME_SKIP_CLIENT_ID": "anime-skip-client",
+                "ANIME_SKIP_REQUEST_TIMEOUT_SECONDS": "11.5",
+                "ANIME_SKIP_CACHE_TTL_SECONDS": "2345",
+                "UPSTREAM_RATE_LIMIT_ANIME_SKIP_PER_MINUTE": "41",
                 "SOURCE_HEALTH_FAILURE_THRESHOLD": "5",
                 "SOURCE_HEALTH_COOLDOWN_SECONDS": "42.5",
             }
@@ -68,6 +73,13 @@ class AppSettingsTests(unittest.TestCase):
         self.assertEqual(settings.sources.skipdb_request_timeout_seconds, 12.5)
         self.assertEqual(settings.sources.skipdb_cache_ttl_seconds, 1234.0)
         self.assertEqual(settings.rate_limits.source_limit("skipdb"), 29)
+        self.assertEqual(
+            settings.sources.anime_skip_api_url, "https://anime-skip.example/api"
+        )
+        self.assertEqual(settings.sources.anime_skip_client_id, "anime-skip-client")
+        self.assertEqual(settings.sources.anime_skip_request_timeout_seconds, 11.5)
+        self.assertEqual(settings.sources.anime_skip_cache_ttl_seconds, 2345.0)
+        self.assertEqual(settings.rate_limits.source_limit("anime_skip"), 41)
         self.assertEqual(settings.source_health.failure_threshold, 5)
         self.assertEqual(settings.source_health.cooldown_seconds, 42.5)
 
@@ -95,6 +107,12 @@ class AppSettingsTests(unittest.TestCase):
     def test_log_secret_redaction_defaults_to_enabled(self) -> None:
         settings = AppSettings.from_env({"BOT_TOKEN": "token"})
         self.assertTrue(settings.logging.redact_secrets)
+
+    def test_anime_skip_rate_limit_cannot_exceed_server_ceiling(self) -> None:
+        settings = AppSettings.from_env(
+            {"UPSTREAM_RATE_LIMIT_ANIME_SKIP_PER_MINUTE": "999"}
+        )
+        self.assertEqual(settings.rate_limits.source_limit("anime_skip"), 60)
 
     def test_invalid_admin_id_fails_fast(self) -> None:
         with self.assertRaises(ValueError):

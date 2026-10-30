@@ -112,7 +112,7 @@ class AppContext:
                 get_episode_sources(settings.sources, source_health)
             ),
             episode_segment_service=EpisodeSegmentService(
-                get_episode_segment_sources()
+                get_episode_segment_sources(settings.sources)
             ),
             trailer_service=TrailerService(
                 get_trailer_sources(settings.sources, source_health)
