@@ -7,9 +7,12 @@ import httpx
 
 from core.episode_segments import EpisodeSegment
 from core.identity import AnimeIdentity
+from core.models import AnimeRecord
+from core.temporal import PartialDate
 from services.media.episode_segments import EpisodeSegmentService, aggregate_segments
 from sources.providers.anime_skip import AnimeSkipSegmentSource
 from sources.providers.aniskip import AniSkipSegmentSource
+from sources.providers.baha_anime_skip import BahaAnimeSkipSegmentSource
 
 
 def _response(payload: dict[str, object], status: int = 200) -> httpx.Response:
@@ -308,6 +311,168 @@ class AnimeSkipSegmentSourceTests(unittest.IsolatedAsyncioTestCase):
             second = await source.load_segments(AnimeIdentity({"anilist": "1"}), 1)
         self.assertEqual(first, second)
         self.assertEqual(request.await_count, 1)
+
+
+class BahaAnimeSkipSegmentSourceTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _anime_payload(*, maker: str = "CloverWorks") -> dict[str, object]:
+        return {
+            "data": {
+                "video": {"videoSn": 31599, "animeSn": 113142},
+                "anime": {
+                    "animeSn": 113142,
+                    "title": "孤獨搖滾！ [1]",
+                    "totalEpisode": 12,
+                    "seasonStart": "2022/10/09",
+                    "maker": maker,
+                    "episodes": {
+                        "0": [
+                            {"episode": 1, "videoSn": 31599, "state": 1},
+                            {"episode": 2, "videoSn": 31600, "state": 1},
+                        ]
+                    },
+                },
+            }
+        }
+
+    async def test_direct_bahamut_mapping_resolves_video_sn_and_baha_ranges(
+        self,
+    ) -> None:
+        source = BahaAnimeSkipSegmentSource(
+            api_url="https://bahamut.test/anime",
+            data_url="https://baha.test/data.json",
+            cache_ttl_seconds=0,
+        )
+
+        async def request(_profile: str, _method: str, url: str, **_kwargs):
+            if url.endswith("v4/video.php"):
+                return httpx.Response(
+                    200,
+                    json=self._anime_payload(),
+                    request=httpx.Request("GET", url),
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "31599": {
+                        "OP": [1.0, 88.5],
+                        "ED": [1300.0, 90.0],
+                    }
+                },
+                request=httpx.Request("GET", url),
+            )
+
+        with (
+            patch(
+                "sources.providers.baha_anime_skip.wait_for_upstream", new=AsyncMock()
+            ),
+            patch(
+                "sources.providers.baha_anime_skip.http_request",
+                new=AsyncMock(side_effect=request),
+            ),
+        ):
+            values = await source.load_segments(
+                AnimeIdentity({"bahamut": "113142"}),
+                1,
+                episode_length_seconds=1420,
+            )
+        self.assertEqual([item.kind for item in values], ["opening", "ending"])
+        self.assertEqual(
+            [(item.start_seconds, item.end_seconds) for item in values],
+            [(1.0, 89.5), (1300.0, 1390.0)],
+        )
+        self.assertEqual(values[0].source_segment_id, "31599:OP")
+
+    async def test_strict_runtime_fallback_requires_year_episodes_and_studio(
+        self,
+    ) -> None:
+        source = BahaAnimeSkipSegmentSource(
+            api_url="https://bahamut.test/anime",
+            data_url="https://baha.test/data.json",
+            cache_ttl_seconds=0,
+            fallback_cache_ttl_seconds=0,
+        )
+        reference = AnimeRecord(
+            source="AniList",
+            source_id="130003",
+            titles={"english": "Bocchi the Rock!", "romaji": "Bocchi the Rock!"},
+            episodes_total=12,
+            aired_on=PartialDate(2022, 10, 9),
+            studios=["CloverWorks"],
+        )
+
+        async def request(_profile: str, _method: str, url: str, **kwargs):
+            if url.endswith("v1/search.php"):
+                return httpx.Response(
+                    200,
+                    json={"anime": [{"anime_sn": 113142, "title": "孤獨搖滾！"}]},
+                    request=httpx.Request("GET", url),
+                )
+            if url.endswith("v4/video.php"):
+                return httpx.Response(
+                    200,
+                    json=self._anime_payload(),
+                    request=httpx.Request("GET", url),
+                )
+            return httpx.Response(
+                200,
+                json={"31599": {"OP": [1.0, 88.5]}},
+                request=httpx.Request("GET", url),
+            )
+
+        with (
+            patch.object(
+                source, "_reference_records", new=AsyncMock(return_value=[reference])
+            ),
+            patch(
+                "sources.providers.baha_anime_skip.wait_for_upstream", new=AsyncMock()
+            ),
+            patch(
+                "sources.providers.baha_anime_skip.http_request",
+                new=AsyncMock(side_effect=request),
+            ),
+        ):
+            values = await source.load_segments(AnimeIdentity({"anilist": "130003"}), 1)
+        self.assertEqual(len(values), 1)
+        self.assertEqual(values[0].kind, "opening")
+
+    async def test_strict_runtime_fallback_rejects_studio_mismatch(self) -> None:
+        source = BahaAnimeSkipSegmentSource(
+            api_url="https://bahamut.test/anime",
+            data_url="https://baha.test/data.json",
+            cache_ttl_seconds=0,
+            fallback_cache_ttl_seconds=0,
+        )
+        reference = AnimeRecord(
+            source="AniList",
+            source_id="130003",
+            titles={"english": "Bocchi the Rock!"},
+            episodes_total=12,
+            aired_on=PartialDate(2022, 10, 9),
+            studios=["CloverWorks"],
+        )
+
+        async def request(_profile: str, _method: str, url: str, **kwargs):
+            if url.endswith("v1/search.php"):
+                payload = {"anime": [{"anime_sn": 113142}]}
+            else:
+                payload = self._anime_payload(maker="Wrong Studio")
+            return httpx.Response(200, json=payload, request=httpx.Request("GET", url))
+
+        with (
+            patch.object(
+                source, "_reference_records", new=AsyncMock(return_value=[reference])
+            ),
+            patch(
+                "sources.providers.baha_anime_skip.wait_for_upstream", new=AsyncMock()
+            ),
+            patch(
+                "sources.providers.baha_anime_skip.http_request",
+                new=AsyncMock(side_effect=request),
+            ),
+        ):
+            values = await source.load_segments(AnimeIdentity({"anilist": "130003"}), 1)
+        self.assertEqual(values, [])
 
 
 if __name__ == "__main__":
