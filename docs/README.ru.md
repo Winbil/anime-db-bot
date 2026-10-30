@@ -141,8 +141,8 @@ Hard caps защищают upstream quotas. Если бот не может до
 git clone git@github.com:Winbil/anime-db-bot.git
 cd anime-db-bot
 
-cp .env.example .env
-# Отредактируйте .env и как минимум добавьте BOT_TOKEN.
+cp -R .env.example.d .env.d
+# Отредактируйте .env.d/telegram.env и как минимум добавьте BOT_TOKEN.
 
 ./scripts/setup.sh
 ./scripts/check.sh
@@ -163,7 +163,7 @@ Runtime-логи разделены по назначению в `logs/YYYY.MM.D
 
 ## Конфигурация
 
-Все runtime environment settings централизованно читаются в `core/settings.py`. Полный список параметров и безопасных defaults находится в `.env.example`.
+Все runtime environment settings централизованно читаются в `core/settings.py`. Для новой установки `.env.example.d/` копируется в `.env.d/`. Загружаются только фиксированные файлы `telegram.env`, `sources.env`, `timestamps.env`, `rate-limits.env`, `mappings.env`, `storage.env`, `logging.env` и `runtime.env`; случайные файлы вроде `backup.env` игнорируются. Дубли ключей между project config files останавливают запуск, а реальные переменные окружения процесса имеют наивысший приоритет. Монолитный `.env` сохранён только для переходной совместимости.
 
 ### Основные переменные
 
@@ -181,7 +181,7 @@ Runtime-логи разделены по назначению в `logs/YYYY.MM.D
 | `BANS_DB_PATH` | Нет | SQLite для moderation bans. |
 | `MAPPINGS_DB_PATH` | Нет | Runtime cross-ID mapping database. |
 
-Не коммитьте `.env`, bot/access tokens, пароли и другие приватные credentials.
+Не коммитьте `.env`, `.env.d/`, bot/access tokens, пароли и другие приватные credentials.
 
 ### AniDB
 

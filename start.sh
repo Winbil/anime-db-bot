@@ -19,7 +19,11 @@ fail() {
 }
 
 [[ -f "$SCRIPT_DIR/requirements.lock" ]] || fail "requirements.lock not found."
-[[ -f "$SCRIPT_DIR/.env.example" ]] || fail ".env.example not found."
+[[ -d "$SCRIPT_DIR/.env.example.d" ]] || fail ".env.example.d not found."
+ENV_FILES=(telegram.env sources.env timestamps.env rate-limits.env mappings.env storage.env logging.env runtime.env)
+for env_name in "${ENV_FILES[@]}"; do
+    [[ -f "$SCRIPT_DIR/.env.example.d/$env_name" ]] || fail ".env.example.d/$env_name not found."
+done
 command -v python3 >/dev/null 2>&1 || fail "python3 is not installed."
 command -v tmux >/dev/null 2>&1 || fail "tmux is not installed. Install it first, for example: sudo apt install tmux"
 
@@ -56,32 +60,56 @@ PYTHON="$VENV_DIR/bin/python"
 
 info "Using Python: $($PYTHON --version 2>&1)"
 
-if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
-    cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
-    info "Created .env from .env.example."
-    fail "Add BOT_TOKEN to .env, then run ./start.sh again."
+HAS_SPLIT_CONFIG=0
+for env_name in "${ENV_FILES[@]}"; do
+    if [[ -f "$SCRIPT_DIR/.env.d/$env_name" ]]; then
+        HAS_SPLIT_CONFIG=1
+        break
+    fi
+done
+
+if [[ ! -f "$SCRIPT_DIR/.env" && "$HAS_SPLIT_CONFIG" -eq 0 ]]; then
+    mkdir -p "$SCRIPT_DIR/.env.d"
+    for env_name in "${ENV_FILES[@]}"; do
+        cp "$SCRIPT_DIR/.env.example.d/$env_name" "$SCRIPT_DIR/.env.d/$env_name"
+    done
+    chmod 600 "$SCRIPT_DIR/.env.d/"*.env
+    info "Created .env.d from .env.example.d."
+    fail "Add BOT_TOKEN to .env.d/telegram.env, then run ./start.sh again."
 fi
 
-if [[ -z "$LOG_DIR" ]]; then
-    LOG_DIR="$(sed -n 's/^[[:space:]]*LOG_DIR[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
+if ! CONFIG_SUMMARY="$("$PYTHON" - <<'PYCONFIG'
+from core.settings import get_settings
+
+settings = get_settings()
+print(settings.logging.directory)
+print("1" if settings.telegram.bot_token else "0")
+print("1" if settings.sources.mal_client_id else "0")
+print("1" if settings.sources.anidb_client else "0")
+print(settings.sources.jikan_port)
+PYCONFIG
+)"; then
+    fail "Configuration loading failed. Check .env.d and legacy .env for duplicate or invalid settings."
 fi
-LOG_DIR="${LOG_DIR:-logs}"
+mapfile -t CONFIG_LINES <<<"$CONFIG_SUMMARY"
+
+[[ "${CONFIG_LINES[1]:-0}" == "1" ]] || fail "BOT_TOKEN is empty in .env.d/telegram.env (or legacy .env)."
+
+if [[ -z "$LOG_DIR" ]]; then
+    LOG_DIR="${CONFIG_LINES[0]:-$SCRIPT_DIR/logs}"
+fi
 if [[ "$LOG_DIR" != /* ]]; then
     LOG_DIR="$SCRIPT_DIR/$LOG_DIR"
 fi
 export LOG_DIR
+export JIKAN_PORT="${JIKAN_PORT:-${CONFIG_LINES[4]:-8091}}"
 
-BOT_TOKEN_VALUE="$(sed -n 's/^[[:space:]]*BOT_TOKEN[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
-[[ -n "$BOT_TOKEN_VALUE" ]] || fail "BOT_TOKEN is empty in .env."
-
-MAL_CLIENT_ID_VALUE="$(sed -n 's/^[[:space:]]*MAL_CLIENT_ID[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
-if [[ -z "$MAL_CLIENT_ID_VALUE" ]]; then
+if [[ "${CONFIG_LINES[2]:-0}" != "1" ]]; then
     info "MAL_CLIENT_ID is empty: MyAnimeList search and metadata will be unavailable."
     info "Available non-MAL sources can still provide partial search and metadata results."
 fi
 
-ANIDB_CLIENT_VALUE="$(sed -n 's/^[[:space:]]*ANIDB_CLIENT[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/.env" | tail -n 1 | tr -d '\r')"
-if [[ -z "$ANIDB_CLIENT_VALUE" ]]; then
+if [[ "${CONFIG_LINES[3]:-0}" != "1" ]]; then
     info "ANIDB_CLIENT is empty: AniDB HTTP metadata is disabled; mappings.db can still resolve AniDB IDs."
 else
     info "AniDB HTTP metadata source is configured."

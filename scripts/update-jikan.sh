@@ -7,14 +7,30 @@ SERVICE_NAME="jikan"
 CURRENT_IMAGE="anime-db-bot-jikan:current"
 CANDIDATE_IMAGE="anime-db-bot-jikan:candidate"
 ROLLBACK_IMAGE="anime-db-bot-jikan:rollback"
-PORT="${JIKAN_PORT:-8091}"
-API="http://127.0.0.1:${PORT}"
-MAX_IDLE_WAIT_SECONDS="${JIKAN_UPDATE_IDLE_WAIT_SECONDS:-300}"
 MAX_SWITCH_ATTEMPTS=3
+PYTHON="$PROJECT_DIR/.venv/bin/python"
 
 log() { printf '[jikan-updater] %s\n' "$*"; }
 
 cd "$PROJECT_DIR"
+
+PORT="${JIKAN_PORT:-8091}"
+MAX_IDLE_WAIT_SECONDS="${JIKAN_UPDATE_IDLE_WAIT_SECONDS:-300}"
+if [[ -x "$PYTHON" ]]; then
+  CONFIG_SUMMARY="$("$PYTHON" - <<'PYCONFIG'
+from core.settings import get_settings
+
+settings = get_settings().sources
+print(settings.jikan_port)
+print(settings.jikan_update_idle_wait_seconds)
+PYCONFIG
+)"
+  mapfile -t CONFIG_LINES <<<"$CONFIG_SUMMARY"
+  PORT="${JIKAN_PORT:-${CONFIG_LINES[0]:-8091}}"
+  MAX_IDLE_WAIT_SECONDS="${JIKAN_UPDATE_IDLE_WAIT_SECONDS:-${CONFIG_LINES[1]:-300}}"
+fi
+export JIKAN_PORT="$PORT"
+API="http://127.0.0.1:${PORT}"
 
 latest_tag="$({ curl -fsSL --connect-timeout 10 --max-time 30 \
   -H 'Accept: application/vnd.github+json' \

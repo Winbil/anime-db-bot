@@ -5,13 +5,94 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, MutableMapping
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-load_dotenv(ROOT_DIR / ".env")
+ENV_CONFIG_FILES = (
+    "telegram.env",
+    "sources.env",
+    "timestamps.env",
+    "rate-limits.env",
+    "mappings.env",
+    "storage.env",
+    "logging.env",
+    "runtime.env",
+)
 _ADMIN_SPLIT_RE = re.compile(r"[\s,;]+")
+_ENV_KEY_RE = re.compile(r"^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=")
+
+
+class ConfigFileError(RuntimeError):
+    """Raised when project environment files are ambiguous or malformed."""
+
+
+def _declared_env_keys(path: Path) -> tuple[str, ...]:
+    keys: list[str] = []
+    seen: set[str] = set()
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), 1
+    ):
+        match = _ENV_KEY_RE.match(line)
+        if match is None:
+            continue
+        key = match.group(1)
+        if key in seen:
+            raise ConfigFileError(
+                f"Duplicate configuration key {key!r} inside {path} "
+                f"at line {line_number}."
+            )
+        seen.add(key)
+        keys.append(key)
+    return tuple(keys)
+
+
+def project_env_files(root_dir: Path = ROOT_DIR) -> tuple[Path, ...]:
+    """Return only the explicitly supported project configuration files."""
+    paths: list[Path] = []
+    legacy = root_dir / ".env"
+    if legacy.is_file():
+        paths.append(legacy)
+    split_dir = root_dir / ".env.d"
+    paths.extend(
+        path for name in ENV_CONFIG_FILES if (path := split_dir / name).is_file()
+    )
+    return tuple(paths)
+
+
+def project_env_values(root_dir: Path = ROOT_DIR) -> dict[str, str]:
+    """Load project config with duplicate-key rejection across all config files."""
+    merged: dict[str, str] = {}
+    origins: dict[str, Path] = {}
+    for path in project_env_files(root_dir):
+        keys = _declared_env_keys(path)
+        parsed = dotenv_values(path)
+        for key in keys:
+            previous = origins.get(key)
+            if previous is not None:
+                raise ConfigFileError(
+                    f"Duplicate configuration key {key!r} in {previous} and {path}. "
+                    "Keep each project setting in exactly one config file."
+                )
+            value = parsed.get(key)
+            merged[key] = "" if value is None else str(value)
+            origins[key] = path
+    return merged
+
+
+def load_project_environment(
+    root_dir: Path = ROOT_DIR,
+    environ: MutableMapping[str, str] | None = None,
+) -> MutableMapping[str, str]:
+    """Load project files without overriding real process environment variables."""
+    target = os.environ if environ is None else environ
+    for key, value in project_env_values(root_dir).items():
+        target.setdefault(key, value)
+    return target
+
+
+load_project_environment()
 
 
 def _raw(env: Mapping[str, str], name: str, default: str = "") -> str:
@@ -127,6 +208,7 @@ class SourceSettings:
     jikan_request_timeout_seconds: float
     jikan_supplement_cache_ttl_seconds: float
     jikan_people_cache_ttl_seconds: float
+    jikan_update_idle_wait_seconds: int
     anidb_client: str
     anidb_client_version: int
     anidb_http_api_url: str
@@ -375,6 +457,12 @@ class AppSettings:
                     "JIKAN_PEOPLE_CACHE_TTL_SECONDS",
                     21600.0,
                 ),
+                jikan_update_idle_wait_seconds=_int(
+                    values,
+                    "JIKAN_UPDATE_IDLE_WAIT_SECONDS",
+                    300,
+                    30,
+                ),
                 anidb_client=_raw(values, "ANIDB_CLIENT"),
                 anidb_client_version=_int(values, "ANIDB_CLIENT_VERSION", 1, 1),
                 anidb_http_api_url=_raw(
@@ -568,7 +656,7 @@ class AppSettings:
     def require_bot_token(self) -> str:
         if not self.telegram.bot_token:
             raise RuntimeError(
-                "BOT_TOKEN is empty. Add it to .env before starting the bot."
+                "BOT_TOKEN is empty. Add it to .env.d/telegram.env (or legacy .env) before starting the bot."
             )
         return self.telegram.bot_token
 

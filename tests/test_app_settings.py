@@ -2,8 +2,17 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
-from core.settings import ROOT_DIR, AppSettings
+from core.settings import (
+    ENV_CONFIG_FILES,
+    ROOT_DIR,
+    AppSettings,
+    ConfigFileError,
+    load_project_environment,
+    project_env_files,
+    project_env_values,
+)
 
 
 class AppSettingsTests(unittest.TestCase):
@@ -29,6 +38,7 @@ class AppSettingsTests(unittest.TestCase):
                 "KITSU_API_URL": "https://kitsu.example/api/edge/",
                 "KITSU_REQUEST_TIMEOUT_SECONDS": "14.5",
                 "KITSU_CACHE_TTL_SECONDS": "5432",
+                "JIKAN_UPDATE_IDLE_WAIT_SECONDS": "123",
                 "UPSTREAM_RATE_LIMIT_KITSU_PER_MINUTE": "44",
                 "UPSTREAM_RATE_LIMIT_KITSU_EPISODES_PER_MINUTE": "33",
                 "ANISEARCH_API_URL": "https://anisearch.example/api/",
@@ -78,6 +88,7 @@ class AppSettingsTests(unittest.TestCase):
         )
         self.assertEqual(settings.sources.kitsu_request_timeout_seconds, 14.5)
         self.assertEqual(settings.sources.kitsu_cache_ttl_seconds, 5432.0)
+        self.assertEqual(settings.sources.jikan_update_idle_wait_seconds, 123)
         self.assertEqual(settings.rate_limits.source_limit("kitsu"), 44)
         self.assertEqual(settings.rate_limits.operation_limit("kitsu", "episodes"), 33)
         self.assertEqual(
@@ -112,6 +123,103 @@ class AppSettingsTests(unittest.TestCase):
         self.assertEqual(settings.rate_limits.source_limit("bahamut"), 17)
         self.assertEqual(settings.source_health.failure_threshold, 5)
         self.assertEqual(settings.source_health.cooldown_seconds, 42.5)
+
+    def test_split_env_uses_fixed_files_and_process_environment_wins(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            split = root / ".env.d"
+            split.mkdir()
+            (split / "telegram.env").write_text(
+                "BOT_TOKEN=file-token\nTELEGRAM_SESSION_TTL_SECONDS=91\n",
+                encoding="utf-8",
+            )
+            (split / "runtime.env").write_text(
+                "SEARCH_CACHE_MAX_ENTRIES=321\n",
+                encoding="utf-8",
+            )
+            (split / "backup.env").write_text(
+                "UNEXPECTED_BACKUP_KEY=must-not-load\n",
+                encoding="utf-8",
+            )
+            environ = {"BOT_TOKEN": "process-token"}
+
+            loaded = load_project_environment(root, environ)
+
+            self.assertEqual(loaded["BOT_TOKEN"], "process-token")
+            self.assertEqual(loaded["TELEGRAM_SESSION_TTL_SECONDS"], "91")
+            self.assertEqual(loaded["SEARCH_CACHE_MAX_ENTRIES"], "321")
+            self.assertNotIn("UNEXPECTED_BACKUP_KEY", loaded)
+            self.assertEqual(
+                [path.name for path in project_env_files(root)],
+                ["telegram.env", "runtime.env"],
+            )
+
+    def test_duplicate_keys_across_project_env_files_fail_fast(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            split = root / ".env.d"
+            split.mkdir()
+            (split / "telegram.env").write_text("BOT_TOKEN=first\n", encoding="utf-8")
+            (split / "sources.env").write_text("BOT_TOKEN=second\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ConfigFileError, "Duplicate configuration key"):
+                project_env_values(root)
+
+    def test_duplicate_key_inside_one_project_env_file_fails_fast(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            split = root / ".env.d"
+            split.mkdir()
+            (split / "telegram.env").write_text(
+                "BOT_TOKEN=first\nBOT_TOKEN=second\n", encoding="utf-8"
+            )
+
+            with self.assertRaisesRegex(ConfigFileError, "inside"):
+                project_env_values(root)
+
+    def test_legacy_env_remains_supported_during_migration(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / ".env").write_text(
+                "BOT_TOKEN=legacy-token\nLOG_LEVEL=warning\n", encoding="utf-8"
+            )
+
+            self.assertEqual(
+                project_env_values(root),
+                {"BOT_TOKEN": "legacy-token", "LOG_LEVEL": "warning"},
+            )
+
+    def test_legacy_and_split_files_cannot_repeat_the_same_key(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / ".env").write_text("BOT_TOKEN=legacy\n", encoding="utf-8")
+            split = root / ".env.d"
+            split.mkdir()
+            (split / "telegram.env").write_text("BOT_TOKEN=split\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ConfigFileError, "Duplicate configuration key"):
+                project_env_values(root)
+
+    def test_split_example_directory_has_every_fixed_file_and_unique_keys(self) -> None:
+        example_dir = ROOT_DIR / ".env.example.d"
+        self.assertEqual(
+            {path.name for path in example_dir.glob("*.env")},
+            set(ENV_CONFIG_FILES),
+        )
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            split = root / ".env.d"
+            split.mkdir()
+            for name in ENV_CONFIG_FILES:
+                (split / name).write_text(
+                    (example_dir / name).read_text(encoding="utf-8"),
+                    encoding="utf-8",
+                )
+            values = project_env_values(root)
+        self.assertEqual(len(values), 111)
+        self.assertIn("BOT_TOKEN", values)
+        self.assertIn("KITSU_API_URL", values)
+        self.assertIn("ANIME_SKIP_CLIENT_ID", values)
 
     def test_relative_paths_are_rooted_at_project(self) -> None:
         settings = AppSettings.from_env(

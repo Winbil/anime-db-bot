@@ -14,11 +14,12 @@ Thanks for contributing. The project favors small, reviewable changes that prese
 ```bash
 git clone https://github.com/Winbil/anime-db-bot.git
 cd anime-db-bot
-cp .env.example .env
+cp -R .env.example.d .env.d
+# Add BOT_TOKEN to .env.d/telegram.env when you want to run the bot.
 ./scripts/setup.sh
 ```
 
-A real `BOT_TOKEN` is only required when you want to run the Telegram bot. Never commit `.env`, tokens, passwords, API keys, or private deployment details.
+A real `BOT_TOKEN` is only required when you want to run the Telegram bot. Never commit `.env`, `.env.d/`, tokens, passwords, API keys, or private deployment details.
 
 Run the standard checks before submitting a pull request:
 
