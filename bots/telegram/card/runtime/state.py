@@ -17,6 +17,9 @@ class AnimeCardSession:
     owner_user_id: int
     episode_pages: dict[tuple[str, int], EpisodePage] = field(default_factory=dict)
     episode_details: dict[tuple[str, int], EpisodeRecord] = field(default_factory=dict)
+    episode_backend: str | None = None
+    episode_view_page: int = 0
+    episode_segment_backend: str = "all"
     trailers_loaded: bool = False
     trailers_by_source: dict[str, list[TrailerRecord]] = field(default_factory=dict)
     trailer_key_by_source: dict[str, str] = field(default_factory=dict)

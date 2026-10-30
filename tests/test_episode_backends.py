@@ -6,10 +6,12 @@ from bots.telegram.card.features.episodes import (
     _episode_detail_text,
     _episode_keyboard,
     _episode_summary_lines,
+    _view_slice,
     resolve_backend_selector,
 )
 from core.identity import AnimeIdentity
 from core.models import EpisodePage, EpisodeRecord, EpisodeSkipSegment
+from services.media.episode_segments import EpisodeSegmentService
 from services.media.episodes import EpisodeService
 
 
@@ -34,6 +36,24 @@ class _EpisodeSource:
 class _DynamicEpisodeSource(_EpisodeSource):
     def supports_identity(self, identity: AnimeIdentity) -> bool:
         return identity.has("tmdb_tv")
+
+
+class _SegmentSource:
+    name = "AniSkip"
+    display_name = "AniSkip"
+    backend_key = "aniskip"
+
+    def supports_identity(self, identity: AnimeIdentity) -> bool:
+        return identity.has("mal")
+
+    async def load_segments(
+        self,
+        identity: AnimeIdentity,
+        episode_number: int,
+        *,
+        episode_length_seconds: int | None = None,
+    ) -> list:
+        return []
 
 
 class EpisodeBackendTests(unittest.TestCase):
@@ -73,6 +93,11 @@ class EpisodeBackendTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             resolve_backend_selector("missing", backends)
 
+    def test_one_episode_view_keeps_upstream_requests_batched_by_100(self) -> None:
+        self.assertEqual(_view_slice(0), (1, 0))
+        self.assertEqual(_view_slice(99), (1, 99))
+        self.assertEqual(_view_slice(100), (2, 0))
+
     def test_skipdb_ui_uses_season_episode_reference_not_internal_selector(
         self,
     ) -> None:
@@ -100,35 +125,55 @@ class EpisodeBackendTests(unittest.TestCase):
         self.assertIn("Опенинг: 1:01.0–1:31.0", detail)
         self.assertNotIn("10001", detail)
 
-    def test_episode_keyboard_scopes_page_and_detail_callbacks_to_backend(self) -> None:
-        item = EpisodeRecord(number=1, source="anidb", backend="anidb")
+    def test_episode_keyboard_separates_episode_and_timestamp_sources(self) -> None:
+        item = EpisodeRecord(number=4, source="anidb", backend="anidb")
         service = EpisodeService(
             [
                 _EpisodeSource("jikan", "mal", "MAL / Jikan"),
                 _EpisodeSource("anidb", "anidb", "AniDB"),
             ]
         )
+        segment_service = EpisodeSegmentService([_SegmentSource()])
         keyboard = _episode_keyboard(
             "token",
             [item],
             backends=["jikan", "anidb"],
             backend="anidb",
+            segment_backends=["aniskip"],
+            segment_backend="all",
             view_page=3,
             has_prev=True,
             has_next=True,
             locale="ru",
             service=service,
+            segment_service=segment_service,
         )
         flattened = [button for row in keyboard.inline_keyboard for button in row]
         callbacks = {
             button.callback_data for button in flattened if button.callback_data
         }
-        self.assertIn("ae:token:anidb:1:3", callbacks)
         self.assertIn("ap:token:anidb:2", callbacks)
         self.assertIn("ap:token:anidb:4", callbacks)
-        self.assertIn("ap:token:jikan:0", callbacks)
-        self.assertIn("ap:token:anidb:0", callbacks)
+        self.assertIn("ap:token:jikan:3", callbacks)
+        self.assertIn("ap:token:anidb:3", callbacks)
+        self.assertIn("ap:token:segments-all:3", callbacks)
+        self.assertIn("ap:token:segments-aniskip:3", callbacks)
+        self.assertFalse(any(value.startswith("ae:") for value in callbacks))
         self.assertTrue(any(button.text == "✓ AniDB" for button in flattened))
+        self.assertTrue(any(button.text == "✓ ⏱ Все" for button in flattened))
+
+        rows = keyboard.inline_keyboard
+        episode_source_row = next(
+            index
+            for index, row in enumerate(rows)
+            if any(button.text == "✓ AniDB" for button in row)
+        )
+        timestamp_row = next(
+            index
+            for index, row in enumerate(rows)
+            if any("⏱" in button.text for button in row)
+        )
+        self.assertGreater(timestamp_row, episode_source_row)
 
 
 if __name__ == "__main__":
