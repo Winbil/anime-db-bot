@@ -5,7 +5,7 @@ import logging
 import re
 import secrets
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -473,7 +473,7 @@ def _normalize_uploaded_image(content: bytes) -> bytes:
     return normalized
 
 
-_TELEGRAM_BOT_API_CONTAINER_FILE_ROOT = Path("/var/lib/telegram-bot-api")
+_TELEGRAM_BOT_API_CONTAINER_FILE_ROOT = PurePosixPath("/var/lib/telegram-bot-api")
 
 
 def _telegram_local_file_path(
@@ -483,16 +483,24 @@ def _telegram_local_file_path(
     path = Path(file_path)
     if path.is_file():
         return path
-    if local_file_root is None or not path.is_absolute():
+    if local_file_root is None:
+        return None
+
+    # A self-hosted Telegram Bot API running in Docker returns a POSIX path
+    # from inside its container even when anime-db-bot itself runs on Windows.
+    # Parse that container-side path as POSIX explicitly instead of applying the
+    # host OS pathlib semantics to it.
+    container_path = PurePosixPath(file_path.replace("\\", "/"))
+    if not container_path.is_absolute():
         return None
     try:
-        relative = path.relative_to(_TELEGRAM_BOT_API_CONTAINER_FILE_ROOT)
+        relative = container_path.relative_to(_TELEGRAM_BOT_API_CONTAINER_FILE_ROOT)
     except ValueError:
         return None
     if ".." in relative.parts:
         return None
     root = local_file_root.resolve()
-    candidate = (root / relative).resolve()
+    candidate = (root.joinpath(*relative.parts)).resolve()
     try:
         candidate.relative_to(root)
     except ValueError:

@@ -20,4 +20,4 @@ EXPOSE 8091
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD php -r '$p=getenv("JIKAN_PORT") ?: "8091"; $j=@json_decode(@file_get_contents("http://127.0.0.1:".$p."/health"), true); exit(($j["ok"]??false) ? 0 : 1);'
 
-CMD ["sh", "-c", "php -S 127.0.0.1:${JIKAN_PORT:-8091} -t public public/router.php"]
+CMD ["sh", "-c", "php -S 0.0.0.0:${JIKAN_PORT:-8091} -t public public/router.php"]

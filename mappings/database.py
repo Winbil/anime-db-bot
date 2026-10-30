@@ -288,7 +288,9 @@ class MappingDatabaseBuilder:
             return 0
         uri = f"file:{source_path.resolve().as_posix()}?mode=ro"
         try:
-            with sqlite3.connect(uri, uri=True, timeout=5.0) as source:
+            with managed_sqlite_connection(
+                sqlite3.connect(uri, uri=True, timeout=5.0)
+            ) as source:
                 source.execute("PRAGMA query_only=ON")
                 row = source.execute(
                     """

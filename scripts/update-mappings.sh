@@ -2,13 +2,11 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON="$SCRIPT_DIR/.venv/bin/python"
-
 cd "$SCRIPT_DIR"
 
-[[ -x "$PYTHON" ]] || {
-    printf '[anime-db-bot mappings] ERROR: .venv is missing; run scripts/setup.sh first.\n' >&2
+command -v python3 >/dev/null 2>&1 || {
+    printf '[anime-db-bot mappings] ERROR: python3 is not installed.\n' >&2
     exit 1
 }
 
-exec "$PYTHON" -m mappings "$@"
+exec python3 "$SCRIPT_DIR/scripts/project.py" mappings "$@"

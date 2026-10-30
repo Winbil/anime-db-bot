@@ -129,44 +129,58 @@ Hard cap によって upstream quota を保護します。最終件数を保証�
 
 海外吹き替えの voice credit はオリジナル日本語 voice list に混在させません。Localization/ADR staff も primary production staff から除外します。
 
-## 必要環境
+## 必要環境 / OS サポート
 
-推奨環境:
+Python runtime は **Linux、macOS、native Windows** を対象とし、Python **3.11 / 3.12 / 3.13 / 3.14** をサポートします。GitHub Actions では、対応する全 Python version について 3 OS family すべてで full unit suite を実行します。
 
-- Linux server;
-- Python **3.11 / 3.12 / 3.13 / 3.14**;
-- Git;
-- bundled `start.sh` を使う場合は `tmux`;
-- optional local Jikan supplement 用の Docker + Docker Compose。
+- **Linux** — primary production platform。対応 CPython があれば主要 distribution で cross-platform launcher を利用できます。既存の `start.sh` は Linux 向け `tmux` production helper として残します。
+- **macOS** — Python launcher をサポートし、便利な wrapper として `start.command` を用意します。`systemd` unit は macOS では使用しません。
+- **Windows native** — Python launcher、`start.ps1`、`start.cmd` をサポートし、WSL は必須ではありません。
+- **Docker + Docker Compose** — 全 OS で optional。local Jikan supplement にのみ使用します。Docker がなくても公式 MAL は利用でき、Jikan-only 機能だけが無効になります。
+- **systemd** — `deploy/systemd/` にある optional Linux-only integration です。
 
-Docker がなくてもボットは起動できます。その場合、公式 MAL API は利用できますが、Jikan 専用の補助機能は無効になります。
+環境の基本互換性は、使用中の Python で `python scripts/project.py doctor` を実行して確認できます。
 
 ## Quick start
 
-```bash
+まず repository を clone します。
+
+```text
 git clone git@github.com:Winbil/anime-db-bot.git
 cd anime-db-bot
-
-cp -R .env.example.d .env.d
-cp -R .proxies.example.d .proxies.d
-cp -R .user-agents.example.d .user-agents.d
-# .env.d/telegram.env を編集し、少なくとも BOT_TOKEN を設定します。
-# Proxy 設定は optional で、example の entry は既定で無効/コメント状態です。
-
-./scripts/setup.sh
-./scripts/check.sh
-./start.sh
 ```
 
-`start.sh` は Telegram bot を detached `tmux` session で起動し、Docker Compose が利用可能な場合はローカル Jikan container も起動します。
+Canonical launcher は `scripts/project.py` です。`.venv` の作成、locked dependency の install、既存値を上書きしない example config の初期化を行い、Unix の `bin/python` と Windows の `Scripts/python.exe` を自動で使い分けます。
+
+Linux / macOS:
 
 ```bash
-tmux attach -t anime-db-bot
-TODAY="$(date '+%Y.%m.%d')"
-tail -f "logs/$TODAY/bot.log"
-tail -f "logs/$TODAY/users.log"
-tail -f "logs/$TODAY/api.log"
+python3 scripts/project.py setup
+# .env.d/telegram.env に少なくとも BOT_TOKEN を設定します。
+python3 scripts/project.py check
+python3 scripts/project.py run       # foreground
+python3 scripts/project.py start     # background + PID file
 ```
+
+Windows PowerShell / Command Prompt:
+
+```powershell
+py -3 scripts\project.py setup
+# .env.d\telegram.env に少なくとも BOT_TOKEN を設定します。
+py -3 scripts\project.py check
+py -3 scripts\project.py run
+.\start.ps1                         # background
+```
+
+Command Prompt では `start.cmd`、macOS では `./start.command` も利用できます。Cross-platform launcher で起動した background process は次で管理します。
+
+```text
+python scripts/project.py status
+python scripts/project.py stop
+python scripts/project.py restart
+```
+
+Linux production は従来どおり `./start.sh` を使用でき、detached `tmux` workflow を維持します。通常の runtime log は `logs/YYYY.MM.DD/`、generic background launcher の stdout/stderr は `logs/launcher.log` に出力されます。
 
 Runtime log は `logs/YYYY.MM.DD/` 配下で用途別に分割されます。`bot.log` は application/runtime、`users.log` は Telegram user action、`api.log` は outbound source/API/retry/health event、`errors.log` はすべての `ERROR+` record の追加コピーです。runtime の local midnight を越えると、bot を再起動せず次の record から新しい日付ディレクトリへ自動的に切り替わります。
 
@@ -353,29 +367,29 @@ Mapping updater は複数の外部 dataset を SQLite にストリームし、pr
 
 Manual directional override は `accept` / `reject`、author/reason/timestamp、append-only history をサポートします。
 
-```bash
-./scripts/update-mappings.sh
-.venv/bin/python -m mappings --status
-.venv/bin/python -m mappings --override-list
-.venv/bin/python -m mappings --override-history
+Cross-platform mapping maintenance commands:
+
+```text
+python scripts/project.py mappings --status
+python scripts/project.py mappings --override-list
+python scripts/project.py mappings --override-history
 ```
+
+既存 deployment 向けの Unix wrapper `./scripts/update-mappings.sh` も残します。
 
 ## 開発
 
-```bash
-./scripts/setup.sh
-./scripts/check.sh
+全対応 OS で同じ launcher を使用します。
+
+```text
+python scripts/project.py setup --dev
+python scripts/project.py check
+python scripts/project.py doctor
 ```
 
-追加のチェック:
+Windows では `python` の代わりに `py -3` も利用できます。Unix の `./scripts/setup.sh` と `./scripts/check.sh` は同じ Python implementation を呼ぶ convenience wrapper です。venv の Python は Unix では `.venv/bin/python`、Windows では `.venv\Scripts\python.exe` です。
 
-```bash
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python -m compileall -q bots core localization mappings search services sources tests
-.venv/bin/python -m pip check
-```
-
-GitHub Actions では Python 3.11 / 3.12 / 3.13 / 3.14 の成功を必須とします。Quality job では Ruff、typed foundation formatter check、mypy、full test suite + coverage gate `>=70%`、ShellCheck も実行します。
+GitHub Actions では **Ubuntu、macOS、Windows** の各 OS で Python 3.11 / 3.12 / 3.13 / 3.14 の full unit suite 成功を必須とします。各 matrix job は cross-platform launcher doctor も実行します。Linux quality job では Ruff、typed foundation formatter check、mypy、full test suite + coverage gate `>=70%`、Unix wrapper 向け ShellCheck も実行します。
 
 ## Contributing
 
