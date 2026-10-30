@@ -6,6 +6,7 @@ from bots.telegram.card.runtime.state import AnimeCardSession
 from bots.telegram.card.features.trailers import (
     _source_keyboard,
     _source_name_for_selector,
+    _trailer_rich,
     _trailer_text,
 )
 from core.identity import AnimeIdentity
@@ -92,58 +93,49 @@ class TrailerParsingTests(unittest.TestCase):
 
 
 class TrailerUiTests(unittest.TestCase):
-    def test_source_view_renders_type_platform_and_open_buttons(self) -> None:
-        items = [
-            TrailerRecord(
-                source="mal",
-                backend="jikan",
-                title="PV 1",
-                kind="trailer",
-                hosting="YouTube",
-                url="https://www.youtube.com/watch?v=abc",
-            ),
-            TrailerRecord(
-                source="mal",
-                backend="jikan",
-                title="CM 1",
-                kind="commercial",
-                hosting="YouTube",
-                url="https://www.youtube.com/watch?v=def",
-            ),
-        ]
+    def test_source_view_renders_one_trailer_with_thumbnail(self) -> None:
+        item = TrailerRecord(
+            source="mal",
+            backend="jikan",
+            title="PV 1",
+            kind="trailer",
+            hosting="YouTube",
+            url="https://www.youtube.com/watch?v=abc",
+            thumbnail="https://img.example/pv1.jpg",
+        )
         content = _trailer_text(
             "MAL (MyAnimeList) / Jikan",
-            items,
+            [item],
             offset=0,
             locale="ru",
         )
+        rich = _trailer_rich(content, item)
         keyboard = _source_keyboard(
             "token",
             [("jikan", "MAL (MyAnimeList) / Jikan")],
             "jikan",
-            items,
+            [item],
             offset=0,
             page=0,
-            page_count=1,
+            page_count=2,
             locale="ru",
         )
 
         self.assertIn("Трейлеры — MAL (MyAnimeList) / Jikan", content)
         self.assertIn("Тип: Трейлер / PV", content)
-        self.assertIn("Тип: Рекламный ролик", content)
         self.assertIn("Площадка: YouTube", content)
-        self.assertEqual(keyboard.inline_keyboard[0][0].url, items[0].url)
-        self.assertEqual(keyboard.inline_keyboard[1][0].url, items[1].url)
+        self.assertIn('<img src="https://img.example/pv1.jpg"/>', rich.html or "")
+        self.assertEqual(keyboard.inline_keyboard[0][0].url, item.url)
+        self.assertEqual(keyboard.inline_keyboard[1][0].text, "1/2")
 
     def test_second_page_navigation_preserves_source_and_page(self) -> None:
         items = [
             TrailerRecord(
                 source="shikimori",
                 backend="shikimori",
-                title=f"PV {index}",
-                url=f"https://youtu.be/video{index}",
+                title="PV 2",
+                url="https://youtu.be/video2",
             )
-            for index in range(6, 11)
         ]
         keyboard = _source_keyboard(
             "token",
@@ -154,16 +146,17 @@ class TrailerUiTests(unittest.TestCase):
             ],
             "shikimori",
             items,
-            offset=5,
+            offset=1,
             page=1,
-            page_count=2,
+            page_count=3,
             locale="ru",
         )
 
         nav = keyboard.inline_keyboard[len(items)]
         self.assertEqual(nav[0].callback_data, "at:token:shikimori:0")
-        self.assertEqual(nav[1].callback_data, "cp:token:at~shikimori:1:2:0")
-        self.assertEqual(nav[1].text, "2/2")
+        self.assertEqual(nav[1].callback_data, "cp:token:at~shikimori:1:3:0")
+        self.assertEqual(nav[1].text, "2/3")
+        self.assertEqual(nav[2].callback_data, "at:token:shikimori:2")
         for row in keyboard.inline_keyboard[: len(items)]:
             self.assertTrue((row[0].url or "").startswith("https://"))
 

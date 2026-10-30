@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import logging
 
 from aiogram.types import (
@@ -20,7 +21,7 @@ from core.models import TrailerRecord
 from localization import text
 from services.runtime.app_context import get_app_context
 
-TRAILERS_PER_PAGE = 5
+TRAILERS_PER_PAGE = 1
 
 
 def _source_options(session: AnimeCardSession) -> list[tuple[str, str]]:
@@ -90,6 +91,16 @@ def _trailer_text(
                 )
             )
     return "\n".join(lines)
+
+
+def _trailer_rich(content: str, item: TrailerRecord | None = None) -> InputRichMessage:
+    thumbnail = (item.thumbnail or "").strip() if item is not None else ""
+    image = (
+        f'<img src="{html.escape(thumbnail, quote=True)}"/>'
+        if thumbnail.startswith(("https://", "http://"))
+        else ""
+    )
+    return InputRichMessage(html=image + plain_text_to_rich_html(content))
 
 
 def _source_rows(
@@ -276,9 +287,10 @@ async def edit_trailers_view(
             locale=locale,
         )
 
+    rich_item = items[0] if source_key is not None and items else None
     try:
         await message.edit_text(
-            rich_message=InputRichMessage(html=plain_text_to_rich_html(content)),
+            rich_message=_trailer_rich(content, rich_item),
             reply_markup=keyboard,
         )
     except Exception:
