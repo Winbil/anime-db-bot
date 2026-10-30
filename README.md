@@ -143,6 +143,7 @@ cd anime-db-bot
 
 cp -R .env.example.d .env.d
 cp -R .proxies.example.d .proxies.d
+cp -R .user-agents.example.d .user-agents.d
 # Edit .env.d/telegram.env and add at least BOT_TOKEN.
 # Proxy files are optional; their example entries are disabled/commented by default.
 
@@ -197,17 +198,47 @@ enabled = true
 [[proxy]]
 name = "primary"
 enabled = true
+priority = 100
 url = "socks5://user:password@127.0.0.1:1080"
 
 [[proxy]]
 name = "backup"
 enabled = false
+priority = 10
 url = "http://127.0.0.1:8080"
 ```
 
-Profiles are independent: `mal.toml` affects only MAL, `anilist.toml` only AniList, and so on. Multiple enabled entries are round-robin selected and the remaining entries are tried on proxy/network failure. Duplicate proxy URLs are allowed when they have distinct entry names, so repeating an endpoint can intentionally give it more rotation weight. `enabled = false` can disable either the whole profile or an individual entry. If at least one proxy entry is active for a profile, that profile does **not** silently fall back to the direct connection when all proxies fail; direct access is used only when the profile has no active proxies. Proxy configuration is loaded at process startup, so edits take effect after a bot restart. When `telegram.toml` has active proxies, this bot intentionally bypasses any configured local/shared `telegram-bot-api` endpoint and talks to the official `api.telegram.org` through its own proxy pool; this keeps the proxy scoped to this bot instead of changing other bots that share the local server. `jikan.toml` is also special: the Python hop to the loopback Jikan service stays direct, while the selected proxy is forwarded to the local Jikan service and applied to its outbound MyAnimeList scrape.
+Profiles are independent: `mal.toml` affects only MAL, `anilist.toml` only AniList, and so on. Higher `priority` values are tried before lower values regardless of TOML order. Entries tied at the same priority are round-robin selected; lower-priority tiers are used only as failover after the higher tier fails. Duplicate proxy URLs are allowed when they have distinct entry names, so repeating an endpoint can intentionally give it more rotation weight. `enabled = false` can disable either the whole profile or an individual entry. If at least one proxy entry is active for a profile, that profile does **not** silently fall back to the direct connection when all proxies fail; direct access is used only when the profile has no active proxies. Proxy configuration is loaded at process startup, so edits take effect after a bot restart. When `telegram.toml` has active proxies, this bot intentionally bypasses any configured local/shared `telegram-bot-api` endpoint and talks to the official `api.telegram.org` through its own proxy pool; this keeps the proxy scoped to this bot instead of changing other bots that share the local server. `jikan.toml` is also special: the Python hop to the loopback Jikan service stays direct, while the selected proxy is forwarded to the local Jikan service and applied to its outbound MyAnimeList scrape.
 
 Fixed runtime profiles are: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `bahamut`, `baha_anime_skip`, and `skipdb`. Stray TOML files are ignored. Proxy files may contain credentials and are gitignored; `start.sh` keeps `.proxies.d` at mode `700` and known profile files at mode `600`.
+
+### Per-source User-Agent profiles
+
+Optional User-Agent overrides live under `.user-agents.d/` with the same fixed profile names as proxy routing. If a profile has no active custom entry, requests use the built-in project User-Agent (`anime-db-bot/<version> (...)`). Higher `priority` wins; entries tied at the highest active priority rotate between requests. Lower-priority User-Agents remain standby until higher-priority entries are disabled.
+
+```toml
+enabled = true
+
+[[user_agent]]
+name = "browser-a"
+enabled = true
+priority = 100
+value = "Mozilla/5.0 custom-a"
+
+[[user_agent]]
+name = "browser-b"
+enabled = true
+priority = 100
+value = "Mozilla/5.0 custom-b"
+
+[[user_agent]]
+name = "backup"
+enabled = true
+priority = 10
+value = "anime-db-bot-backup/1.0"
+```
+
+The network boundary overrides provider-local `User-Agent` headers so the selected profile value is authoritative. For `jikan`, the selected User-Agent is forwarded through the loopback service and applied to its outbound MyAnimeList request. For `telegram`, an active custom User-Agent switches this bot from a shared/local `telegram-bot-api` endpoint to the official `api.telegram.org`, ensuring that the configured header reaches the external Telegram request. `.user-agents.d` is gitignored and loaded at process startup.
 
 ### AniDB
 

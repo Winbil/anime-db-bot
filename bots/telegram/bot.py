@@ -22,6 +22,7 @@ from core.models import SearchCandidate
 from core.observability import bind_observability_context, new_correlation_id
 from core.proxy_config import ProxyProfile, load_proxy_settings
 from core.settings import TelegramSettings, get_settings
+from core.user_agent_config import UserAgentProfile, load_user_agent_settings
 from localization import text
 from mappings.runtime import periodic_mapping_updates
 from services.users.access_control import telegram_admin_ids
@@ -32,17 +33,21 @@ from services.users.settings import get_user_locale
 def select_transport(
     settings: TelegramSettings | None = None,
     proxy_profile: ProxyProfile | None = None,
+    user_agent_profile: UserAgentProfile | None = None,
 ) -> TelegramTransport:
-    """Select Telegram API backend and its independent proxy profile."""
+    """Select Telegram API backend with independent proxy/User-Agent profiles."""
     settings = settings or get_settings().telegram
     proxy_profile = proxy_profile or load_proxy_settings().profile("telegram")
-    # A configured bot proxy must route the real Telegram connection, not the
+    user_agent_profile = user_agent_profile or load_user_agent_settings().profile(
+        "telegram"
+    )
+    # Custom Telegram routing must reach the real external API, not only the
     # loopback hop to a shared/self-hosted telegram-bot-api instance.
-    if proxy_profile.active:
-        return OfficialTelegramTransport(settings, proxy_profile)
+    if proxy_profile.active or user_agent_profile.preferred:
+        return OfficialTelegramTransport(settings, proxy_profile, user_agent_profile)
     if settings.bot_api_url:
-        return LocalTelegramTransport(settings)
-    return OfficialTelegramTransport(settings)
+        return LocalTelegramTransport(settings, proxy_profile, user_agent_profile)
+    return OfficialTelegramTransport(settings, proxy_profile, user_agent_profile)
 
 
 async def _aggregate_and_cleanup_search(
@@ -175,7 +180,9 @@ async def run_bot(
         ),
     )
     transport = transport or select_transport(
-        settings.telegram, context.proxy_settings.profile("telegram")
+        settings.telegram,
+        context.proxy_settings.profile("telegram"),
+        context.user_agent_settings.profile("telegram"),
     )
 
     if not settings.logging.redact_secrets:
@@ -194,6 +201,13 @@ async def run_bot(
         f"{len(transport.proxy_profile.active)} enabled proxy entries"
         if transport.proxy_profile.active
         else "direct",
+    )
+    preferred_user_agents = transport.user_agent_profile.preferred
+    logging.info(
+        "Telegram User-Agent route: %s",
+        ", ".join(entry.name for entry in preferred_user_agents)
+        if preferred_user_agents
+        else "anime-db-bot default",
     )
     proxied_sources = [
         name

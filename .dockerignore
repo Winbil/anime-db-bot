@@ -2,6 +2,7 @@
 .env
 .env.d
 .proxies.d
+.user-agents.d
 .venv
 venv
 logs

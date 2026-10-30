@@ -34,6 +34,7 @@ class ProxyEntry:
     name: str
     url: str
     enabled: bool = True
+    priority: int = 0
 
     @property
     def scheme(self) -> str:
@@ -138,7 +139,7 @@ def _load_profile(path: Path, profile: str) -> ProxyProfile:
             raise ProxyConfigError(
                 f"Proxy profile {profile!r} entry #{index} must be a table."
             )
-        unknown = set(item) - {"name", "enabled", "url"}
+        unknown = set(item) - {"name", "enabled", "priority", "url"}
         if unknown:
             raise ProxyConfigError(
                 f"Unknown keys in proxy profile {profile!r} entry #{index}: "
@@ -160,12 +161,19 @@ def _load_profile(path: Path, profile: str) -> ProxyProfile:
             raise ProxyConfigError(
                 f"Proxy {name!r} in profile {profile!r} field 'enabled' must be true or false."
             )
+        priority = item.get("priority", 0)
+        if isinstance(priority, bool) or not isinstance(priority, int):
+            raise ProxyConfigError(
+                f"Proxy {name!r} in profile {profile!r} field 'priority' must be an integer."
+            )
         url = _validated_proxy_url(
             profile=profile,
             entry_name=name,
             value=item.get("url"),
         )
-        entries.append(ProxyEntry(name=name, url=url, enabled=item_enabled))
+        entries.append(
+            ProxyEntry(name=name, url=url, enabled=item_enabled, priority=priority)
+        )
 
     return ProxyProfile(name=profile, enabled=enabled, proxies=tuple(entries))
 

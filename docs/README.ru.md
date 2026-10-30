@@ -143,6 +143,7 @@ cd anime-db-bot
 
 cp -R .env.example.d .env.d
 cp -R .proxies.example.d .proxies.d
+cp -R .user-agents.example.d .user-agents.d
 # Отредактируйте .env.d/telegram.env и как минимум добавьте BOT_TOKEN.
 # Proxy-конфиги опциональны; примерные записи по умолчанию выключены/закомментированы.
 
@@ -195,11 +196,13 @@ enabled = true
 [[proxy]]
 name = "primary"
 enabled = true
+priority = 100
 url = "socks5://user:password@127.0.0.1:1080"
 
 [[proxy]]
 name = "backup"
 enabled = false
+priority = 10
 url = "http://127.0.0.1:8080"
 ```
 
