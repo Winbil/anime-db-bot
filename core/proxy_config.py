@@ -21,6 +21,8 @@ PROXY_CONFIG_PROFILES = (
     "bahamut",
     "baha_anime_skip",
     "skipdb",
+    "trace_moe",
+    "whatanimeisthis",
 )
 _ALLOWED_PROXY_SCHEMES = {"http", "socks4", "socks5"}
 

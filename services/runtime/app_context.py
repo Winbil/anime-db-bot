@@ -31,6 +31,12 @@ from services.runtime.rate_limits import (
     activate_rate_limiters,
 )
 from services.search.service import SearchService
+from services.search.image_quota import SQLiteImageSearchQuotaStore
+from services.search.image_service import ImageSearchService
+from sources.providers.image_search import (
+    TraceMoeImageSearchProvider,
+    WhatAnimeIsThisImageSearchProvider,
+)
 from services.runtime.source_health import SourceHealthRegistry
 from services.media.trailers import TrailerService
 from services.users.settings import (
@@ -57,6 +63,7 @@ class AppContext:
     source_health: SourceHealthRegistry
     user_settings_store: SQLiteUserSettingsStore
     ban_store: SQLiteBanStore
+    image_search_quota_store: SQLiteImageSearchQuotaStore
     personal_rate_limiter: PersonalRateLimiter
     upstream_rate_limiter: UpstreamRateLimiter
     identity_resolver: IdentityResolver
@@ -74,6 +81,7 @@ class AppContext:
     description_service: DescriptionService
     people_progress_service: PeopleProgressService
     direct_lookup: DirectIdLookupService
+    image_search_service: ImageSearchService
 
     @classmethod
     def create(
@@ -94,6 +102,9 @@ class AppContext:
             settings.storage.user_settings_db_path
         )
         ban_store = SQLiteBanStore(settings.storage.bans_db_path)
+        image_search_quota_store = SQLiteImageSearchQuotaStore(
+            settings.storage.image_search_db_path
+        )
         personal_rate_limiter = PersonalRateLimiter(settings.rate_limits)
         upstream_rate_limiter = UpstreamRateLimiter(settings.rate_limits)
         search_provider_map = get_search_provider_map(settings.sources, source_health)
@@ -104,6 +115,16 @@ class AppContext:
             shikimori_provider=search_provider_map.get(SourceKey.SHIKIMORI),
         )
         aggregator = AnimeAggregator(sources, identity_resolver)
+        direct_lookup = DirectIdLookupService(sources, identity_resolver)
+        image_search_service = ImageSearchService(
+            (
+                TraceMoeImageSearchProvider(settings.sources),
+                WhatAnimeIsThisImageSearchProvider(
+                    image_search_quota_store, settings.sources
+                ),
+            ),
+            direct_lookup,
+        )
         return cls(
             settings=settings,
             proxy_settings=proxy_settings,
@@ -112,6 +133,7 @@ class AppContext:
             source_health=source_health,
             user_settings_store=user_settings_store,
             ban_store=ban_store,
+            image_search_quota_store=image_search_quota_store,
             personal_rate_limiter=personal_rate_limiter,
             upstream_rate_limiter=upstream_rate_limiter,
             identity_resolver=identity_resolver,
@@ -138,7 +160,8 @@ class AppContext:
                 aggregator,
                 portrait_batch_size=settings.sources.people_portrait_batch_size,
             ),
-            direct_lookup=DirectIdLookupService(sources, identity_resolver),
+            direct_lookup=direct_lookup,
+            image_search_service=image_search_service,
         )
 
     async def aclose(self) -> None:

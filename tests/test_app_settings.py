@@ -38,6 +38,11 @@ class AppSettingsTests(unittest.TestCase):
                 "KITSU_API_URL": "https://kitsu.example/api/edge/",
                 "KITSU_REQUEST_TIMEOUT_SECONDS": "14.5",
                 "KITSU_CACHE_TTL_SECONDS": "5432",
+                "TRACE_MOE_API_KEY": "trace-key",
+                "TRACE_MOE_REQUEST_TIMEOUT_SECONDS": "18.5",
+                "WHATANIMEISTHIS_API_KEY": "what-key",
+                "WHATANIMEISTHIS_API_DAILY_LIMIT": "0",
+                "IMAGE_SEARCH_MAX_BYTES": "123456",
                 "JIKAN_UPDATE_IDLE_WAIT_SECONDS": "123",
                 "UPSTREAM_RATE_LIMIT_KITSU_PER_MINUTE": "44",
                 "UPSTREAM_RATE_LIMIT_KITSU_EPISODES_PER_MINUTE": "33",
@@ -88,6 +93,11 @@ class AppSettingsTests(unittest.TestCase):
         )
         self.assertEqual(settings.sources.kitsu_request_timeout_seconds, 14.5)
         self.assertEqual(settings.sources.kitsu_cache_ttl_seconds, 5432.0)
+        self.assertEqual(settings.sources.trace_moe_api_key, "trace-key")
+        self.assertEqual(settings.sources.trace_moe_request_timeout_seconds, 18.5)
+        self.assertEqual(settings.sources.whatanimeisthis_api_key, "what-key")
+        self.assertEqual(settings.sources.whatanimeisthis_api_daily_limit, 0)
+        self.assertEqual(settings.sources.image_search_max_bytes, 123456)
         self.assertEqual(settings.sources.jikan_update_idle_wait_seconds, 123)
         self.assertEqual(settings.rate_limits.source_limit("kitsu"), 44)
         self.assertEqual(settings.rate_limits.operation_limit("kitsu", "episodes"), 33)
@@ -216,9 +226,12 @@ class AppSettingsTests(unittest.TestCase):
                     encoding="utf-8",
                 )
             values = project_env_values(root)
-        self.assertEqual(len(values), 111)
+        self.assertEqual(len(values), 128)
         self.assertIn("BOT_TOKEN", values)
         self.assertIn("KITSU_API_URL", values)
+        self.assertIn("TRACE_MOE_API_KEY", values)
+        self.assertIn("WHATANIMEISTHIS_API_KEY", values)
+        self.assertIn("IMAGE_SEARCH_DB_PATH", values)
         self.assertIn("ANIME_SKIP_CLIENT_ID", values)
 
     def test_relative_paths_are_rooted_at_project(self) -> None:

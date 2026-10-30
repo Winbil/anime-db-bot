@@ -176,6 +176,8 @@ async def run_bot(
             settings.telegram.bot_token,
             settings.sources.anilist_access_token,
             settings.sources.mal_client_id,
+            settings.sources.trace_moe_api_key,
+            settings.sources.whatanimeisthis_api_key,
             *context.proxy_settings.secret_values(),
         ),
     )
@@ -280,6 +282,8 @@ async def run_bot(
                 default_service=context.search_service,
                 direct_lookup=context.direct_lookup,
                 provider_map=context.search_provider_map,
+                image_search_service=context.image_search_service,
+                image_search_max_bytes=context.settings.sources.image_search_max_bytes,
                 input_ttl_seconds=context.settings.telegram.anime_input_ttl_seconds,
             )
 

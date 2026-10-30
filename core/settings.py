@@ -171,6 +171,7 @@ class TelegramSettings:
 class StorageSettings:
     user_settings_db_path: Path
     bans_db_path: Path
+    image_search_db_path: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,6 +247,17 @@ class SourceSettings:
     kitsu_api_url: str
     kitsu_request_timeout_seconds: float
     kitsu_cache_ttl_seconds: float
+    trace_moe_api_url: str
+    trace_moe_api_key: str
+    trace_moe_request_timeout_seconds: float
+    trace_moe_quota_cache_ttl_seconds: float
+    trace_moe_cut_borders: bool
+    whatanimeisthis_api_url: str
+    whatanimeisthis_api_key: str
+    whatanimeisthis_request_timeout_seconds: float
+    whatanimeisthis_guest_daily_limit: int
+    whatanimeisthis_api_daily_limit: int
+    image_search_max_bytes: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -307,6 +319,8 @@ class AppSettings:
             "anime_skip": 60,
             "bahamut": 30,
             "baha_anime_skip": 20,
+            "trace_moe": 30,
+            "whatanimeisthis": 10,
         }
         upstream_per_source = {
             source: _int(
@@ -340,6 +354,9 @@ class AppSettings:
             ("bahamut", "identity"): 20,
             ("bahamut", "episodes"): 30,
             ("baha_anime_skip", "episode_segments"): 20,
+            ("trace_moe", "quota"): 30,
+            ("trace_moe", "image_search"): 20,
+            ("whatanimeisthis", "image_search"): 10,
         }
         upstream_per_operation = {
             (source, operation): _int(
@@ -379,6 +396,9 @@ class AppSettings:
                     "data/user_settings.sqlite3",
                 ),
                 bans_db_path=_path(values, "BANS_DB_PATH", "data/bans.sqlite3"),
+                image_search_db_path=_path(
+                    values, "IMAGE_SEARCH_DB_PATH", "data/image_search.sqlite3"
+                ),
             ),
             search=SearchSettings(
                 cache_ttl_seconds=_float(values, "SEARCH_CACHE_TTL_SECONDS", 21600.0),
@@ -628,6 +648,37 @@ class AppSettings:
                     values,
                     "KITSU_CACHE_TTL_SECONDS",
                     21600.0,
+                ),
+                trace_moe_api_url=_raw(
+                    values,
+                    "TRACE_MOE_API_URL",
+                    "https://api.trace.moe",
+                ).rstrip("/"),
+                trace_moe_api_key=_raw(values, "TRACE_MOE_API_KEY"),
+                trace_moe_request_timeout_seconds=_float(
+                    values, "TRACE_MOE_REQUEST_TIMEOUT_SECONDS", 30.0, 5.0
+                ),
+                trace_moe_quota_cache_ttl_seconds=_float(
+                    values, "TRACE_MOE_QUOTA_CACHE_TTL_SECONDS", 30.0, 1.0
+                ),
+                trace_moe_cut_borders=_bool(values, "TRACE_MOE_CUT_BORDERS", True),
+                whatanimeisthis_api_url=_raw(
+                    values,
+                    "WHATANIMEISTHIS_API_URL",
+                    "https://whatanimeisthis.com",
+                ).rstrip("/"),
+                whatanimeisthis_api_key=_raw(values, "WHATANIMEISTHIS_API_KEY"),
+                whatanimeisthis_request_timeout_seconds=_float(
+                    values, "WHATANIMEISTHIS_REQUEST_TIMEOUT_SECONDS", 30.0, 5.0
+                ),
+                whatanimeisthis_guest_daily_limit=_int(
+                    values, "WHATANIMEISTHIS_GUEST_DAILY_LIMIT", 5, 1
+                ),
+                whatanimeisthis_api_daily_limit=_int(
+                    values, "WHATANIMEISTHIS_API_DAILY_LIMIT", 10, 0
+                ),
+                image_search_max_bytes=_int(
+                    values, "IMAGE_SEARCH_MAX_BYTES", 20 * 1024 * 1024, 1024
                 ),
             ),
             source_health=SourceHealthSettings(
