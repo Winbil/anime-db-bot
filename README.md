@@ -189,6 +189,7 @@ All runtime environment parsing is centralized in `core/settings.py`. New deploy
 | `IMAGE_SEARCH_DB_PATH` | No | SQLite path for conservative persistent image-search quota accounting. |
 | `ADMIN_TELEGRAM_USER_IDS` | No | Comma/space/semicolon-separated Telegram admin user IDs. |
 | `TELEGRAM_BOT_API_URL` | No | Custom/self-hosted Telegram Bot API endpoint. |
+| `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | No | Host directory mapped to `/var/lib/telegram-bot-api` when local Bot API file paths are inside a container. |
 | `USER_SETTINGS_DB_PATH` | No | SQLite path for per-user settings and known-user registry. |
 | `BANS_DB_PATH` | No | SQLite path for moderation bans. |
 | `MAPPINGS_DB_PATH` | No | Runtime cross-ID mapping database. |

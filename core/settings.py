@@ -129,6 +129,14 @@ def _path(env: Mapping[str, str], name: str, default: str) -> Path:
     return path if path.is_absolute() else ROOT_DIR / path
 
 
+def _optional_path(env: Mapping[str, str], name: str) -> Path | None:
+    value = _raw(env, name)
+    if not value:
+        return None
+    path = Path(value)
+    return path if path.is_absolute() else ROOT_DIR / path
+
+
 def _admin_ids(value: str) -> tuple[int, ...]:
     result: list[int] = []
     seen: set[int] = set()
@@ -165,6 +173,7 @@ class TelegramSettings:
     session_ttl_seconds: int
     anime_input_ttl_seconds: int
     admin_user_ids: tuple[int, ...]
+    bot_api_local_file_root: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -388,6 +397,9 @@ class AppSettings:
                     values, "ANIME_INPUT_TTL_SECONDS", 300, 30
                 ),
                 admin_user_ids=_admin_ids(_raw(values, "ADMIN_TELEGRAM_USER_IDS")),
+                bot_api_local_file_root=_optional_path(
+                    values, "TELEGRAM_BOT_API_LOCAL_FILE_ROOT"
+                ),
             ),
             storage=StorageSettings(
                 user_settings_db_path=_path(

@@ -185,6 +185,7 @@ Runtime-логи разделены по назначению в `logs/YYYY.MM.D
 | `IMAGE_SEARCH_DB_PATH` | Нет | SQLite для persistent учёта ограниченной image-search квоты. |
 | `ADMIN_TELEGRAM_USER_IDS` | Нет | Telegram user IDs администраторов. |
 | `TELEGRAM_BOT_API_URL` | Нет | Custom/self-hosted Telegram Bot API endpoint. |
+| `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | Нет | Host-каталог, соответствующий `/var/lib/telegram-bot-api` внутри контейнера local Bot API; нужен для чтения локальных `file_path`. |
 | `USER_SETTINGS_DB_PATH` | Нет | SQLite для user settings и known-user registry. |
 | `BANS_DB_PATH` | Нет | SQLite для moderation bans. |
 | `MAPPINGS_DB_PATH` | Нет | Runtime cross-ID mapping database. |

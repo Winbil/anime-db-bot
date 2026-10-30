@@ -27,6 +27,7 @@ class AppSettingsTests(unittest.TestCase):
                 "LOG_MAX_BYTES": "12345",
                 "LOG_BACKUPS": "2",
                 "TELEGRAM_BOT_API_LOCAL": "true",
+                "TELEGRAM_BOT_API_LOCAL_FILE_ROOT": "/srv/telegram-bot-api",
                 "TELEGRAM_SESSION_TTL_SECONDS": "90",
                 "ADMIN_TELEGRAM_USER_IDS": "1, 2;3\n2",
                 "MAPPINGS_AUTO_UPDATE": "0",
@@ -80,6 +81,10 @@ class AppSettingsTests(unittest.TestCase):
         self.assertEqual(settings.logging.backups, 2)
         self.assertEqual(settings.telegram.bot_token, "token")
         self.assertTrue(settings.telegram.bot_api_local)
+        self.assertEqual(
+            settings.telegram.bot_api_local_file_root,
+            Path("/srv/telegram-bot-api"),
+        )
         self.assertEqual(settings.telegram.session_ttl_seconds, 90)
         self.assertEqual(settings.telegram.admin_user_ids, (1, 2, 3))
         self.assertFalse(settings.mappings.auto_update)
@@ -226,8 +231,9 @@ class AppSettingsTests(unittest.TestCase):
                     encoding="utf-8",
                 )
             values = project_env_values(root)
-        self.assertEqual(len(values), 128)
+        self.assertEqual(len(values), 129)
         self.assertIn("BOT_TOKEN", values)
+        self.assertIn("TELEGRAM_BOT_API_LOCAL_FILE_ROOT", values)
         self.assertIn("KITSU_API_URL", values)
         self.assertIn("TRACE_MOE_API_KEY", values)
         self.assertIn("WHATANIMEISTHIS_API_KEY", values)

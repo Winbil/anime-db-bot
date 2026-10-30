@@ -473,11 +473,39 @@ def _normalize_uploaded_image(content: bytes) -> bytes:
     return normalized
 
 
+_TELEGRAM_BOT_API_CONTAINER_FILE_ROOT = Path("/var/lib/telegram-bot-api")
+
+
+def _telegram_local_file_path(
+    file_path: str,
+    local_file_root: Path | None,
+) -> Path | None:
+    path = Path(file_path)
+    if path.is_file():
+        return path
+    if local_file_root is None or not path.is_absolute():
+        return None
+    try:
+        relative = path.relative_to(_TELEGRAM_BOT_API_CONTAINER_FILE_ROOT)
+    except ValueError:
+        return None
+    if ".." in relative.parts:
+        return None
+    root = local_file_root.resolve()
+    candidate = (root / relative).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None
+
+
 async def _materialize_image_input(
     bot: Bot,
     value: ImageInputSession,
     *,
     max_bytes: int,
+    telegram_local_file_root: Path | None = None,
 ) -> ImageSearchInput:
     if value.url:
         return ImageSearchInput(url=value.url)
@@ -492,9 +520,16 @@ async def _materialize_image_input(
     file_path = str(getattr(telegram_file, "file_path", "") or "").strip()
     if not file_path:
         raise RuntimeError("Telegram did not return an image file path")
-    target = BytesIO()
-    await bot.download_file(file_path, destination=target, timeout=45)
-    content = target.getvalue()
+    local_path = _telegram_local_file_path(file_path, telegram_local_file_root)
+    if local_path is not None:
+        local_size = await asyncio.to_thread(lambda: local_path.stat().st_size)
+        if local_size > max_bytes:
+            raise ValueError("image_too_large")
+        content = await asyncio.to_thread(local_path.read_bytes)
+    else:
+        target = BytesIO()
+        await bot.download_file(file_path, destination=target, timeout=45)
+        content = target.getvalue()
     if not content:
         raise RuntimeError("Downloaded Telegram image is empty")
     if len(content) > max_bytes:
@@ -972,6 +1007,7 @@ async def _execute_image_search(
     *,
     image_search_service: ImageSearchService,
     image_search_max_bytes: int,
+    telegram_local_file_root: Path | None,
     state: SearchUiState,
 ) -> None:
     locale = get_user_locale(owner_user_id)
@@ -984,6 +1020,7 @@ async def _execute_image_search(
             bot,
             stored,
             max_bytes=max(1024, int(image_search_max_bytes)),
+            telegram_local_file_root=telegram_local_file_root,
         )
     except ValueError as exc:
         key = "image_too_large" if str(exc) == "image_too_large" else "image_invalid"
@@ -1020,6 +1057,7 @@ def register_search_handlers(
     image_search_service: ImageSearchService,
     image_search_max_bytes: int,
     input_ttl_seconds: int,
+    telegram_local_file_root: Path | None = None,
 ) -> SearchUiState:
     """Register the single public anime-search command and its interactive flow."""
     provider_map = {str(key): provider for key, provider in provider_map.items()}
@@ -1245,6 +1283,7 @@ def register_search_handlers(
             selected,
             image_search_service=image_search_service,
             image_search_max_bytes=image_search_max_bytes,
+            telegram_local_file_root=telegram_local_file_root,
             state=state,
         )
 
