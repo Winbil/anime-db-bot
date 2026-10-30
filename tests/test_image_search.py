@@ -342,6 +342,73 @@ class ImageSearchServiceTests(unittest.IsolatedAsyncioTestCase):
             ["2", "1"],
         )
 
+    async def test_visible_100_percent_match_suppresses_weaker_candidates(self) -> None:
+        lookup = _FakeDirectLookup()
+        service = ImageSearchService(
+            (
+                _FakeImageProvider(
+                    "trace_moe",
+                    "trace.moe",
+                    [
+                        ImageSearchMatch("trace_moe", "trace.moe", "10", 0.9996),
+                        ImageSearchMatch("trace_moe", "trace.moe", "20", 0.94),
+                        ImageSearchMatch("trace_moe", "trace.moe", "30", 0.81),
+                    ],
+                ),
+                _FakeImageProvider(
+                    "whatanimeisthis",
+                    "What Anime Is This",
+                    [
+                        ImageSearchMatch(
+                            "whatanimeisthis", "What Anime Is This", "10", 0.97
+                        ),
+                        ImageSearchMatch(
+                            "whatanimeisthis", "What Anime Is This", "40", 0.88
+                        ),
+                    ],
+                ),
+            ),
+            lookup,
+        )
+
+        result = await service.search(
+            ImageSearchInput(content=b"image", content_type="image/png"),
+            ("trace_moe", "whatanimeisthis"),
+        )
+
+        self.assertEqual(len(result.items), 1)
+        self.assertEqual(result.items[0].candidate.external_ids["anilist"], "10")
+        self.assertEqual(len(result.items[0].matches), 2)
+        self.assertEqual(lookup.ids, ["10"])
+
+    async def test_multiple_100_percent_ids_keep_only_perfect_tier(self) -> None:
+        lookup = _FakeDirectLookup()
+        service = ImageSearchService(
+            (
+                _FakeImageProvider(
+                    "trace_moe",
+                    "trace.moe",
+                    [
+                        ImageSearchMatch("trace_moe", "trace.moe", "1", 1.0),
+                        ImageSearchMatch("trace_moe", "trace.moe", "2", 0.9997),
+                        ImageSearchMatch("trace_moe", "trace.moe", "3", 0.99),
+                    ],
+                ),
+            ),
+            lookup,
+        )
+
+        result = await service.search(
+            ImageSearchInput(content=b"image", content_type="image/png"),
+            ("trace_moe",),
+        )
+
+        self.assertEqual(
+            [item.candidate.external_ids["anilist"] for item in result.items],
+            ["1", "2"],
+        )
+        self.assertEqual(lookup.ids, ["1", "2"])
+
 
 if __name__ == "__main__":
     unittest.main()
