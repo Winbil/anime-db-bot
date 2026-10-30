@@ -50,38 +50,37 @@ def _broadcast(item: BroadcastSlot, locale: str) -> str:
     return " ".join(part for part in (weekday, format_time(item.time)) if part)
 
 
-def _quick_actions_html(token: str, *, locale: str) -> str:
-    token_value = html.escape(token, quote=True)
+_BLOCK_ACTIONS: tuple[tuple[tuple[str, str], ...], ...] = (
+    (("titles_button", "titles"), ("description_button", "description")),
+    (
+        ("episodes_button", "episodes"),
+        ("screenshots_button", "screenshots"),
+        ("trailers_button", "trailers"),
+    ),
+    (
+        ("staff_button", "staff"),
+        ("voices_button", "voices"),
+        ("characters_button", "characters"),
+    ),
+    (("popularity_button", "popularity"),),
+    (("links_button", "links"),),
+)
 
-    def button(label_key: str, section: str) -> str:
-        return (
+
+def _block_actions_html(
+    token: str, actions: tuple[tuple[str, str], ...], *, locale: str
+) -> str:
+    if not actions:
+        return ""
+    token_value = html.escape(token, quote=True)
+    buttons = []
+    for label_key, section in actions:
+        buttons.append(
             f'<tg-button type="callback_data" data="av:{token_value}:{section}:0">'
             f"{html.escape(text('card', label_key, locale=locale))}"
             "</tg-button>"
         )
-
-    return (
-        f"<h3>{html.escape(text('card', 'details', locale=locale))}</h3>"
-        '<tg-button-row align="left">'
-        + button("description_button", "description")
-        + button("popularity_button", "popularity")
-        + button("episodes_button", "episodes")
-        + "</tg-button-row>"
-        '<tg-button-row align="left">'
-        + button("staff_button", "staff")
-        + button("voices_button", "voices")
-        + button("characters_button", "characters")
-        + "</tg-button-row>"
-        '<tg-button-row align="left">'
-        + button("titles_button", "titles")
-        + button("screenshots_button", "screenshots")
-        + button("trailers_button", "trailers")
-        + "</tg-button-row>"
-        '<tg-button-row align="left">'
-        + button("links_button", "links")
-        + "</tg-button-row>"
-        "<hr/>"
-    )
+    return '<tg-button-row align="left">' + "".join(buttons) + "</tg-button-row>"
 
 
 def _source_identity_key(source_name: str) -> str | None:
@@ -252,17 +251,15 @@ def main_rich(
             html=poster_html(anime) + plain_text_to_rich_html(text_value)
         )
 
-    tables = "".join(
-        _table_html(title_value, lines)
-        for title_value, lines in _main_blocks(anime, locale=locale)
-        if lines
-    )
+    block_html: list[str] = []
+    for index, (title_value, lines) in enumerate(_main_blocks(anime, locale=locale)):
+        actions = _BLOCK_ACTIONS[index] if index < len(_BLOCK_ACTIONS) else ()
+        table = _table_html(title_value, lines)
+        if table:
+            block_html.append(table)
+        elif actions:
+            block_html.append(f"<h3>{html.escape(title_value)}</h3>")
+        block_html.append(_block_actions_html(token, actions, locale=locale))
+
     title_html = f"<h2>{html.escape(display_anime_title(anime, locale))}</h2>"
-    return InputRichMessage(
-        html=(
-            poster_html(anime)
-            + title_html
-            + _quick_actions_html(token, locale=locale)
-            + tables
-        )
-    )
+    return InputRichMessage(html=poster_html(anime) + title_html + "".join(block_html))
