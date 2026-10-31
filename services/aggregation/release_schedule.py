@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 
 from core.models import BroadcastSlot, EpisodeReleaseProjection
 
-_JST = ZoneInfo("Asia/Tokyo")
+_JST = timezone(timedelta(hours=9), name="JST")
 _WEEKDAYS = {
     "monday": 0,
     "tuesday": 1,
