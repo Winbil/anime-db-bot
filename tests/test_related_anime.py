@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 from unittest.mock import AsyncMock, patch
 
 from bots.telegram.card.features.related import related_keyboard
-from bots.telegram.card.ui.keyboards import fallback_main_keyboard
+from bots.telegram.card.ui.keyboards import fallback_main_keyboard, navigation_keyboard
 from bots.telegram.card.views.main import main_rich
 from core.identity import AnimeIdentity
 from core.models import AggregatedAnime
@@ -377,14 +377,26 @@ class RelatedAnimeSourceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RelatedAnimeUiTests(unittest.TestCase):
-    def test_main_card_places_discovery_buttons_at_bottom(self) -> None:
+    def test_main_card_keeps_discovery_actions_out_of_rich_html(self) -> None:
         anime = AggregatedAnime(title="Test", external_ids={"mal": "1"})
         rich = main_rich("token", anime, "Test", locale="ru")
-        self.assertIn('data="av:token:related:0"', rich.html)
-        self.assertIn('data="av:token:recommendations:0"', rich.html)
-        self.assertLess(
-            rich.html.index('data="av:token:related:0"'),
-            rich.html.index('data="av:token:recommendations:0"'),
+        self.assertNotIn('data="av:token:related:0"', rich.html)
+        self.assertNotIn('data="av:token:recommendations:0"', rich.html)
+
+    def test_main_navigation_uses_inline_discovery_buttons(self) -> None:
+        anime = AggregatedAnime(title="Test", external_ids={"mal": "1"})
+        keyboard = navigation_keyboard("token", anime, "main", 0, 1, locale="ru")
+        self.assertIsNotNone(keyboard)
+        assert keyboard is not None
+        callbacks = [
+            button.callback_data
+            for row in keyboard.inline_keyboard
+            for button in row
+            if button.callback_data
+        ]
+        self.assertEqual(
+            callbacks,
+            ["av:token:related:0", "av:token:recommendations:0"],
         )
 
     def test_fallback_main_keyboard_has_both_discovery_buttons(self) -> None:
