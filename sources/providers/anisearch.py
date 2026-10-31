@@ -254,6 +254,8 @@ def _record(raw: dict[str, Any], anisearch_id: str) -> AnimeRecord:
     season, season_year = _season(raw)
     poster = _poster(raw)
     url = _clean(raw.get("url"))
+    episodes_total = _int(raw.get("episodes"))
+    status = source_value_key("anisearch", "status", raw.get("status"))
     return AnimeRecord(
         source=ANISEARCH_SOURCE_NAME,
         source_id=anisearch_id,
@@ -261,11 +263,12 @@ def _record(raw: dict[str, Any], anisearch_id: str) -> AnimeRecord:
         synonyms=synonyms,
         external_ids=_external_ids(raw, anisearch_id),
         kind=source_value_key("anisearch", "type", raw.get("type")),
-        status=source_value_key("anisearch", "status", raw.get("status")),
+        status=status,
         rating=_rating(raw),
         season=season,
         season_year=season_year,
-        episodes_total=_int(raw.get("episodes")),
+        episodes_total=episodes_total,
+        episodes_aired=episodes_total if status == "finished" else None,
         duration_minutes=_int(raw.get("duration")),
         aired_on=parse_partial_date(raw.get("aired_from")),
         released_on=parse_partial_date(raw.get("aired_to")),

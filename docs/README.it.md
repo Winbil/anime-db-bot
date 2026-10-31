@@ -27,6 +27,7 @@ Il progetto è progettato attorno a confini espliciti tra **ricerca**, **identit
 - **Livello di resilienza condiviso**: errori di origine digitati, nuovi tentativi, interruttori automatici, ripristino semiaperto, limiti di velocità e ciclo di vita HTTP condiviso.
 - **Impostazioni persistenti con ambito piattaforma**: le impostazioni internazionali dell'utente, gli utenti conosciuti e lo stato di moderazione sono archiviati in SQLite.
 - **Sette lingue dell'interfaccia utente**: l'inglese è la lingua predefinita/di riserva; Russo, giapponese, tedesco, spagnolo, francese e italiano sono completamente selezionabili in `/settings`.
+- **Dati di uscita e proiezioni**: vengono aggregati classificazione per età, stato di messa in onda, episodi trasmessi/totali e data del prossimo episodio fornita dalle fonti; gli anime TV in corso con totale noto ricevono stime settimanali chiaramente indicate per tutti gli episodi rimanenti.
 - **Controlli orientati alla produzione** — Python 3.11–3.14 CI, Ruff, controlli del formattatore, ambito mypy, gate di copertura e ShellCheck.
 
 ## Capacità di origine

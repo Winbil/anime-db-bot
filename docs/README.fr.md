@@ -27,6 +27,7 @@ Le projet est conçu autour de limites explicites entre la **recherche**, l'**id
 - **Couche de résilience partagée** : erreurs de source typées, tentatives, disjoncteurs, récupération semi-ouverte, limites de débit et cycle de vie partagé HTTP.
 - **Paramètres persistants au niveau de la plate-forme** : les paramètres régionaux de l'utilisateur, les utilisateurs connus et l'état de modération sont stockés dans SQLite.
 - **Sept langues de l'interface utilisateur** — L'anglais est la langue par défaut/de secours ; Le russe, le japonais, l'allemand, l'espagnol, le français et l'italien sont entièrement sélectionnables en `/settings`.
+- **Données de diffusion et projections** — la classification d’âge, le statut de diffusion, le nombre d’épisodes diffusés/total et la date du prochain épisode fournie par les sources sont agrégés ; les anime TV en cours avec un total connu reçoivent des estimations hebdomadaires clairement signalées pour tous les épisodes restants.
 - **Vérifications orientées production** — Python 3.11–3.14 CI, Ruff, vérifications du formateur, portée mypy, porte de couverture et ShellCheck.
 
 ## Capacités sources

@@ -27,6 +27,7 @@
 - **Общий resilience layer** — typed source errors, retry, circuit breaker, half-open recovery, rate limits и shared HTTP lifecycle.
 - **Persistent platform-scoped settings** — locale, known users и moderation state хранятся в SQLite.
 - **Семь языков UI** — английский является default/fallback; русский, японский, немецкий, испанский, французский и итальянский выбираются через `/settings`.
+- **Релизные данные и прогноз серий** — агрегируются возрастной рейтинг, статус выхода, количество вышедших/всего серий и дата следующей серии из источников; для выходящих TV-аниме с известным total все оставшиеся серии получают явно помеченный недельный прогноз.
 - **Production-oriented CI** — Python 3.11–3.14, Ruff, formatter, mypy scope, coverage gate и ShellCheck.
 
 ## Возможности источников

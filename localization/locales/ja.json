@@ -282,7 +282,21 @@
     "characters_button": "キャラクター",
     "description_loading": "説明を読み込み中…",
     "popularity_loading": "人気統計を読み込み中…",
-    "screenshots_loading": "スクリーンショットを読み込み中…"
+    "screenshots_loading": "スクリーンショットを読み込み中…",
+    "section_release_schedule": "放送予定",
+    "release_schedule_button": "放送予定",
+    "release_schedule_title": "エピソード放送予定",
+    "release_schedule_empty": "今後の放送日はまだ不明です。",
+    "release_schedule_source_item": "第{episode}話: {value}（情報源の日時）",
+    "release_schedule_estimated_item": "第{episode}話: 約 {value}（予測）",
+    "release_schedule_source_unknown": "次回: {value}（情報源の日時）",
+    "release_schedule_estimated_unknown": "次回: 約 {value}（予測）",
+    "release_schedule_estimate_note": "予測日は週1回の放送間隔を前提としており、変更される場合があります。",
+    "episodes_aired": "放送済み: {value}話",
+    "episodes_total": "全話数: {value}話",
+    "next_episode_numbered": "次回 第{episode}話: {value}",
+    "next_episode_estimated": "次回予測: 約 {value}",
+    "next_episode_estimated_numbered": "次回 第{episode}話の予測: 約 {value}"
   },
   "people": {
     "staff": "スタッフ・制作陣",

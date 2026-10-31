@@ -282,7 +282,21 @@
     "characters_button": "Personaggi",
     "description_loading": "Caricamento descrizioni…",
     "popularity_loading": "Caricamento statistiche di popolarità…",
-    "screenshots_loading": "Caricamento screenshot…"
+    "screenshots_loading": "Caricamento screenshot…",
+    "section_release_schedule": "Calendario di uscita",
+    "release_schedule_button": "Calendario",
+    "release_schedule_title": "Calendario di uscita degli episodi",
+    "release_schedule_empty": "Non sono disponibili date di uscita future.",
+    "release_schedule_source_item": "Episodio {episode}: {value} (data della fonte)",
+    "release_schedule_estimated_item": "Episodio {episode}: ~{value} (stimato)",
+    "release_schedule_source_unknown": "Prossimo episodio: {value} (data della fonte)",
+    "release_schedule_estimated_unknown": "Prossimo episodio: ~{value} (stimato)",
+    "release_schedule_estimate_note": "Le date stimate presuppongono una cadenza settimanale e possono cambiare.",
+    "episodes_aired": "Episodi trasmessi: {value}",
+    "episodes_total": "Episodi totali: {value}",
+    "next_episode_numbered": "Prossimo episodio #{episode}: {value}",
+    "next_episode_estimated": "Prossimo episodio previsto: ~{value}",
+    "next_episode_estimated_numbered": "Prossimo episodio previsto #{episode}: ~{value}"
   },
   "people": {
     "staff": "Staff e creatori",

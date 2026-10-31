@@ -282,7 +282,21 @@
     "title_german": "Allemand",
     "title_spanish": "Espagnol",
     "title_french": "Français",
-    "title_italian": "Italien"
+    "title_italian": "Italien",
+    "section_release_schedule": "Calendrier de diffusion",
+    "release_schedule_button": "Calendrier",
+    "release_schedule_title": "Calendrier de diffusion des épisodes",
+    "release_schedule_empty": "Aucune date de diffusion future disponible.",
+    "release_schedule_source_item": "Épisode {episode} : {value} (date de la source)",
+    "release_schedule_estimated_item": "Épisode {episode} : ~{value} (estimation)",
+    "release_schedule_source_unknown": "Prochain épisode : {value} (date de la source)",
+    "release_schedule_estimated_unknown": "Prochain épisode : ~{value} (estimation)",
+    "release_schedule_estimate_note": "Les dates estimées supposent un rythme hebdomadaire et peuvent changer.",
+    "episodes_aired": "Épisodes diffusés : {value}",
+    "episodes_total": "Nombre total d’épisodes : {value}",
+    "next_episode_numbered": "Prochain épisode n°{episode} : {value}",
+    "next_episode_estimated": "Prochain épisode estimé : ~{value}",
+    "next_episode_estimated_numbered": "Prochain épisode estimé n°{episode} : ~{value}"
   },
   "people": {
     "staff": "Personnel et créateurs",

@@ -444,6 +444,14 @@ def _record(raw: dict[str, Any], settings: SourceSettings | None = None) -> Anim
     status_raw = raw.get("status") or ""
     rating_raw = raw.get("rating") or ""
     season, season_year = _season(raw.get("season"))
+    episodes_aired_raw = raw.get("episodesAired")
+    episodes_aired = int(episodes_aired_raw) if episodes_aired_raw is not None else None
+    next_episode_at = _format_datetime(raw.get("nextEpisodeAt"))
+    next_episode_number = (
+        episodes_aired + 1
+        if next_episode_at is not None and episodes_aired is not None
+        else None
+    )
     return AnimeRecord(
         source="Shikimori",
         source_id=str(raw.get("id") or ""),
@@ -463,11 +471,12 @@ def _record(raw: dict[str, Any], settings: SourceSettings | None = None) -> Anim
         season_year=season_year,
         franchise=_clean_text(raw.get("franchise")) or None,
         episodes_total=raw.get("episodes") or None,
-        episodes_aired=raw.get("episodesAired") or None,
+        episodes_aired=episodes_aired,
         duration_minutes=raw.get("duration") or None,
         aired_on=_format_date(raw.get("airedOn")),
         released_on=_format_date(raw.get("releasedOn")),
-        next_episode_at=_format_datetime(raw.get("nextEpisodeAt")),
+        next_episode_at=next_episode_at,
+        next_episode_number=next_episode_number,
         score=score,
         genres=_dedupe(
             [

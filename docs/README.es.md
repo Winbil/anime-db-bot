@@ -27,6 +27,7 @@ El proyecto está diseñado en torno a límites explícitos entre **búsqueda**,
 - **Capa de resiliencia compartida**: errores de origen escritos, reintentos, disyuntores, recuperación medio abierta, límites de velocidad y ciclo de vida compartido HTTP.
 - **Configuraciones persistentes en el ámbito de la plataforma**: la configuración regional del usuario, los usuarios conocidos y el estado de moderación se almacenan en SQLite.
 - **Siete idiomas de interfaz de usuario**: el inglés es la configuración regional predeterminada/alternativa; Ruso, japonés, alemán, español, francés e italiano se pueden seleccionar completamente en `/settings`.
+- **Datos de emisión y proyecciones**: se agregan la clasificación por edades, el estado de emisión, los episodios emitidos/totales y la fecha del próximo episodio proporcionada por las fuentes; los anime de TV en emisión con un total conocido reciben estimaciones semanales claramente marcadas para todos los episodios restantes.
 - **Comprobaciones orientadas a la producción**: Python 3.11–3.14 CI, Ruff, comprobaciones del formateador, alcance mypy, puerta de cobertura y ShellCheck.
 
 ## Capacidades de origen

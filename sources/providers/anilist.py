@@ -580,6 +580,9 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
 
     next_airing = raw.get("nextAiringEpisode") or {}
     episodes_total = raw.get("episodes") or None
+    next_episode_number = (
+        int(next_airing["episode"]) if next_airing.get("episode") else None
+    )
     if raw.get("status") == "FINISHED" and episodes_total:
         episodes_aired = episodes_total
     elif next_airing.get("episode"):
@@ -617,6 +620,7 @@ def _record(raw: dict[str, Any]) -> AnimeRecord:
         aired_on=_format_date(raw.get("startDate")),
         released_on=_format_date(raw.get("endDate")),
         next_episode_at=_format_timestamp(next_airing.get("airingAt")),
+        next_episode_number=next_episode_number,
         score=_score(raw.get("averageScore")),
         genres=_dedupe(
             [canonical_genre_token(value) for value in raw.get("genres") or []]

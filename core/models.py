@@ -67,6 +67,20 @@ class BroadcastSlot:
 
 
 @dataclass(frozen=True, slots=True)
+class EpisodeReleaseProjection:
+    """One future episode release date shown by the aggregated anime card.
+
+    ``estimated`` distinguishes a source-provided nearest release timestamp from
+    dates projected by the application. ``episode_number`` may be unavailable
+    when an upstream source exposes a date but not the next ordinal.
+    """
+
+    episode_number: int | None
+    airs_at: datetime
+    estimated: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class TrailerRecord:
     """One source-scoped promotional trailer.
 
@@ -268,6 +282,7 @@ class AnimeRecord:
     aired_on: PartialDate | None = None
     released_on: PartialDate | None = None
     next_episode_at: datetime | None = None
+    next_episode_number: int | None = None
 
     score: float | None = None
     rank: int | None = None
@@ -336,6 +351,10 @@ class AggregatedAnime:
     aired_on: PartialDate | None = None
     released_on: PartialDate | None = None
     next_episode_at: datetime | None = None
+    next_episode_number: int | None = None
+    episode_release_schedule: list[EpisodeReleaseProjection] = field(
+        default_factory=list
+    )
 
     scores: dict[str, float] = field(default_factory=dict)
     score_average: float | None = None

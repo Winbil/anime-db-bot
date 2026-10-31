@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 
 from core.canonicalization import (
     canonical_role_token,
@@ -240,9 +240,15 @@ def _consensus_datetime(
     ]
     if not values:
         return None
-    counts = Counter(value.isoformat() for value in values)
+
+    def instant_key(value: datetime) -> str:
+        if value.tzinfo is None:
+            return value.isoformat()
+        return value.astimezone(timezone.utc).isoformat()
+
+    counts = Counter(instant_key(value) for value in values)
     best = max(counts.values())
-    return next(value for value in values if counts[value.isoformat()] == best)
+    return next(value for value in values if counts[instant_key(value)] == best)
 
 
 def _consensus_domain(
@@ -259,6 +265,44 @@ def _consensus_domain(
         if canonical:
             values.append(canonical)
     return _consensus_values(values)
+
+
+def _consensus_rating(records: list[AnimeRecord]) -> str | None:
+    """Choose a conservative canonical age rating across metadata sources.
+
+    ``none`` never wins over an explicit rating. For equally supported explicit
+    values, prefer the more restrictive category so a sparse/coarse provider
+    cannot make the public card look less restrictive than another source.
+    """
+
+    values: list[str] = []
+    for record in records:
+        value = record.rating
+        if not isinstance(value, str) or not _clean(value):
+            continue
+        canonical = canonicalize_domain_value("rating", value)
+        if canonical:
+            values.append(canonical)
+    if not values:
+        return None
+
+    explicit = [value for value in values if value != "none"]
+    if explicit:
+        values = explicit
+    counts = Counter(values)
+    best_count = max(counts.values())
+    candidates = [value for value, count in counts.items() if count == best_count]
+    severity = {
+        "none": 0,
+        "g": 1,
+        "pg": 2,
+        "pg_13": 3,
+        "r": 4,
+        "r_plus": 5,
+        "adult": 6,
+        "rx": 7,
+    }
+    return max(candidates, key=lambda value: severity.get(value, 0))
 
 
 def _consensus_int(

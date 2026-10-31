@@ -27,6 +27,7 @@
 - **共通 resilience layer** — typed source errors、retry、circuit breaker、half-open recovery、rate limits、shared HTTP lifecycle。
 - **永続化された platform-scoped settings** — user locale、known users、moderation state を SQLite に保存します。
 - **7 言語 UI** — English が default/fallback で、Russian、Japanese、German、Spanish、French、Italian を `/settings` から選択できます。
+- **放送メタデータと予測** — 年齢区分、放送状態、放送済み/全話数、情報源が提供する次回放送日時を集約します。全話数が判明している放送中 TV アニメでは、残り全話について週次の予測日を明示的に「予測」として表示します。
 - **Production-oriented checks** — Python 3.11–3.14、Ruff、formatter、mypy scope、coverage gate、ShellCheck。
 
 ## Source capabilities

@@ -27,6 +27,7 @@ The project is designed around explicit boundaries between **search**, **identit
 - **Shared resilience layer** — typed source errors, retries, circuit breakers, half-open recovery, rate limits, and shared HTTP lifecycle.
 - **Persistent platform-scoped settings** — user locale, known users, and moderation state are stored in SQLite.
 - **Seven UI languages** — English is the default/fallback locale; Russian, Japanese, German, Spanish, French, and Italian are fully selectable in `/settings`.
+- **Release metadata and projections** — age rating, airing status, aired/total episode counts, and source-backed next-episode timestamps are aggregated; airing TV titles with known totals get clearly marked weekly estimates for all remaining episodes.
 - **Production-oriented checks** — Python 3.11–3.14 CI, Ruff, formatter checks, mypy scope, coverage gate, and ShellCheck.
 
 ## Source capabilities
