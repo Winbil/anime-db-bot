@@ -15,6 +15,7 @@ from core.models import (
     PopularityStats,
     TrailerRecord,
 )
+from core.related_anime import AnimeReference
 from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
@@ -411,6 +412,54 @@ class KitsuSource:
         body = await _load_detail(kitsu_id, self._settings)
         item = body.get("data") if body else None
         return _record(item, body) if isinstance(item, dict) else None
+
+    async def load_relations(self, identity: AnimeIdentity) -> list[AnimeReference]:
+        kitsu_id = self._kitsu_id(identity)
+        if not kitsu_id:
+            return []
+        body = await _request_json(
+            self._settings,
+            f"/anime/{kitsu_id}",
+            operation="relations",
+            params={"include": "mediaRelationships.destination"},
+            wait=False,
+        )
+        item = body.get("data")
+        if not isinstance(item, dict) or _clean(item.get("id")) != kitsu_id:
+            return []
+        included = _included_index(body)
+        result: list[AnimeReference] = []
+        for rank, ref in enumerate(_relationship_refs(item, "mediaRelationships"), 1):
+            relationship = included.get(
+                (_clean(ref.get("type")).casefold(), _clean(ref.get("id")))
+            )
+            if relationship is None:
+                continue
+            destination_refs = _relationship_refs(relationship, "destination")
+            if not destination_refs:
+                continue
+            destination_ref = destination_refs[0]
+            if _clean(destination_ref.get("type")).casefold() != "anime":
+                continue
+            destination_id = _clean(destination_ref.get("id"))
+            destination = included.get(("anime", destination_id))
+            if destination is None or not destination_id:
+                continue
+            attrs = destination.get("attributes") or {}
+            titles = _titles(attrs)
+            poster = _best_image(attrs.get("posterImage"))
+            result.append(
+                AnimeReference(
+                    source="Kitsu",
+                    titles=titles,
+                    aliases=_synonyms(attrs, titles),
+                    external_ids={"kitsu": destination_id},
+                    posters=[poster] if poster else [],
+                    relation=_clean((relationship.get("attributes") or {}).get("role")),
+                    rank=rank,
+                )
+            )
+        return result
 
     async def load_popularity(self, identity: AnimeIdentity) -> PopularityStats:
         kitsu_id = self._kitsu_id(identity)

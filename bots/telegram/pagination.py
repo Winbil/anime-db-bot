@@ -69,6 +69,8 @@ def card_route_callback(token: str, route: str, index: int) -> str:
         return SectionSourceCallback(token, parts[1], parts[2], index).encode()
     if kind in {"ap", "ac", "at"} and len(parts) == 2:
         return KeyedPageCallback(kind, token, parts[1], index).encode()
+    if kind == "ar" and len(parts) == 3:
+        return KeyedPageCallback("ar", token, f"{parts[1]}~{parts[2]}", index).encode()
     if kind == "apg" and len(parts) == 3:
         try:
             group_start = int(parts[2])

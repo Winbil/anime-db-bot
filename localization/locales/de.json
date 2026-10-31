@@ -320,7 +320,10 @@
     "related_button": "Verwandt",
     "recommendations_button": "Empfehlungen",
     "discovery_count": "Gefunden: {count}",
-    "discovery_sources": "Quellen: {sources}"
+    "discovery_sources": "Quellen: {sources}",
+    "discovery_relation": "Beziehung: {value}",
+    "discovery_all_sources": "Alle Quellen",
+    "discovery_open_card": "Anime-Karte öffnen"
   },
   "people": {
     "staff": "Mitarbeiter und Ersteller",

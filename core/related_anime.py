@@ -17,6 +17,7 @@ _RELATION_ALIASES = {
     "spin_off": "spin_off",
     "spin-off": "spin_off",
     "spin off": "spin_off",
+    "spinoff": "spin_off",
     "alternative": "alternative",
     "alternative_setting": "alternative_setting",
     "alternative setting": "alternative_setting",

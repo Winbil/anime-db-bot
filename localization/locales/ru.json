@@ -320,7 +320,10 @@
     "related_button": "Связанное",
     "recommendations_button": "Рекомендации",
     "discovery_count": "Найдено: {count}",
-    "discovery_sources": "Источники: {sources}"
+    "discovery_sources": "Источники: {sources}",
+    "discovery_relation": "Связь: {value}",
+    "discovery_all_sources": "Все источники",
+    "discovery_open_card": "Открыть карточку"
   },
   "people": {
     "staff": "Авторы и команда",
