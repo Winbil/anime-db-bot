@@ -27,6 +27,7 @@ Das Projekt ist um explizite Grenzen zwischen **Suche**, **Identität**, **Zuord
 - **Gemeinsame Resilienzschicht** – typisierte Quellfehler, Wiederholungsversuche, Leistungsschalter, halboffene Wiederherstellung, Ratenbegrenzungen und gemeinsamer HTTP-Lebenszyklus.
 - **Persistente plattformbezogene Einstellungen** – Benutzergebietsschema, bekannte Benutzer und Moderationsstatus werden in SQLite gespeichert.
 - **Sieben UI-Sprachen** – Englisch ist das Standard-/Fallback-Gebietsschema; Russisch, Japanisch, Deutsch, Spanisch, Französisch und Italienisch sind in `/settings` vollständig wählbar.
+- **Veröffentlichungsdaten und Prognosen** – Altersfreigabe, Ausstrahlungsstatus, ausgestrahlte/Gesamtfolgen und von Quellen gelieferte Termine der nächsten Folge werden aggregiert; laufende TV-Anime mit bekannter Gesamtzahl erhalten klar gekennzeichnete wöchentliche Schätzungen für alle verbleibenden Folgen.
 - **Produktionsorientierte Prüfungen** – Python 3.11–3.14 CI, Ruff, Formatiererprüfungen, Mypy-Bereich, Coverage Gate und ShellCheck.
 
 ## Quellfähigkeiten

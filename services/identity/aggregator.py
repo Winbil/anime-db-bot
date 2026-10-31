@@ -21,6 +21,7 @@ from services.aggregation.merge import (
     _consensus_datetime,
     _consensus_int,
     _consensus_partial_date,
+    _consensus_rating,
     _consensus_text,
     _dedupe_strings,
     _max_int,
@@ -29,6 +30,7 @@ from services.aggregation.merge import (
     _merge_season,
     _merge_studios,
 )
+from services.aggregation.release_schedule import build_episode_release_schedule
 from services.identity.resolver import IdentityResolver
 
 
@@ -231,6 +233,27 @@ class AnimeAggregator(AggregationMergeSupport):
             ]
         )
         scores = normalize_source_scores(scores)
+        kind = _consensus_domain(records, "kind", "anime_kind")
+        status = _consensus_domain(records, "status", "anime_status")
+        rating = _consensus_rating(records)
+        episodes_total = _consensus_int(
+            records, "episodes_total", prefer_max_on_tie=True
+        )
+        episodes_aired = _max_int(records, "episodes_aired")
+        next_episode_at = _consensus_datetime(records, "next_episode_at")
+        next_episode_number = _consensus_int(records, "next_episode_number")
+        if next_episode_number is None and episodes_aired is not None:
+            next_episode_number = episodes_aired + 1
+        broadcasts = _merge_broadcasts(records)
+        episode_release_schedule = build_episode_release_schedule(
+            status=status,
+            kind=kind,
+            episodes_total=episodes_total,
+            episodes_aired=episodes_aired,
+            next_episode_at=next_episode_at,
+            next_episode_number=next_episode_number,
+            broadcasts=broadcasts,
+        )
 
         return AggregatedAnime(
             title=title,
@@ -238,20 +261,20 @@ class AnimeAggregator(AggregationMergeSupport):
             synonyms=synonyms,
             external_ids=dict(identity.external_ids),
             sources=_dedupe_strings([record.source for record in records]),
-            kind=_consensus_domain(records, "kind", "anime_kind"),
-            status=_consensus_domain(records, "status", "anime_status"),
-            rating=_consensus_domain(records, "rating", "rating"),
+            kind=kind,
+            status=status,
+            rating=rating,
             season=season,
             season_year=season_year,
             franchise=_consensus_text(records, "franchise"),
-            episodes_total=_consensus_int(
-                records, "episodes_total", prefer_max_on_tie=True
-            ),
-            episodes_aired=_max_int(records, "episodes_aired"),
+            episodes_total=episodes_total,
+            episodes_aired=episodes_aired,
             duration_minutes=_consensus_int(records, "duration_minutes"),
             aired_on=_consensus_partial_date(records, "aired_on"),
             released_on=_consensus_partial_date(records, "released_on"),
-            next_episode_at=_consensus_datetime(records, "next_episode_at"),
+            next_episode_at=next_episode_at,
+            next_episode_number=next_episode_number,
+            episode_release_schedule=episode_release_schedule,
             scores=scores,
             score_average=consensus_score(scores.values()),
             score_sources_count=len(scores),
@@ -261,7 +284,7 @@ class AnimeAggregator(AggregationMergeSupport):
                 [value for record in records for value in record.licensors]
             ),
             source_materials=source_materials,
-            broadcasts=_merge_broadcasts(records),
+            broadcasts=broadcasts,
             titles_by_source=titles_by_source,
             synonyms_by_source=synonyms_by_source,
             staff_by_source=staff_by_source,

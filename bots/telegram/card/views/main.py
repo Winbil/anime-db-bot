@@ -49,6 +49,7 @@ _BLOCK_ACTIONS: tuple[tuple[tuple[str, str], ...], ...] = (
     (("titles_button", "titles"), ("description_button", "description")),
     (
         ("episodes_button", "episodes"),
+        ("release_schedule_button", "release_schedule"),
         ("screenshots_button", "screenshots"),
         ("trailers_button", "trailers"),
     ),
@@ -75,7 +76,12 @@ def _block_actions_html(
             f"{html.escape(text('card', label_key, locale=locale))}"
             "</tg-button>"
         )
-    return '<tg-button-row align="left">' + "".join(buttons) + "</tg-button-row>"
+    return "".join(
+        '<tg-button-row align="left">'
+        + "".join(buttons[index : index + 3])
+        + "</tg-button-row>"
+        for index in range(0, len(buttons), 3)
+    )
 
 
 def _source_identity_key(source_name: str) -> str | None:
@@ -111,9 +117,8 @@ def _card_source_ids(anime: AggregatedAnime) -> list[tuple[str, str]]:
 
 
 def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list[str]]]:
-    total = anime.episodes_total or 0
-    aired = anime.episodes_aired or 0
-    episodes = f"{aired}/{total}" if total else str(aired or "—")
+    total = anime.episodes_total
+    aired = anime.episodes_aired
 
     basic: list[str] = []
     kind = _domain("anime_kind", anime.kind, locale)
@@ -123,7 +128,10 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
         basic.append(text("card", "type", locale=locale, value=kind))
     if status:
         basic.append(text("card", "status", locale=locale, value=status))
-    basic.append(text("card", "episodes", locale=locale, value=episodes))
+    if aired is not None:
+        basic.append(text("card", "episodes_aired", locale=locale, value=aired))
+    if total is not None:
+        basic.append(text("card", "episodes_total", locale=locale, value=total))
     if anime.duration_minutes:
         basic.append(
             text("card", "duration", locale=locale, minutes=anime.duration_minutes)
@@ -145,15 +153,62 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
                 end=anime.released_on.isoformat() if anime.released_on else "—",
             )
         )
-    if anime.next_episode_at:
-        release.append(
-            text(
-                "card",
-                "next_episode",
-                locale=locale,
-                value=anime.next_episode_at.isoformat(),
-            )
+    if anime.status == "airing":
+        next_projection = (
+            anime.episode_release_schedule[0]
+            if anime.episode_release_schedule
+            else None
         )
+        if next_projection is not None:
+            if next_projection.episode_number is not None:
+                key = (
+                    "next_episode_estimated_numbered"
+                    if next_projection.estimated
+                    else "next_episode_numbered"
+                )
+                release.append(
+                    text(
+                        "card",
+                        key,
+                        locale=locale,
+                        episode=next_projection.episode_number,
+                        value=next_projection.airs_at.isoformat(),
+                    )
+                )
+            else:
+                key = (
+                    "next_episode_estimated"
+                    if next_projection.estimated
+                    else "next_episode"
+                )
+                release.append(
+                    text(
+                        "card",
+                        key,
+                        locale=locale,
+                        value=next_projection.airs_at.isoformat(),
+                    )
+                )
+    if not anime.episode_release_schedule and anime.next_episode_at:
+        if anime.next_episode_number is not None:
+            release.append(
+                text(
+                    "card",
+                    "next_episode_numbered",
+                    locale=locale,
+                    episode=anime.next_episode_number,
+                    value=anime.next_episode_at.isoformat(),
+                )
+            )
+        else:
+            release.append(
+                text(
+                    "card",
+                    "next_episode",
+                    locale=locale,
+                    value=anime.next_episode_at.isoformat(),
+                )
+            )
     if anime.broadcasts:
         broadcast_text = ", ".join(
             value for item in anime.broadcasts if (value := _broadcast(item, locale))

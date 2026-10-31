@@ -282,7 +282,21 @@
     "characters_button": "Персонажи",
     "description_loading": "Загружаю описания…",
     "popularity_loading": "Загружаю статистику популярности…",
-    "screenshots_loading": "Загружаю скриншоты…"
+    "screenshots_loading": "Загружаю скриншоты…",
+    "section_release_schedule": "График выхода",
+    "release_schedule_button": "График",
+    "release_schedule_title": "График выхода серий",
+    "release_schedule_empty": "Будущие даты выхода пока неизвестны.",
+    "release_schedule_source_item": "Серия {episode}: {value} (дата источника)",
+    "release_schedule_estimated_item": "Серия {episode}: ~{value} (предположительно)",
+    "release_schedule_source_unknown": "Следующая серия: {value} (дата источника)",
+    "release_schedule_estimated_unknown": "Следующая серия: ~{value} (предположительно)",
+    "release_schedule_estimate_note": "Предположительные даты рассчитаны по недельному интервалу и могут измениться.",
+    "episodes_aired": "Вышло серий: {value}",
+    "episodes_total": "Всего серий: {value}",
+    "next_episode_numbered": "Следующая серия №{episode}: {value}",
+    "next_episode_estimated": "Предположительно следующая серия: ~{value}",
+    "next_episode_estimated_numbered": "Предположительно следующая серия №{episode}: ~{value}"
   },
   "people": {
     "staff": "Авторы и команда",

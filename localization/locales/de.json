@@ -282,7 +282,21 @@
     "title_german": "Deutsch",
     "title_spanish": "Spanisch",
     "title_french": "Französisch",
-    "title_italian": "Italienisch"
+    "title_italian": "Italienisch",
+    "section_release_schedule": "Veröffentlichungsplan",
+    "release_schedule_button": "Zeitplan",
+    "release_schedule_title": "Episoden-Veröffentlichungsplan",
+    "release_schedule_empty": "Keine zukünftigen Veröffentlichungstermine verfügbar.",
+    "release_schedule_source_item": "Folge {episode}: {value} (Quelldatum)",
+    "release_schedule_estimated_item": "Folge {episode}: ~{value} (geschätzt)",
+    "release_schedule_source_unknown": "Nächste Folge: {value} (Quelldatum)",
+    "release_schedule_estimated_unknown": "Nächste Folge: ~{value} (geschätzt)",
+    "release_schedule_estimate_note": "Geschätzte Termine gehen von einem wöchentlichen Rhythmus aus und können sich ändern.",
+    "episodes_aired": "Ausgestrahlte Folgen: {value}",
+    "episodes_total": "Folgen insgesamt: {value}",
+    "next_episode_numbered": "Nächste Folge #{episode}: {value}",
+    "next_episode_estimated": "Voraussichtlich nächste Folge: ~{value}",
+    "next_episode_estimated_numbered": "Voraussichtlich nächste Folge #{episode}: ~{value}"
   },
   "people": {
     "staff": "Mitarbeiter und Ersteller",

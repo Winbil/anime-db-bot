@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 
 from bots.telegram.card.views.renderer import anime_sections
 from core.models import AggregatedAnime, AnimeRecord, BroadcastSlot, EpisodeRecord
@@ -115,6 +115,35 @@ class TemporalAggregationTests(unittest.TestCase):
         self.assertEqual(
             _consensus_datetime(records, "next_episode_at"),
             datetime(2026, 4, 2, 12, 30, tzinfo=timezone.utc),
+        )
+
+    def test_datetime_consensus_treats_equal_instants_with_different_offsets_as_equal(
+        self,
+    ) -> None:
+        records = [
+            AnimeRecord(
+                source="AniList",
+                source_id="1",
+                next_episode_at="2026-11-06T14:00:00+00:00",
+            ),
+            AnimeRecord(
+                source="Shikimori",
+                source_id="2",
+                next_episode_at="2026-11-06T17:00:00+03:00",
+            ),
+            AnimeRecord(
+                source="Other",
+                source_id="3",
+                next_episode_at="2026-11-06T15:00:00+00:00",
+            ),
+        ]
+        self.assertEqual(
+            _consensus_datetime(records, "next_episode_at"),
+            datetime(2026, 11, 6, 14, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(
+            records[1].next_episode_at.utcoffset(),
+            timedelta(hours=3),
         )
 
     def test_direct_lookup_uses_typed_year(self) -> None:
