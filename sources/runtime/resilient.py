@@ -21,6 +21,7 @@ from core.models import (
     TrailerRecord,
 )
 from core.people_loading import PeopleBatch, PeopleManifest, without_portraits
+from core.runtime_metrics import get_runtime_metrics
 from core.source_errors import SourceError, SourceUnavailable, normalize_source_error
 from services.runtime.source_health import SourceHealthRegistry
 
@@ -75,16 +76,32 @@ async def _retry_call(
     health_key: str | None = None,
 ) -> T:
     key = health_key or source_name
-    is_probe = health.before_call(key, operation) if health is not None else False
+    metrics = get_runtime_metrics()
+    started = time.monotonic()
+    try:
+        is_probe = health.before_call(key, operation) if health is not None else False
+    except Exception:
+        if metrics is not None:
+            metrics.record_source_call(
+                key,
+                outcome="error",
+                duration_ms=(time.monotonic() - started) * 1000,
+            )
+        raise
     attempts = 1 if is_probe else _RETRY_ATTEMPTS
 
     last_error: BaseException | None = None
-    started = time.monotonic()
     for attempt in range(1, attempts + 1):
         try:
             result = await call()
             if health is not None:
                 health.record_success(key)
+            if metrics is not None:
+                metrics.record_source_call(
+                    key,
+                    outcome="success",
+                    duration_ms=(time.monotonic() - started) * 1000,
+                )
             logging.debug(
                 "Source call completed",
                 extra={
@@ -109,6 +126,12 @@ async def _retry_call(
                 error = _typed_error(exc, source_name, operation)
                 if health is not None:
                     health.record_failure(key, error)
+                if metrics is not None:
+                    metrics.record_source_call(
+                        key,
+                        outcome="error",
+                        duration_ms=(time.monotonic() - started) * 1000,
+                    )
                 logging.warning(
                     "Source call failed after retries",
                     extra={
@@ -131,6 +154,12 @@ async def _retry_call(
                 error = _typed_error(exc, source_name, operation)
                 if health is not None:
                     health.record_failure(key, error)
+                if metrics is not None:
+                    metrics.record_source_call(
+                        key,
+                        outcome="error",
+                        duration_ms=(time.monotonic() - started) * 1000,
+                    )
                 logging.warning(
                     "Source retry exceeds inline budget; failing fast",
                     extra={

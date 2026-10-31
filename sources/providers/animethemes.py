@@ -95,6 +95,7 @@ class AnimeThemesSource:
 
     name = ANIMETHEMES_DISPLAY_NAME
     display_name = ANIMETHEMES_DISPLAY_NAME
+    backend_key = "animethemes"
 
     def __init__(
         self,
@@ -192,8 +193,10 @@ class AnimeThemesSource:
         external_id: str,
     ) -> tuple[AnimeThemeEntry, ...] | None:
         cache_key = (site, external_id)
-        if cache_key in self._cache:
+        try:
             return self._cache[cache_key]
+        except KeyError:
+            pass
 
         await wait_for_upstream("animethemes", "themes")
         response = await http_request(

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import time
 from typing import Protocol
 
 from core.anime_themes import AnimeThemeEntry
 from core.identity import AnimeIdentity
+from core.runtime_metrics import get_runtime_metrics
 
 
 class AnimeThemeSource(Protocol):
@@ -49,7 +51,24 @@ class AnimeThemeService:
         if wanted <= 0 or not self.supports_identity(identity):
             return []
 
-        themes = await self.source.load_themes(identity)
+        metrics = get_runtime_metrics()
+        started = time.monotonic()
+        try:
+            themes = await self.source.load_themes(identity)
+        except Exception:
+            if metrics is not None:
+                metrics.record_source_call(
+                    "animethemes",
+                    outcome="error",
+                    duration_ms=(time.monotonic() - started) * 1000,
+                )
+            raise
+        if metrics is not None:
+            metrics.record_source_call(
+                "animethemes",
+                outcome="success",
+                duration_ms=(time.monotonic() - started) * 1000,
+            )
         result: list[AnimeThemeEntry] = []
         for kind in ("opening", "ending"):
             kind_values = [theme for theme in themes if theme.kind == kind]

@@ -144,7 +144,19 @@
     "source_health_state_open": "open",
     "source_health_state_half_open": "half-open",
     "source_health_probe_yes": "あり",
-    "source_health_probe_no": "なし"
+    "source_health_probe_no": "なし",
+    "status_title": "anime-db-bot ステータス",
+    "status_uptime": "稼働時間: {value}",
+    "status_process_note": "メトリクスは現在のプロセス内に保持され、再起動時にリセットされます。",
+    "status_sources": "ソース:",
+    "status_no_sources": "有効なソースがありません。",
+    "status_cache": "TTL キャッシュ:",
+    "status_cache_summary": "24時間ヒット率: {rate} · hit/miss/expired {hits}/{misses}/{expired}",
+    "status_cache_line": "{cache}: {rate} · アクセス {accesses}",
+    "status_load": "負荷:",
+    "status_window_line": "{window}: リクエスト {total} · ソース呼び出し {sources} · エラー {errors}",
+    "status_unavailable": "ランタイムメトリクスを利用できません。",
+    "status_source_line": "{source}: {state}{note} · {latency} · 呼び出し 1h/24h {calls} · エラー {errors}"
   },
   "rate_limit": {
     "too_many_requests": "エラー: Too Many Requests\nリクエストが多すぎます。{seconds} 秒後にもう一度お試しください。"

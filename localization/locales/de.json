@@ -144,7 +144,19 @@
     "source_health_state_open": "offen",
     "source_health_state_half_open": "halboffen",
     "source_health_probe_yes": "ja",
-    "source_health_probe_no": "nein"
+    "source_health_probe_no": "nein",
+    "status_title": "anime-db-bot Status",
+    "status_uptime": "Uptime: {value}",
+    "status_process_note": "Metriken gelten für den aktuellen Prozess und werden beim Neustart zurückgesetzt.",
+    "status_sources": "Quellen:",
+    "status_no_sources": "Keine aktiven Quellen gefunden.",
+    "status_cache": "TTL-Cache:",
+    "status_cache_summary": "24h Trefferquote: {rate} · Hit/Miss/Expired {hits}/{misses}/{expired}",
+    "status_cache_line": "{cache}: {rate} · Zugriffe {accesses}",
+    "status_load": "Last:",
+    "status_window_line": "{window}: Anfragen {total} · Quellenaufrufe {sources} · Fehler {errors}",
+    "status_unavailable": "Runtime-Metriken sind nicht verfügbar.",
+    "status_source_line": "{source}: {state}{note} · {latency} · Aufrufe 1h/24h {calls} · Fehler {errors}"
   },
   "rate_limit": {
     "too_many_requests": "Fehler: Zu viele Anfragen\nZu viele Anfragen. Versuchen Sie es in {seconds} Sekunden erneut."

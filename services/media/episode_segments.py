@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from statistics import median
 from typing import Protocol
 
 from core.episode_segments import AggregatedEpisodeSegment, EpisodeSegment
 from core.identity import AnimeIdentity
+from core.runtime_metrics import get_runtime_metrics
 
 SEGMENT_MERGE_TOLERANCE_SECONDS = 5.0
 _KIND_ORDER = {
@@ -152,11 +154,29 @@ class EpisodeSegmentService:
             raise ValueError(f"Unknown episode segment backend: {backend}")
         if not source.supports_identity(identity):
             return []
-        return await source.load_segments(
-            identity,
-            episode_number,
-            episode_length_seconds=episode_length_seconds,
-        )
+        metrics = get_runtime_metrics()
+        started = time.monotonic()
+        try:
+            result = await source.load_segments(
+                identity,
+                episode_number,
+                episode_length_seconds=episode_length_seconds,
+            )
+        except Exception:
+            if metrics is not None:
+                metrics.record_source_call(
+                    backend,
+                    outcome="error",
+                    duration_ms=(time.monotonic() - started) * 1000,
+                )
+            raise
+        if metrics is not None:
+            metrics.record_source_call(
+                backend,
+                outcome="success",
+                duration_ms=(time.monotonic() - started) * 1000,
+            )
+        return result
 
     async def load_all(
         self,

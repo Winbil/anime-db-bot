@@ -12,8 +12,10 @@ from core.image_search import (
     ImageSearchAvailability,
     ImageSearchInput,
     ImageSearchMatch,
+    ImageSearchQuotaExhausted,
 )
 from core.models import SearchCandidate, SearchResultSet
+from core.runtime_metrics import RuntimeMetricsRegistry, activate_runtime_metrics
 from services.search.image_quota import SQLiteImageSearchQuotaStore
 from services.search.image_service import ImageSearchService
 from sources.providers.image_search import (
@@ -146,6 +148,11 @@ class _FakeImageProvider:
 
     async def search(self, image):
         return list(self.matches)
+
+
+class _QuotaImageProvider(_FakeImageProvider):
+    async def search(self, image):
+        raise ImageSearchQuotaExhausted("quota exhausted")
 
 
 class _FakeDirectLookup:
@@ -291,6 +298,23 @@ class ImageSearchProviderHttpTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ImageSearchServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_runtime_metrics_distinguish_quota_limit_from_error(self) -> None:
+        metrics = RuntimeMetricsRegistry(clock=lambda: 100.0)
+        service = ImageSearchService(
+            (_QuotaImageProvider("trace_moe", "trace.moe", []),),
+            _FakeDirectLookup(),
+        )
+        with activate_runtime_metrics(metrics):
+            result = await service.search(
+                ImageSearchInput(content=b"image", content_type="image/png"),
+                ("trace_moe",),
+            )
+        self.assertIn("trace.moe", result.errors)
+        snapshot = metrics.source_window("trace_moe", 3600)
+        self.assertEqual(snapshot.calls, 1)
+        self.assertEqual(snapshot.errors, 0)
+        self.assertEqual(snapshot.limited, 1)
+
     async def test_both_sources_same_anilist_id_merge_into_one_candidate(self) -> None:
         left = ImageSearchMatch("trace_moe", "trace.moe", "130003", 0.96, episode="1")
         right = ImageSearchMatch(

@@ -8,6 +8,11 @@ from typing import Iterator
 from core.contracts import AnimeSearchProvider, AnimeSource
 from core.http_client import HttpClientPool, activate_http_pool
 from core.proxy_config import ProxySettings, load_proxy_settings
+from core.runtime_metrics import (
+    RuntimeMetricsRegistry,
+    RuntimeSourceDescriptor,
+    activate_runtime_metrics,
+)
 from core.settings import AppSettings, get_settings
 from core.user_agent_config import UserAgentSettings, load_user_agent_settings
 from core.source_keys import SourceKey
@@ -63,6 +68,7 @@ class AppContext:
     user_agent_settings: UserAgentSettings
     http: HttpClientPool
     source_health: SourceHealthRegistry
+    runtime_metrics: RuntimeMetricsRegistry
     user_settings_store: SQLiteUserSettingsStore
     ban_store: SQLiteBanStore
     image_search_quota_store: SQLiteImageSearchQuotaStore
@@ -86,6 +92,68 @@ class AppContext:
     direct_lookup: DirectIdLookupService
     image_search_service: ImageSearchService
 
+    def runtime_source_descriptors(self) -> tuple[RuntimeSourceDescriptor, ...]:
+        """Describe active runtime sources for admin diagnostics."""
+        result: dict[str, RuntimeSourceDescriptor] = {}
+
+        def add(source: object, *, prefer_backend: bool = False) -> None:
+            backend = getattr(source, "backend_key", None)
+            source_key = getattr(source, "source_key", None)
+            provider_key = getattr(source, "key", None)
+            raw_key = (
+                backend
+                if prefer_backend and backend
+                else source_key or backend or provider_key
+            )
+            raw_key = getattr(raw_key, "value", raw_key)
+            if not raw_key:
+                return
+            key = str(raw_key).strip().casefold()
+            status_display_names = {
+                "mal": "MAL (MyAnimeList)",
+                "jikan": "Jikan (MAL supplement)",
+            }
+            display_name = (
+                status_display_names.get(key)
+                or str(
+                    getattr(source, "display_name", None)
+                    or getattr(source, "name", None)
+                    or key
+                ).strip()
+            )
+            mode = str(getattr(source, "status_mode", "remote") or "remote")
+            note = getattr(source, "status_note", None)
+            db_path = getattr(source, "db_path", None)
+            if mode == "local" and db_path is not None and not db_path.is_file():
+                mode = "unavailable"
+                note = "SQLite missing"
+            descriptor = RuntimeSourceDescriptor(
+                key=key,
+                display_name=display_name,
+                mode=mode,
+                note=str(note).strip() if note else None,
+            )
+            previous = result.get(key)
+            if previous is None or (
+                previous.mode == "remote" and descriptor.mode != "remote"
+            ):
+                result[key] = descriptor
+
+        for search_provider in self.search_providers:
+            add(search_provider)
+        for metadata_source in self.sources:
+            add(metadata_source)
+        for episode_source in self.episode_service.sources:
+            add(episode_source, prefer_backend=True)
+        for segment_source in self.episode_segment_service.sources:
+            add(segment_source, prefer_backend=True)
+        add(self.anime_theme_service.source, prefer_backend=True)
+        for trailer_source in self.trailer_service.sources:
+            add(trailer_source, prefer_backend=True)
+        for image_provider in self.image_search_service.providers.values():
+            add(image_provider)
+        return tuple(result.values())
+
     @classmethod
     def create(
         cls,
@@ -101,6 +169,7 @@ class AppContext:
             failure_threshold=settings.source_health.failure_threshold,
             cooldown_seconds=settings.source_health.cooldown_seconds,
         )
+        runtime_metrics = RuntimeMetricsRegistry()
         user_settings_store = SQLiteUserSettingsStore(
             settings.storage.user_settings_db_path
         )
@@ -134,6 +203,7 @@ class AppContext:
             user_agent_settings=user_agent_settings,
             http=http,
             source_health=source_health,
+            runtime_metrics=runtime_metrics,
             user_settings_store=user_settings_store,
             ban_store=ban_store,
             image_search_quota_store=image_search_quota_store,
@@ -211,6 +281,7 @@ def activate_app_context(context: AppContext) -> Iterator[AppContext]:
     try:
         with (
             activate_http_pool(context.http),
+            activate_runtime_metrics(context.runtime_metrics),
             activate_user_settings_store(context.user_settings_store),
             activate_ban_store(context.ban_store),
             activate_rate_limiters(

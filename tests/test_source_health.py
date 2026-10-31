@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from core.identity import AnimeIdentity
+from core.runtime_metrics import RuntimeMetricsRegistry, activate_runtime_metrics
 from core.source_errors import SourceCircuitOpen, SourceUnavailable
 from services.runtime.source_health import SourceHealthRegistry
 from sources.runtime.resilient import (
@@ -92,6 +93,26 @@ class SourceHealthTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(snapshot.circuit_open)
         with self.assertRaises(SourceCircuitOpen):
             await source.get_details(AnimeIdentity({"mal": "1"}))
+
+    async def test_resilient_calls_feed_runtime_metrics_once_per_logical_call(
+        self,
+    ) -> None:
+        health = SourceHealthRegistry(failure_threshold=1, cooldown_seconds=30)
+        metrics = RuntimeMetricsRegistry(clock=lambda: 100.0)
+        source = resilient_source(_FailingSource(), health)
+
+        with (
+            activate_runtime_metrics(metrics),
+            patch("sources.runtime.resilient.asyncio.sleep", new=AsyncMock()),
+        ):
+            with self.assertRaises(SourceUnavailable):
+                await source.get_details(AnimeIdentity({"mal": "1"}))
+            with self.assertRaises(SourceCircuitOpen):
+                await source.get_details(AnimeIdentity({"mal": "1"}))
+
+        snapshot = metrics.source_window("health", 3600)
+        self.assertEqual(snapshot.calls, 2)
+        self.assertEqual(snapshot.errors, 2)
 
     async def test_search_provider_uses_shared_source_circuit(self) -> None:
         health = SourceHealthRegistry(failure_threshold=1, cooldown_seconds=30)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 from core.image_search import (
     ImageSearchAvailability,
@@ -11,6 +12,7 @@ from core.image_search import (
     ImageSearchResultSet,
 )
 from core.models import SearchCandidate
+from core.runtime_metrics import get_runtime_metrics
 from services.identity.direct_lookup import DirectIdLookupService
 
 
@@ -51,12 +53,33 @@ class ImageSearchService:
             return ImageSearchResultSet(items=[])
 
         async def run(key: str, provider):
+            metrics = get_runtime_metrics()
+            started = time.monotonic()
             try:
-                return key, provider.name, await provider.search(image), None
+                matches = await provider.search(image)
             except ImageSearchQuotaExhausted as exc:
+                if metrics is not None:
+                    metrics.record_source_call(
+                        key,
+                        outcome="limited",
+                        duration_ms=(time.monotonic() - started) * 1000,
+                    )
                 return key, provider.name, [], f"quota: {exc}"
             except Exception as exc:
+                if metrics is not None:
+                    metrics.record_source_call(
+                        key,
+                        outcome="error",
+                        duration_ms=(time.monotonic() - started) * 1000,
+                    )
                 return key, provider.name, [], f"{type(exc).__name__}: {exc}"
+            if metrics is not None:
+                metrics.record_source_call(
+                    key,
+                    outcome="success",
+                    duration_ms=(time.monotonic() - started) * 1000,
+                )
+            return key, provider.name, matches, None
 
         loaded = await asyncio.gather(
             *(run(key, provider) for key, provider in selected)

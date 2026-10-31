@@ -613,6 +613,8 @@ class AniSearchSource:
     display_name = ANISEARCH_SOURCE_NAME
     source_key = SourceKey.ANISEARCH
     backend_key = "anisearch"
+    status_mode = "limited"
+    status_note = "pacing 10s"
 
     def __init__(self, settings: SourceSettings | None = None) -> None:
         self._settings = _settings(settings)

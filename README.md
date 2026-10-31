@@ -325,6 +325,7 @@ A Jikan outage does not make official MAL search/metadata unavailable.
 
 ```text
 /users
+/status
 /source_health
 /ban <user_id> [seconds] [reason]
 /unban <user_id>
@@ -335,6 +336,8 @@ A Jikan outage does not make official MAL search/metadata unavailable.
 /mapping_confirm <token>
 /mapping_cancel <token>
 ```
+
+`/status` is the primary runtime diagnostic view for administrators. It summarizes active source state and observed latency, per-source requests/errors, TTL-cache hit rate, and total Telegram/source load over rolling 1h/5h/10h/24h windows. Metrics are privacy-safe and process-local, so they reset when the bot restarts. `/source_health` remains the lower-level circuit-breaker view.
 
 Mapping mutations are intentionally two-step. `/mapping_set` and `/mapping_delete` create a short-lived pending mutation; the database changes only after `/mapping_confirm <token>`. Audit history records the Telegram administrator responsible for the change.
 

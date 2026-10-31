@@ -39,6 +39,8 @@ class BahaAnimeSkipSegmentSource:
     name = BAHA_ANIME_SKIP_DISPLAY_NAME
     display_name = BAHA_ANIME_SKIP_DISPLAY_NAME
     backend_key = BAHA_ANIME_SKIP_BACKEND_KEY
+    status_mode = "local"
+    status_note = "SQLite"
 
     def __init__(
         self,

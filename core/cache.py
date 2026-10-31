@@ -6,6 +6,8 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Callable, Generic, TypeVar
 
+from core.runtime_metrics import record_cache_access
+
 K = TypeVar("K")
 V = TypeVar("V")
 
@@ -94,6 +96,7 @@ class BoundedTTLCache(Generic[K, V]):
     def __getitem__(self, key: K) -> V:
         entry = self._items.get(key)
         if entry is None:
+            record_cache_access(self.name, "miss")
             logging.debug(
                 "Cache miss",
                 extra={
@@ -106,6 +109,7 @@ class BoundedTTLCache(Generic[K, V]):
             raise KeyError(key)
         if entry.expires_at <= self._clock():
             self._items.pop(key, None)
+            record_cache_access(self.name, "expired")
             logging.debug(
                 "Cache entry expired",
                 extra={
@@ -117,6 +121,7 @@ class BoundedTTLCache(Generic[K, V]):
             )
             raise KeyError(key)
         self._items.move_to_end(key)
+        record_cache_access(self.name, "hit")
         logging.debug(
             "Cache hit",
             extra={
