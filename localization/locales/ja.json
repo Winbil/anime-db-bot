@@ -316,6 +316,7 @@
   },
   "genres": {
     "action": "アクション",
+    "action_comedy": "アクションコメディ",
     "adventure": "冒険",
     "avant_garde": "アバンギャルド",
     "award_winning": "受賞作",

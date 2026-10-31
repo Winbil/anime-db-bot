@@ -316,6 +316,7 @@
   },
   "genres": {
     "action": "Action",
+    "action_comedy": "Action Comedy",
     "adventure": "Adventure",
     "avant_garde": "Avant Garde",
     "award_winning": "Award Winning",

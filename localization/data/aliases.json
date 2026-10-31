@@ -1,6 +1,7 @@
 {
   "genres": {
     "action": "action",
+    "action comedy": "action_comedy",
     "экшен": "action",
     "боевик": "action",
     "adventure": "adventure",

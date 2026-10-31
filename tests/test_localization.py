@@ -115,6 +115,19 @@ class LocalizationCatalogTests(unittest.TestCase):
         self.assertEqual(canonical_genre("Action"), "Action")
         self.assertEqual(canonical_genre("Action", locale="en"), "Action")
         self.assertEqual(canonical_genre("Action", locale="ja"), "アクション")
+        self.assertEqual(canonical_genre_key("Action Comedy"), "action_comedy")
+        expected_action_comedy = {
+            "en": "Action Comedy",
+            "ru": "Комедийный экшен",
+            "ja": "アクションコメディ",
+            "de": "Action-Komödie",
+            "es": "Comedia de acción",
+            "fr": "Comédie d'action",
+            "it": "Commedia d'azione",
+        }
+        for locale, expected in expected_action_comedy.items():
+            with self.subTest(locale=locale):
+                self.assertEqual(canonical_genre("Action Comedy", locale=locale), expected)
 
     def test_kitsu_category_aliases_are_localized(self) -> None:
         expected = {
