@@ -74,11 +74,7 @@ def _episode_groups(items: list[EpisodeRecord]) -> list[_EpisodeGroup]:
     groups: list[_EpisodeGroup] = []
     for index, episode in enumerate(items):
         kind, season, cour = _episode_group_signature(episode)
-        key = (
-            "specials"
-            if kind == "specials"
-            else f"s{season or 0}c{cour or 0}:{kind}"
-        )
+        key = "specials" if kind == "specials" else f"s{season or 0}c{cour or 0}:{kind}"
         if groups and groups[-1].key == key:
             groups[-1].end = index
             continue
@@ -691,9 +687,7 @@ async def edit_episodes_view(
         nav_picker_index = view_page - selected_episode_group.start
         nav_displayed_episode = nav_picker_index + 1
         nav_display_total = selected_episode_group.count
-        nav_picker_route = (
-            f"apg~{backend}~{selected_episode_group.start}"
-        )
+        nav_picker_route = f"apg~{backend}~{selected_episode_group.start}"
 
     total_episodes = session.anime.episodes_total
     if not page.has_next and not session.anime.episode_release_schedule:
@@ -806,9 +800,7 @@ async def edit_episodes_view(
         return
 
     keyboard_segment_backends = (
-        segment_backends
-        if episode is None or episode.episode_kind == "regular"
-        else []
+        segment_backends if episode is None or episode.episode_kind == "regular" else []
     )
     keyboard = _episode_keyboard(
         token,
@@ -865,9 +857,7 @@ async def edit_episodes_view(
         return
 
     keyboard_segment_backends = (
-        segment_backends
-        if episode is None or episode.episode_kind == "regular"
-        else []
+        segment_backends if episode is None or episode.episode_kind == "regular" else []
     )
     keyboard = _episode_keyboard(
         token,

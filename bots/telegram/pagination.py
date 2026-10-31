@@ -76,9 +76,7 @@ def card_route_callback(token: str, route: str, index: int) -> str:
             raise ValueError("Invalid episode-group page-picker route") from exc
         if group_start < 0:
             raise ValueError("Invalid episode-group page-picker route")
-        return KeyedPageCallback(
-            "ap", token, parts[1], group_start + index
-        ).encode()
+        return KeyedPageCallback("ap", token, parts[1], group_start + index).encode()
 
     if kind == "pv" and len(parts) >= 4:
         try:
