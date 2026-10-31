@@ -4,15 +4,15 @@ import html
 
 from aiogram.types import InputRichMessage
 
+from bots.telegram.card.ui.selectors import ordered_mapping_items
 from bots.telegram.card.views.release_schedule import format_release_datetime
-from bots.telegram.card.views.titles import preferred_title_keys
 from bots.telegram.card.views.rendering import (
     _table_html,
     append_block,
     plain_text_to_rich_html,
     poster_html,
 )
-from bots.telegram.card.ui.selectors import ordered_mapping_items
+from bots.telegram.card.views.titles import preferred_title_keys
 from core.models import AggregatedAnime, BroadcastSlot
 from core.source_keys import SourceKey
 from core.source_names import MAL_SOURCE_NAME
@@ -60,11 +60,6 @@ _BLOCK_ACTIONS: tuple[tuple[tuple[str, str], ...], ...] = (
     ),
     (("popularity_button", "popularity"),),
     (("links_button", "links"),),
-)
-
-_DISCOVERY_ACTIONS: tuple[tuple[str, str], ...] = (
-    ("related_button", "related"),
-    ("recommendations_button", "recommendations"),
 )
 
 
@@ -320,6 +315,5 @@ def main_rich(
             block_html.append(f"<h3>{html.escape(title_value)}</h3>")
         block_html.append(_block_actions_html(token, actions, locale=locale))
 
-    block_html.append(_block_actions_html(token, _DISCOVERY_ACTIONS, locale=locale))
     title_html = f"<h2>{html.escape(display_anime_title(anime, locale))}</h2>"
     return InputRichMessage(html=poster_html(anime) + title_html + "".join(block_html))

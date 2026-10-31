@@ -3,7 +3,6 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bots.telegram.callbacks import KeyedPageCallback, SectionSourceCallback
-from bots.telegram.pagination import card_picker_callback
 from bots.telegram.card.ui.constants import (
     ALL_SOURCE_LABELS,
     SOURCE_SELECTABLE_SECTIONS,
@@ -13,6 +12,7 @@ from bots.telegram.card.ui.selectors import (
     ordered_mapping_items,
     source_section_options,
 )
+from bots.telegram.pagination import card_picker_callback
 from core.models import AggregatedAnime
 from localization import text
 
@@ -93,6 +93,20 @@ def navigation_keyboard(
     pagination_first: bool = False,
 ) -> InlineKeyboardMarkup | None:
     rows: list[list[InlineKeyboardButton]] = []
+
+    if current_section == "main":
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=text("card", "related_button", locale=locale),
+                    callback_data=f"av:{token}:related:0",
+                ),
+                InlineKeyboardButton(
+                    text=text("card", "recommendations_button", locale=locale),
+                    callback_data=f"av:{token}:recommendations:0",
+                ),
+            ]
+        )
 
     nav: list[InlineKeyboardButton] = []
     if page_count > 1 and current_section not in {"description", "links"}:
