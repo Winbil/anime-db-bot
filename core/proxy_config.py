@@ -19,6 +19,7 @@ PROXY_CONFIG_PROFILES = (
     "aniskip",
     "anime_skip",
     "animethemes",
+    "imdb",
     "skipdb",
     "trace_moe",
     "whatanimeisthis",

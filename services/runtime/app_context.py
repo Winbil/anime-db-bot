@@ -14,17 +14,17 @@ from core.runtime_metrics import (
     activate_runtime_metrics,
 )
 from core.settings import AppSettings, get_settings
-from core.user_agent_config import UserAgentSettings, load_user_agent_settings
 from core.source_keys import SourceKey
+from core.user_agent_config import UserAgentSettings, load_user_agent_settings
 from mappings.resolver import MappingResolver
-from services.users.bans import SQLiteBanStore, activate_ban_store
+from services.identity.aggregator import AnimeAggregator
+from services.identity.direct_lookup import DirectIdLookupService
+from services.identity.resolver import IdentityResolver
 from services.media.anime_themes import AnimeThemeService
 from services.media.characters import CharacterService
-from services.identity.direct_lookup import DirectIdLookupService
 from services.media.episode_segments import EpisodeSegmentService
 from services.media.episodes import EpisodeService
-from services.identity.resolver import IdentityResolver
-from services.identity.aggregator import AnimeAggregator
+from services.media.imdb import IMDbRatingService
 from services.media.people import PeopleProgressService
 from services.media.related import RelatedAnimeService
 from services.media.sections import (
@@ -32,25 +32,27 @@ from services.media.sections import (
     PopularityService,
     ScreenshotService,
 )
+from services.media.trailers import TrailerService
 from services.runtime.rate_limits import (
     PersonalRateLimiter,
     UpstreamRateLimiter,
     activate_rate_limiters,
 )
-from services.search.service import SearchService
+from services.runtime.source_health import SourceHealthRegistry
 from services.search.image_quota import SQLiteImageSearchQuotaStore
 from services.search.image_service import ImageSearchService
+from services.search.service import SearchService
+from services.users.bans import SQLiteBanStore, activate_ban_store
+from services.users.settings import (
+    SQLiteUserSettingsStore,
+    activate_user_settings_store,
+)
 from sources.providers.animethemes import AnimeThemesSource
 from sources.providers.image_search import (
     TraceMoeImageSearchProvider,
     WhatAnimeIsThisImageSearchProvider,
 )
-from services.runtime.source_health import SourceHealthRegistry
-from services.media.trailers import TrailerService
-from services.users.settings import (
-    SQLiteUserSettingsStore,
-    activate_user_settings_store,
-)
+from sources.providers.imdb import IMDbRatingsSource
 from sources.runtime.catalog import (
     get_episode_sources,
     get_search_provider_map,
@@ -91,6 +93,7 @@ class AppContext:
     description_service: DescriptionService
     people_progress_service: PeopleProgressService
     related_anime_service: RelatedAnimeService
+    imdb_rating_service: IMDbRatingService
     direct_lookup: DirectIdLookupService
     image_search_service: ImageSearchService
 
@@ -150,6 +153,7 @@ class AppContext:
         for segment_source in self.episode_segment_service.sources:
             add(segment_source, prefer_backend=True)
         add(self.anime_theme_service.source, prefer_backend=True)
+        add(self.imdb_rating_service.source, prefer_backend=True)
         for trailer_source in self.trailer_service.sources:
             add(trailer_source, prefer_backend=True)
         for image_provider in self.image_search_service.providers.values():
@@ -240,6 +244,11 @@ class AppContext:
             ),
             related_anime_service=RelatedAnimeService(
                 sources, identity_resolver.mapping_resolver
+            ),
+            imdb_rating_service=IMDbRatingService(
+                IMDbRatingsSource(settings.sources),
+                identity_resolver.mapping_resolver,
+                source_health,
             ),
             direct_lookup=direct_lookup,
             image_search_service=image_search_service,

@@ -28,6 +28,7 @@
 - **Persistent platform-scoped settings** — locale, known users и moderation state хранятся в SQLite.
 - **Семь языков UI** — английский является default/fallback; русский, японский, немецкий, испанский, французский и итальянский выбираются через `/settings`.
 - **Релизные данные и прогноз серий** — агрегируются возрастной рейтинг, статус выхода, количество вышедших/всего серий и дата следующей серии из источников; для выходящих TV-аниме с известным total все оставшиеся серии получают явно помеченный недельный прогноз.
+- **IMDb как supplement рейтинга** — IMDb добавляет только оценку, число голосов и ссылку на тайтл. Runtime умеет читать маленький локальный SQLite, отфильтрованный из официального `title.ratings.tsv.gz`, либо использовать лицензированный IMDb GraphQL API через AWS Data Exchange; metadata-source из IMDb не делаем.
 - **Production-oriented CI** — Python 3.11–3.14, Ruff, formatter, mypy scope, coverage gate и ShellCheck.
 
 ## Возможности источников
@@ -43,6 +44,8 @@
 | SkipDB (dormant) | — | — | — | — | — | — | — | — | — |
 
 Kitsu подключён как identity-native публичный JSON:API источник. Обычные read-only GET-запросы не требуют OAuth; подтверждённые Kitsu ID уже участвуют в `mappings.db`, а сам Kitsu возвращает прямые mappings к MAL/AniList/AniDB. Сейчас Kitsu даёт поиск, metadata, popularity, description, эпизоды и YouTube-трейлер при наличии. People/characters намеренно пока не заявлены как capability, потому что эти relationships у Kitsu часто неполные.
+
+IMDb намеренно не включён в таблицу metadata-capabilities: это только score supplement. IMDb ID принимается лишь по прямому однозначному mapping от anime-native peer (`mal`, `anilist`, `shikimori`, `kitsu`, `anidb`, `anisearch`); TVDB/TMDB/Simkl-подобные мосты для выбора IMDb-рейтинга не используются, потому что могут указывать на соседний фильм, сезон или franchise record. В карточку добавляются `IMDb: оценка · голоса` и ссылка IMDb, но IMDb не попадает в список metadata sources.
 
 AniDB опционален и включается только при настроенном `ANIDB_CLIENT`. Jikan **не является отдельной identity-базой**: это локальный backend MAL для данных, которых нет в официальном MAL API. Licensors для main card и lazy popularity statistics теперь используют разные local endpoints, поэтому score distribution больше не парсится на initial card path. AniSearch подключён как identity-native источник Database API через подтверждённые `anisearch` edges из mappings.db. Публичного query-search endpoint у AniSearch нет, поэтому он не добавляется в быстрый `/anime <title>` поиск. Так как AniSearch помещает ID и `/full` в одну строгую rate-limit группу, источник делает один cached `/full` запрос на тайтл, но не подмешивает heavy fields в initial aggregation; people/characters/episodes затем используют тот же payload без второго сетевого ожидания. Используются английская, японская, немецкая, испанская, французская и итальянская локализации AniSearch: локализованные названия/синонимы, synopsis, названия эпизодов, региональные licensors и voice credits. Без токена запросы ID-family дополнительно выдерживают документированный интервал 10 секунд (5 секунд с валидным токеном); synopsis от AniSearch всегда сопровождается требуемой прямой ссылкой на запись AniSearch. Поддержка SkipDB сохранена в кодовой базе как dormant IMDb-backed provider, но намеренно не зарегистрирована в runtime: текущее покрытие anime skip-segments слишком мало, чтобы показывать источник пользователю. Parser/settings/tests остаются на месте, чтобы SkipDB можно было быстро включить позже, если покрытие заметно вырастет. Данные SkipDB распространяются по ODbL 1.0 + reciprocity.
 
@@ -204,9 +207,22 @@ Runtime-логи разделены по назначению в `logs/YYYY.MM.D
 | `USER_SETTINGS_DB_PATH` | Нет | SQLite для user settings и known-user registry. |
 | `BANS_DB_PATH` | Нет | SQLite для moderation bans. |
 | `MAPPINGS_DB_PATH` | Нет | Runtime cross-ID mapping database. |
+| `IMDB_RATINGS_BACKEND` | Нет | Backend рейтинга IMDb: `auto`, `local`, `api` или `off`; default `auto`. |
+| `IMDB_RATINGS_DB_PATH` | Нет | Путь к локальному отфильтрованному IMDb ratings SQLite; default `data/imdb_ratings.sqlite3`. |
+| `IMDB_API_KEY` + Data Exchange/AWS IDs | Нет | Credentials опционального лицензированного IMDb GraphQL backend. |
 | `BAHA_ANIME_SKIP_DB_PATH` | Нет | Локальный SQLite-индекс таймкодов Baha Anime Skip; runtime бота не обращается к Bahamut/Baha для этого источника. |
 
 Не коммитьте `.env`, `.env.d/`, `.proxies.d/`, bot/access tokens, пароли, credentials прокси и другие приватные данные.
+
+### Локальный индекс IMDb ratings
+
+После появления `mappings.db` индекс строится явно:
+
+```bash
+python scripts/project.py imdb-index
+```
+
+Builder потоково читает официальный IMDb `title.ratings.tsv.gz`, оставляет только IMDb ID с прямым accepted mapping к anime-native peer и атомарно записывает `data/imdb_ratings.sqlite3`. Полный IMDb dataset на диске не сохраняется, а generated SQLite остаётся локальным/gitignored. Runtime делает только read-only lookup по уже подтверждённому `tt...`; поиска по названию IMDb и scraping fallback нет. Для лицензированного API-варианта используется `IMDB_RATINGS_BACKEND=api` (или `auto`) и IMDb/Data Exchange/AWS credentials из `.env.example.d/sources.env`. Использование non-commercial IMDb datasets подчиняется условиям IMDb.
 
 ### Локальный индекс Baha Anime Skip
 
@@ -240,7 +256,7 @@ url = "http://127.0.0.1:8080"
 
 Профили полностью независимы: `mal.toml` действует только на MAL, `anilist.toml` — только на AniList и т.д. Несколько включённых записей выбираются round-robin, а при сетевой/proxy-ошибке запрос пробует оставшиеся включённые прокси. Одинаковые URL разрешены, если у записей разные `name`, поэтому повторением одного endpoint можно намеренно увеличить его вес в ротации. `enabled = false` выключает либо весь профиль, либо конкретную запись. Если у профиля есть хотя бы один активный proxy, при отказе всех прокси **нет скрытого fallback на прямое соединение**; напрямую source ходит только когда активных proxy нет. Изменения proxy-конфигов применяются после перезапуска бота. Если в `telegram.toml` есть активные прокси, именно этот бот намеренно обходит настроенный локальный/общий `telegram-bot-api` и подключается к официальному `api.telegram.org` через свой proxy-pool — так прокси не влияет на другие боты, использующие тот же локальный сервер. `jikan.toml` тоже обрабатывается специально: Python → локальный Jikan остаётся direct, а выбранный proxy передаётся внутрь Jikan и применяется уже к его исходящему запросу в MyAnimeList.
 
-Фиксированные профили: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `skipdb`, `trace_moe`, `whatanimeisthis`. Посторонние TOML-файлы игнорируются. `.proxies.d/` gitignored, потому что в URL могут быть логин/пароль; `start.sh` выставляет каталогу mode `700`, известным файлам — `600`.
+Фиксированные профили: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `animethemes`, `imdb`, `skipdb`, `trace_moe`, `whatanimeisthis`. Посторонние TOML-файлы игнорируются. `.proxies.d/` gitignored, потому что в URL могут быть логин/пароль; `start.sh` выставляет каталогу mode `700`, известным файлам — `600`.
 
 ### AniDB
 
@@ -443,6 +459,7 @@ Pull requests приветствуются. Перед изменениями п
 - [Shikimori](https://shikimori.one/)
 - [AniDB](https://anidb.net/)
 - [AniSearch](https://www.anisearch.com/) — Database API metadata; attribution and synopsis-link requirements apply
+- [IMDb](https://www.imdb.com/) — rating/vote supplement через официальные datasets или лицензированный IMDb API; данные IMDb подчиняются условиям IMDb
 - [SkipDB](https://skipdb.tv/) — skip-segment data under ODbL 1.0 + reciprocity
 
 Cross-ID mapping строится из нескольких community datasets. Для каждого upstream service/dataset действуют его собственные условия использования, rate limits и требования к attribution.

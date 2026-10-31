@@ -244,7 +244,7 @@ class AppSettingsTests(unittest.TestCase):
                     encoding="utf-8",
                 )
             values = project_env_values(root)
-        self.assertEqual(len(values), 128)
+        self.assertEqual(len(values), 142)
         self.assertIn("BOT_TOKEN", values)
         self.assertIn("TELEGRAM_BOT_API_LOCAL_FILE_ROOT", values)
         self.assertIn("KITSU_API_URL", values)
@@ -253,6 +253,9 @@ class AppSettingsTests(unittest.TestCase):
         self.assertIn("IMAGE_SEARCH_DB_PATH", values)
         self.assertIn("ANIME_SKIP_CLIENT_ID", values)
         self.assertIn("ANIMETHEMES_API_URL", values)
+        self.assertIn("IMDB_RATINGS_BACKEND", values)
+        self.assertIn("IMDB_RATINGS_DB_PATH", values)
+        self.assertIn("IMDB_API_ENDPOINT", values)
         self.assertIn("BAHA_ANIME_SKIP_DB_PATH", values)
 
     def test_relative_paths_are_rooted_at_project(self) -> None:

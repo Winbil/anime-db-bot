@@ -4,8 +4,8 @@ import logging
 
 from aiogram.types import Message
 
-from bots.telegram.card.views.renderer import send_anime_view
 from bots.telegram.card.runtime.state import TelegramCardState
+from bots.telegram.card.views.renderer import send_anime_view
 from bots.telegram.people.loading import start_people_prefetch
 from core.models import SearchCandidate
 from localization import text
@@ -25,8 +25,9 @@ async def aggregate_and_send(
         await message.answer(text("search", "result_unavailable", locale=locale))
         return
 
+    context = get_app_context()
     try:
-        anime = await get_app_context().aggregator.aggregate(candidate)
+        anime = await context.aggregator.aggregate(candidate)
     except Exception as exc:
         logging.error(
             "Anime aggregation failed for %s: %s: %s",
@@ -37,6 +38,17 @@ async def aggregate_and_send(
         )
         await message.answer(text("search", "get_result_failed", locale=locale))
         return
+
+    try:
+        await context.imdb_rating_service.enrich(anime)
+    except Exception as exc:
+        logging.warning(
+            "IMDb rating supplement failed for %s: %s: %s",
+            anime.identity.describe(),
+            type(exc).__name__,
+            exc,
+            exc_info=True,
+        )
 
     token = state.remember_anime(anime, owner_user_id)
     start_people_prefetch(state, token, anime)

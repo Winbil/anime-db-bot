@@ -269,6 +269,18 @@ class SourceSettings:
     whatanimeisthis_guest_daily_limit: int
     whatanimeisthis_api_daily_limit: int
     image_search_max_bytes: int
+    imdb_ratings_backend: str
+    imdb_ratings_db_path: Path
+    imdb_api_endpoint: str
+    imdb_api_key: str
+    imdb_api_data_set_id: str
+    imdb_api_revision_id: str
+    imdb_api_asset_id: str
+    imdb_aws_access_key_id: str
+    imdb_aws_secret_access_key: str
+    imdb_aws_session_token: str
+    imdb_aws_region: str
+    imdb_request_timeout_seconds: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,6 +343,7 @@ class AppSettings:
             "animethemes": 30,
             "trace_moe": 30,
             "whatanimeisthis": 10,
+            "imdb": 30,
         }
         upstream_per_source = {
             source: _int(
@@ -365,6 +378,7 @@ class AppSettings:
             ("trace_moe", "quota"): 30,
             ("trace_moe", "image_search"): 20,
             ("whatanimeisthis", "image_search"): 10,
+            ("imdb", "ratings"): 30,
         }
         upstream_per_operation = {
             (source, operation): _int(
@@ -701,6 +715,37 @@ class AppSettings:
                 ),
                 image_search_max_bytes=_int(
                     values, "IMAGE_SEARCH_MAX_BYTES", 20 * 1024 * 1024, 1024
+                ),
+                imdb_ratings_backend=_raw(
+                    values, "IMDB_RATINGS_BACKEND", "auto"
+                ).casefold(),
+                imdb_ratings_db_path=_path(
+                    values, "IMDB_RATINGS_DB_PATH", "data/imdb_ratings.sqlite3"
+                ),
+                imdb_api_endpoint=_raw(
+                    values,
+                    "IMDB_API_ENDPOINT",
+                    "https://api-fulfill.dataexchange.us-east-1.amazonaws.com/v1",
+                ),
+                imdb_api_key=_raw(values, "IMDB_API_KEY"),
+                imdb_api_data_set_id=_raw(values, "IMDB_API_DATA_SET_ID"),
+                imdb_api_revision_id=_raw(values, "IMDB_API_REVISION_ID"),
+                imdb_api_asset_id=_raw(values, "IMDB_API_ASSET_ID"),
+                imdb_aws_access_key_id=(
+                    _raw(values, "IMDB_AWS_ACCESS_KEY_ID")
+                    or _raw(values, "AWS_ACCESS_KEY_ID")
+                ),
+                imdb_aws_secret_access_key=(
+                    _raw(values, "IMDB_AWS_SECRET_ACCESS_KEY")
+                    or _raw(values, "AWS_SECRET_ACCESS_KEY")
+                ),
+                imdb_aws_session_token=(
+                    _raw(values, "IMDB_AWS_SESSION_TOKEN")
+                    or _raw(values, "AWS_SESSION_TOKEN")
+                ),
+                imdb_aws_region=_raw(values, "IMDB_AWS_REGION", "us-east-1"),
+                imdb_request_timeout_seconds=_float(
+                    values, "IMDB_REQUEST_TIMEOUT_SECONDS", 15.0, 3.0
                 ),
             ),
             source_health=SourceHealthSettings(

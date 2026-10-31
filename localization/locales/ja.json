@@ -220,6 +220,7 @@
     "licensors": "ライセンサー: {value}",
     "franchise": "シリーズ: {value}",
     "average_score": "平均スコア: {score} (ソース: {count})",
+    "score_with_votes": "{source}: {score} · {votes}票",
     "rank": "ランキング: #{value}",
     "popularity": "人気順位: #{value}",
     "list_users": "ユーザーリスト登録数: {value}",

@@ -39,6 +39,8 @@ PROFILE_FILES = (
     "jikan.toml",
     "aniskip.toml",
     "anime_skip.toml",
+    "animethemes.toml",
+    "imdb.toml",
     "skipdb.toml",
     "trace_moe.toml",
     "whatanimeisthis.toml",
@@ -518,6 +520,13 @@ def update_baha_anime_skip(arguments: list[str]) -> int:
     return _run([str(venv_python()), str(script), *arguments], check=False).returncode
 
 
+def update_imdb_ratings(arguments: list[str]) -> int:
+    if _ensure_environment() != 0:
+        return 1
+    script = ROOT_DIR / "scripts" / "update-imdb-ratings.py"
+    return _run([str(venv_python()), str(script), *arguments], check=False).returncode
+
+
 def doctor() -> int:
     _info(
         f"Platform: {platform.system()} {platform.release()} ({platform.machine() or 'unknown-arch'})"
@@ -596,6 +605,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     baha_parser.add_argument("args", nargs=argparse.REMAINDER)
 
+    imdb_parser = sub.add_parser(
+        "imdb-index", help="Build the local anime-only IMDb ratings SQLite index."
+    )
+    imdb_parser.add_argument("args", nargs=argparse.REMAINDER)
+
     sub.add_parser("doctor", help="Check platform/runtime compatibility.")
     return parser
 
@@ -606,6 +620,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_mappings(raw_args[1:])
     if raw_args and raw_args[0] == "baha-index":
         return update_baha_anime_skip(raw_args[1:])
+    if raw_args and raw_args[0] == "imdb-index":
+        return update_imdb_ratings(raw_args[1:])
 
     args = build_parser().parse_args(raw_args)
     if args.command == "setup":
@@ -627,6 +643,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_mappings(args.args)
     if args.command == "baha-index":
         return update_baha_anime_skip(args.args)
+    if args.command == "imdb-index":
+        return update_imdb_ratings(args.args)
     if args.command == "doctor":
         return doctor()
     return _fail(f"Unknown command: {args.command}")

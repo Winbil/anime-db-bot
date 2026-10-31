@@ -220,6 +220,7 @@
     "licensors": "Licensors: {value}",
     "franchise": "Franchise: {value}",
     "average_score": "Average score: {score} (sources: {count})",
+    "score_with_votes": "{source}: {score} · {votes} votes",
     "rank": "Ranking position: #{value}",
     "popularity": "Popularity rank: #{value}",
     "list_users": "In user lists: {value}",

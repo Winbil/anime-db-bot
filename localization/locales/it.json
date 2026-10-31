@@ -220,6 +220,7 @@
     "licensors": "Licenziatari: {value}",
     "franchise": "Franchising: {value}",
     "average_score": "Punteggio medio: {score} (fonti: {count})",
+    "score_with_votes": "{source}: {score} · {votes} voti",
     "rank": "Posizione in classifica: #{value}",
     "popularity": "Grado di popolarità: #{value}",
     "list_users": "Negli elenchi utenti: {value}",

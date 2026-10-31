@@ -361,6 +361,7 @@ class AggregatedAnime:
     )
 
     scores: dict[str, float] = field(default_factory=dict)
+    score_votes: dict[str, int] = field(default_factory=dict)
     score_average: float | None = None
     score_sources_count: int = 0
     rank: int | None = None
