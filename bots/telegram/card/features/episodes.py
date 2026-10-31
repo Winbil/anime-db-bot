@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 from dataclasses import dataclass
 
@@ -1051,17 +1052,35 @@ async def edit_episodes_view(
     )
 
 
-def _episode_detail_html(detail_text: str) -> str:
+def _episode_detail_html(detail_text: str, *, locale: str) -> str:
     lines = detail_text.splitlines()
     if not lines:
         return ""
     caption = lines[0].strip()
-    body = [line.strip() for line in lines[1:] if line.strip()]
-    return (
-        _table_html(caption, body)
-        if caption and body
-        else plain_text_to_rich_html(detail_text)
+    body = lines[1:]
+    synopsis_header = text("card", "episode_synopsis", locale=locale).strip()
+    synopsis_index = next(
+        (index for index, line in enumerate(body) if line.strip() == synopsis_header),
+        None,
     )
+
+    table_lines = body if synopsis_index is None else body[:synopsis_index]
+    table_body = [line.strip() for line in table_lines if line.strip()]
+    rich_html = (
+        _table_html(caption, table_body)
+        if caption and table_body
+        else plain_text_to_rich_html("\n".join([caption, *table_lines]).strip())
+    )
+
+    if synopsis_index is not None:
+        synopsis_text = "\n".join(body[synopsis_index + 1 :]).strip()
+        if synopsis_text:
+            escaped_header = html.escape(synopsis_header)
+            escaped_synopsis = html.escape(synopsis_text).replace("\n", "<br>")
+            rich_html += f"<p><b>{escaped_header}</b><br>{escaped_synopsis}</p>"
+        else:
+            rich_html += f"<p><b>{html.escape(synopsis_header)}</b></p>"
+    return rich_html
 
 
 def _message_not_modified(error: TelegramBadRequest) -> bool:
@@ -1087,7 +1106,7 @@ async def _render_episode_view(
     content = "\n\n".join(content_blocks)
 
     rich_html = (
-        _episode_detail_html(detail_text)
+        _episode_detail_html(detail_text, locale=locale)
         if detail_as_table
         else plain_text_to_rich_html(detail_text)
     )
@@ -1312,7 +1331,7 @@ async def edit_episode_detail(
     try:
         await message.edit_text(
             rich_message=InputRichMessage(
-                html=_episode_detail_html(content)
+                html=_episode_detail_html(content, locale=locale)
                 if episode is not None
                 else plain_text_to_rich_html(content)
             ),
