@@ -432,6 +432,10 @@ Le Windows, `py -3 scripts\project.py ...` peut être utilisé à la place de `p
 
 GitHub Actions nécessite que la suite d'unités complète transmette **Ubuntu, macOS et Windows** pour Python 3.11, 3.12, 3.13 et 3.14. Chaque tâche matricielle exécute également le lanceur multiplateforme Doctor. Le travail de qualité Linux exécute en outre Ruff vérifications d'exactitude, des vérifications du formateur pour la fondation typée, mypy pour la fondation typée, des tests complets avec une porte de couverture d'au moins 70 % et ShellCheck pour les wrappers de shell Unix.
 
+## Contributeurs
+
+- [OpenAI Codex](https://github.com/apps/openai-codex) — application GitHub officielle de Codex ; développement et implémentation du projet assistés par IA.
+
 ## Contribuer
 
 Les contributions sont les bienvenues. Lisez [CONTRIBUTING.md](../CONTRIBUTING.md) avant d'ouvrir une pull request et suivez le projet [Code of Conduct](../CODE_OF_CONDUCT.md). Les rapports de bogues et les demandes de fonctionnalités doivent utiliser les formulaires de problème du référentiel.

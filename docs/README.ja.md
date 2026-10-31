@@ -395,6 +395,10 @@ Windows では `python` の代わりに `py -3` も利用できます。Unix の
 
 GitHub Actions では **Ubuntu、macOS、Windows** の各 OS で Python 3.11 / 3.12 / 3.13 / 3.14 の full unit suite 成功を必須とします。各 matrix job は cross-platform launcher doctor も実行します。Linux quality job では Ruff、typed foundation formatter check、mypy、full test suite + coverage gate `>=70%`、Unix wrapper 向け ShellCheck も実行します。
 
+## コントリビューター
+
+- [OpenAI Codex](https://github.com/apps/openai-codex) — Codex の公式 GitHub App。AI 支援によるプロジェクトの開発・実装に貢献。
+
 ## Contributing
 
 Pull request を歓迎します。変更を送る前に [CONTRIBUTING.md](../CONTRIBUTING.md) を読み、[Code of Conduct](../CODE_OF_CONDUCT.md) に従ってください。Bug report と feature request には repository の issue form を使用してください。

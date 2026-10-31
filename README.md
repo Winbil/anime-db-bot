@@ -432,6 +432,10 @@ On Windows, `py -3 scripts\project.py ...` may be used instead of `python`. The 
 
 GitHub Actions requires the full unit suite to pass on **Ubuntu, macOS, and Windows** for Python 3.11, 3.12, 3.13, and 3.14. Each matrix job also runs the cross-platform launcher doctor. The Linux quality job additionally runs Ruff correctness checks, formatter checks for the typed foundation, mypy for the typed foundation, full tests with a coverage gate of at least 70%, and ShellCheck for Unix shell wrappers.
 
+## Contributors
+
+- [OpenAI Codex](https://github.com/apps/openai-codex) — official Codex GitHub App; AI-assisted project development and implementation.
+
 ## Contributing
 
 Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request and follow the project [Code of Conduct](CODE_OF_CONDUCT.md). Bug reports and feature requests should use the repository issue forms.
