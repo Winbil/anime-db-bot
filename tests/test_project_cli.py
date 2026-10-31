@@ -67,6 +67,7 @@ class CrossPlatformProjectCliTests(unittest.TestCase):
             "status",
             "mappings",
             "baha-index",
+            "imdb-index",
             "doctor",
         ):
             with self.subTest(command=command):

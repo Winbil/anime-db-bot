@@ -30,6 +30,7 @@ The project is designed around explicit boundaries between **search**, **identit
 - **Release metadata and projections** — age rating, airing status, aired/total episode counts, and source-backed next-episode timestamps are aggregated; airing TV titles with known totals get clearly marked weekly estimates for all remaining episodes.
 - **Structured episode navigation** — when an episode source explicitly provides season, cour, or special-episode structure, the episode view adds source-backed Season/Cour/OVA-Specials groups with local pagination; ordinary flat episode lists stay unchanged and no season boundaries are guessed from episode numbers.
 - **Episode-integrated OP/ED metadata** — AnimeThemes is resolved conservatively through confirmed AniList/MAL IDs and enriches the existing episode/timestamp UI with OP/ED sequence, song, artist, episode scope, and direct theme-video links; it is not exposed as a separate card section and title-only matching is never used.
+- **IMDb rating supplement** — IMDb contributes only its rating, vote count, and title link. Runtime can use a tiny local SQLite index filtered from the official daily `title.ratings.tsv.gz` dataset or the licensed IMDb GraphQL API through AWS Data Exchange; IMDb is not treated as a peer metadata authority.
 - **Production-oriented checks** — Python 3.11–3.14 CI, Ruff, formatter checks, mypy scope, coverage gate, and ShellCheck.
 
 ## Source capabilities
@@ -47,6 +48,8 @@ The project is designed around explicit boundaries between **search**, **identit
 Related titles and recommendations are lazy cross-source capabilities. Relations currently use Shikimori, official MAL, AniList, Kitsu media relationships, AniDB `relatedanime`, and aniSearch `related.anime`; recommendations use Shikimori similar titles, official MAL, AniList, and AniDB `similaranime`. AniDB's XML `recommendations` block is intentionally not used here because it contains user-written recommendation text about the current anime, not references to other titles. Each Telegram section keeps both an aggregated `All sources` view and source-local views with one anime per page. References are enriched through direct confirmed `mappings.db` edges and deduplicated only by non-conflicting peer IDs; title-only merges are forbidden. Recommendation ordering favors titles supported by more independent sources and then source-local rank, rather than mixing incompatible upstream score scales.
 
 AnimeThemes is a read-only episode enrichment capability rather than a peer anime identity/metadata source, so it is intentionally absent from the table above. It is queried lazily only for episode views, uses confirmed AniList or MyAnimeList IDs, and never participates in title search or cross-source identity creation.
+
+IMDb is likewise intentionally absent from the metadata capability table. It is a score-only supplement: an IMDb title is accepted only through a direct, unambiguous mapping from an anime-native peer (`mal`, `anilist`, `shikimori`, `kitsu`, `anidb`, or `anisearch`). TVDB/TMDB/Simkl-style bridge IDs are not allowed to select the IMDb rating because those mappings may represent an adjacent movie, season, or franchise record. The supplement adds `IMDb: rating · votes`, an IMDb link, and one normalized 0–10 score to the aggregate consensus without adding IMDb to the card's metadata-source list.
 
 Kitsu is an identity-native public JSON:API source. Public read-only GET requests do not require OAuth credentials; confirmed Kitsu IDs already participate in `mappings.db`, and Kitsu can also return direct MAL/AniList/AniDB mappings with search results and metadata. Kitsu currently contributes search, metadata, popularity, descriptions, episodes, media relationships, and a YouTube trailer when available. People/characters are intentionally not advertised because those relationships are often sparse.
 
@@ -213,9 +216,22 @@ All runtime environment parsing is centralized in `core/settings.py`. New deploy
 | `BANS_DB_PATH` | No | SQLite path for moderation bans. |
 | `MAPPINGS_DB_PATH` | No | Runtime cross-ID mapping database. |
 | `ANIMETHEMES_API_URL` | No | AnimeThemes API endpoint used lazily to enrich episode OP/ED metadata and video links. |
+| `IMDB_RATINGS_BACKEND` | No | IMDb score backend: `auto`, `local`, `api`, or `off`; default `auto`. |
+| `IMDB_RATINGS_DB_PATH` | No | Local filtered IMDb ratings SQLite; default `data/imdb_ratings.sqlite3`. |
+| `IMDB_API_KEY` + Data Exchange/AWS IDs | No | Credentials for the optional licensed IMDb GraphQL backend. |
 | `BAHA_ANIME_SKIP_DB_PATH` | No | Local SQLite index for Baha Anime Skip timestamps; bot runtime never queries Bahamut/Baha for this source. |
 
 Do not commit `.env`, `.env.d/`, `.proxies.d/`, bot tokens, access tokens, passwords, proxy credentials, or private API credentials.
+
+### Local IMDb ratings index
+
+The local IMDb backend is built explicitly after `mappings.db` is available:
+
+```bash
+python scripts/project.py imdb-index
+```
+
+The builder streams IMDb's official `title.ratings.tsv.gz`, keeps only IMDb IDs that have a direct accepted mapping to an anime-native peer, and atomically writes `data/imdb_ratings.sqlite3`. The full IMDb dataset is not retained and the generated SQLite stays local/gitignored. Normal bot runtime only performs a read-only lookup by the already confirmed `tt...` ID; there is no IMDb title search or scraping fallback. The non-commercial IMDb datasets remain subject to IMDb's own terms. For licensed/API use, configure `IMDB_RATINGS_BACKEND=api` (or `auto`) plus the IMDb API/Data Exchange/AWS credentials from `.env.example.d/sources.env`.
 
 ### Local Baha Anime Skip index
 
@@ -249,7 +265,7 @@ url = "http://127.0.0.1:8080"
 
 Profiles are independent: `mal.toml` affects only MAL, `anilist.toml` only AniList, and so on. Higher `priority` values are tried before lower values regardless of TOML order. Entries tied at the same priority are round-robin selected; lower-priority tiers are used only as failover after the higher tier fails. Duplicate proxy URLs are allowed when they have distinct entry names, so repeating an endpoint can intentionally give it more rotation weight. `enabled = false` can disable either the whole profile or an individual entry. If at least one proxy entry is active for a profile, that profile does **not** silently fall back to the direct connection when all proxies fail; direct access is used only when the profile has no active proxies. Proxy configuration is loaded at process startup, so edits take effect after a bot restart. When `telegram.toml` has active proxies, this bot intentionally bypasses any configured local/shared `telegram-bot-api` endpoint and talks to the official `api.telegram.org` through its own proxy pool; this keeps the proxy scoped to this bot instead of changing other bots that share the local server. `jikan.toml` is also special: the Python hop to the loopback Jikan service stays direct, while the selected proxy is forwarded to the local Jikan service and applied to its outbound MyAnimeList scrape.
 
-Fixed runtime profiles are: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `animethemes`, `skipdb`, `trace_moe`, and `whatanimeisthis`. Stray TOML files are ignored. Proxy files may contain credentials and are gitignored; `start.sh` keeps `.proxies.d` at mode `700` and known profile files at mode `600`.
+Fixed runtime profiles are: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `animethemes`, `imdb`, `skipdb`, `trace_moe`, and `whatanimeisthis`. Stray TOML files are ignored. Proxy files may contain credentials and are gitignored; `start.sh` keeps `.proxies.d` at mode `700` and known profile files at mode `600`.
 
 ### Per-source User-Agent profiles
 
@@ -491,6 +507,7 @@ Licensed under the [Apache License 2.0](LICENSE). You may use, modify, and distr
 - [Shikimori](https://shikimori.one/)
 - [AniDB](https://anidb.net/)
 - [AniSearch](https://www.anisearch.com/) — Database API metadata; attribution and synopsis-link requirements apply
+- [IMDb](https://www.imdb.com/) — rating/vote supplement via the official datasets or licensed IMDb API; IMDb data remains subject to IMDb terms
 - [SkipDB](https://skipdb.tv/) — skip-segment data under ODbL 1.0 + reciprocity
 
 Cross-ID mapping data is assembled from multiple community datasets. Each upstream service and dataset remains subject to its own terms, rate limits, and attribution requirements.

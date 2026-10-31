@@ -220,6 +220,7 @@
     "licensors": "Лицензиаты: {value}",
     "franchise": "Франшиза: {value}",
     "average_score": "Средняя оценка: {score} (источников: {count})",
+    "score_with_votes": "{source}: {score} · {votes} голосов",
     "rank": "Место в рейтинге: #{value}",
     "popularity": "Место по популярности: #{value}",
     "list_users": "В списках пользователей: {value}",

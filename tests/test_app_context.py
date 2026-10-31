@@ -3,24 +3,24 @@ from __future__ import annotations
 import unittest
 
 from bots.telegram.card.runtime import service as card_service
-from services.users import bans as bans_service
-from services.runtime import rate_limits as rate_limits_service
-from services.users import settings as user_settings_service
 from core.identity import AnimeIdentity
 from core.runtime_metrics import get_runtime_metrics
 from core.settings import AppSettings
 from mappings import database as mapping_database_module
 from mappings import resolver as mapping_resolver_module
+from services.runtime import rate_limits as rate_limits_service
 from services.runtime.app_context import (
     AppContext,
     activate_app_context,
     get_app_context,
 )
-from services.users.bans import get_ban_store
 from services.runtime.rate_limits import (
     get_personal_rate_limiter,
     get_upstream_rate_limiter,
 )
+from services.users import bans as bans_service
+from services.users import settings as user_settings_service
+from services.users.bans import get_ban_store
 from services.users.settings import get_user_settings_store
 
 
@@ -47,6 +47,11 @@ class AppContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(context.search_service.provider_name)
         self.assertIsNotNone(context.people_progress_service)
         self.assertIsNotNone(context.related_anime_service)
+        self.assertIsNotNone(context.imdb_rating_service)
+        self.assertIs(
+            context.imdb_rating_service._mapping_resolver,
+            context.identity_resolver.mapping_resolver,
+        )
         self.assertIs(
             context.related_anime_service._mapping_resolver,
             context.identity_resolver.mapping_resolver,
@@ -72,6 +77,7 @@ class AppContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("anilist", descriptor_keys)
         self.assertIn("aniskip", descriptor_keys)
         self.assertIn("animethemes", descriptor_keys)
+        self.assertIn("imdb", descriptor_keys)
         self.assertIn("trace_moe", descriptor_keys)
         self.assertIn("whatanimeisthis", descriptor_keys)
         self.assertEqual(

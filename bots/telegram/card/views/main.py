@@ -9,6 +9,7 @@ from bots.telegram.card.views.release_schedule import format_release_datetime
 from bots.telegram.card.views.rendering import (
     _table_html,
     append_block,
+    format_number,
     plain_text_to_rich_html,
     poster_html,
 )
@@ -260,7 +261,20 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
             )
         )
     for source, score in ordered_mapping_items(anime.scores, anime.sources):
-        score_lines.append(f"{source}: {float(score):g}")
+        votes = anime.score_votes.get(source)
+        if votes is not None:
+            score_lines.append(
+                text(
+                    "card",
+                    "score_with_votes",
+                    locale=locale,
+                    source=source,
+                    score=f"{float(score):g}",
+                    votes=format_number(votes),
+                )
+            )
+        else:
+            score_lines.append(f"{source}: {float(score):g}")
 
     source_lines: list[str] = []
     if anime.sources:

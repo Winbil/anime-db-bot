@@ -216,6 +216,7 @@
     "licensors": "Lizenzgeber: {value}",
     "franchise": "Franchise: {value}",
     "average_score": "Durchschnittliche Punktzahl: {score} (Quellen: {count})",
+    "score_with_votes": "{source}: {score} · {votes} Stimmen",
     "rank": "Ranking-Position: #{value}",
     "popularity": "Beliebtheitsrang: #{value}",
     "list_users": "In Benutzerlisten: {value}",

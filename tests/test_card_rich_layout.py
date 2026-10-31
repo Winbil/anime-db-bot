@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import unittest
 
+from bots.telegram.card.ui.selectors import source_section_sources
 from bots.telegram.card.views.renderer import (
     anime_sections,
     main_rich,
     rich_view,
     source_section_text,
 )
-from bots.telegram.card.ui.selectors import source_section_sources
 from core.models import (
     AggregatedAnime,
     BroadcastSlot,
@@ -104,6 +104,19 @@ class CardRichLayoutTests(unittest.TestCase):
                 ]
             },
         )
+
+    def test_imdb_score_renders_vote_count_without_becoming_metadata_source(
+        self,
+    ) -> None:
+        anime = self._sample()
+        anime.scores["IMDb"] = 8.4
+        anime.score_votes["IMDb"] = 123456
+        anime.score_average = 8.53
+        anime.score_sources_count = 3
+        anime.urls["IMDb"] = "https://www.imdb.com/title/tt1234567/"
+        main_text = anime_sections(anime, locale="ru")["main"]
+        self.assertIn("IMDb: 8.4 · 123 456 голосов", main_text)
+        self.assertNotIn("IMDb", anime.sources)
 
     def test_main_rich_places_actions_under_their_data_categories(self) -> None:
         anime = self._sample()
