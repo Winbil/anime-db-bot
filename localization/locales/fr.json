@@ -243,6 +243,7 @@
     "episodes_load_failed": "Impossible de charger les épisodes à partir des sources disponibles.",
     "episodes_page": "Page {value}",
     "episode_untitled": "Sans titre",
+    "episode_title": "Titre: {value}",
     "episode_date": "Diffusé : {value}",
     "episode_score": "Score de l'épisode : {value}",
     "episode_filler": "Filler",

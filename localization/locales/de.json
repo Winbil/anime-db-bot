@@ -243,6 +243,7 @@
     "episodes_load_failed": "Episoden aus den verfügbaren Quellen konnten nicht geladen werden.",
     "episodes_page": "Seite {value}",
     "episode_untitled": "Ohne Titel",
+    "episode_title": "Titel: {value}",
     "episode_date": "Ausstrahlung: {value}",
     "episode_score": "Episodenmusik: {value}",
     "episode_filler": "Füller",

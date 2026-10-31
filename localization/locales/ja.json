@@ -247,6 +247,7 @@
     "episodes_load_failed": "利用可能なソースからエピソードを読み込めませんでした。",
     "episodes_page": "ページ {value}",
     "episode_untitled": "タイトル未定",
+    "episode_title": "タイトル: {value}",
     "episode_date": "放送日: {value}",
     "episode_score": "エピソード評価: {value}",
     "episode_filler": "フィラー",

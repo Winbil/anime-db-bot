@@ -4,6 +4,7 @@ import html
 
 from aiogram.types import InputRichMessage
 
+from bots.telegram.card.views.release_schedule import format_release_datetime
 from bots.telegram.card.views.titles import preferred_title_keys
 from bots.telegram.card.views.rendering import (
     _table_html,
@@ -171,7 +172,9 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
                         key,
                         locale=locale,
                         episode=next_projection.episode_number,
-                        value=next_projection.airs_at.isoformat(),
+                        value=format_release_datetime(
+                            next_projection.airs_at, locale=locale
+                        ),
                     )
                 )
             else:
@@ -185,7 +188,9 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
                         "card",
                         key,
                         locale=locale,
-                        value=next_projection.airs_at.isoformat(),
+                        value=format_release_datetime(
+                            next_projection.airs_at, locale=locale
+                        ),
                     )
                 )
     if not anime.episode_release_schedule and anime.next_episode_at:
@@ -196,7 +201,7 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
                     "next_episode_numbered",
                     locale=locale,
                     episode=anime.next_episode_number,
-                    value=anime.next_episode_at.isoformat(),
+                    value=format_release_datetime(anime.next_episode_at, locale=locale),
                 )
             )
         else:
@@ -205,7 +210,7 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
                     "card",
                     "next_episode",
                     locale=locale,
-                    value=anime.next_episode_at.isoformat(),
+                    value=format_release_datetime(anime.next_episode_at, locale=locale),
                 )
             )
     if anime.broadcasts:

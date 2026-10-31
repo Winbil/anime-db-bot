@@ -247,6 +247,7 @@
     "episodes_load_failed": "Не удалось загрузить серии из доступных источников.",
     "episodes_page": "Стр. {value}",
     "episode_untitled": "Без названия",
+    "episode_title": "Название: {value}",
     "episode_date": "Дата выхода: {value}",
     "episode_score": "Оценка серии: {value}",
     "episode_filler": "Филлер",

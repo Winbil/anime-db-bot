@@ -5,11 +5,16 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import InlineKeyboardMarkup
+
 from bots.telegram.card.features.episodes import (
+    _episode_detail_html,
     _episode_detail_text,
     _episode_keyboard,
     _episode_release_projection_text,
     _episode_summary_lines,
+    _render_episode_view,
     _view_slice,
     edit_episodes_view,
     resolve_backend_selector,
@@ -150,7 +155,12 @@ class EpisodeBackendTests(unittest.TestCase):
         self.assertNotIn("S1E1", "\n".join(summary))
         detail = _episode_detail_text(item, locale="ru", source_name="Kitsu")
         self.assertIn("Серия 1 — Kitsu", detail)
+        self.assertIn("Название: Без названия", detail)
         self.assertNotIn("S1E1", detail)
+        rich = _episode_detail_html(detail)
+        self.assertIn("<table", rich)
+        self.assertIn("<caption><b>Серия 1 — Kitsu</b></caption>", rich)
+        self.assertIn('<th align="left" valign="top">Название</th>', rich)
 
     def test_episode_keyboard_separates_episode_and_timestamp_sources(self) -> None:
         service = EpisodeService(
@@ -215,7 +225,38 @@ class _CaptureMessage:
         self.calls.append({"answer_args": args, **kwargs})
 
 
+class _NotModifiedMessage:
+    def __init__(self) -> None:
+        self.edit_calls = 0
+        self.answer_calls = 0
+
+    async def edit_text(self, **kwargs) -> None:
+        self.edit_calls += 1
+        raise TelegramBadRequest(
+            method=None,
+            message="Bad Request: message is not modified: specified new message content",
+        )
+
+    async def answer(self, *args, **kwargs) -> None:
+        self.answer_calls += 1
+
+
 class EpisodeProjectionUiTests(unittest.IsolatedAsyncioTestCase):
+    async def test_message_not_modified_does_not_fall_back_to_plain_text(self) -> None:
+        message = _NotModifiedMessage()
+        await _render_episode_view(
+            message,
+            detail_text="Серия 1 — AniDB\n\nНазвание: Test",
+            projection_text="",
+            timecode_plain="",
+            timecode_html="",
+            keyboard=InlineKeyboardMarkup(inline_keyboard=[]),
+            locale="ru",
+            detail_as_table=True,
+        )
+        self.assertEqual(message.edit_calls, 1)
+        self.assertEqual(message.answer_calls, 0)
+
     async def test_future_projection_keeps_one_episode_per_page_and_pagination(
         self,
     ) -> None:
@@ -411,8 +452,15 @@ class EpisodeProjectionUiTests(unittest.IsolatedAsyncioTestCase):
                 backend="jikan",
             )
 
-        html = message.calls[0]["rich_message"].html or ""
-        self.assertLess(html.index("График выхода серий"), html.index("⏱ Все"))
+        self.assertEqual(len(message.calls), 2)
+        first_html = message.calls[0]["rich_message"].html or ""
+        final_html = message.calls[-1]["rich_message"].html or ""
+        self.assertIn("<table", first_html)
+        self.assertIn("График выхода серий", first_html)
+        self.assertNotIn("⏱ Все", first_html)
+        self.assertLess(
+            final_html.index("График выхода серий"), final_html.index("⏱ Все")
+        )
 
     def test_projection_text_is_scoped_to_requested_episode(self) -> None:
         first = datetime(2026, 11, 6, 14, 0, tzinfo=timezone.utc)

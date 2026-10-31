@@ -243,6 +243,7 @@
     "episodes_load_failed": "No se pudieron cargar episodios de las fuentes disponibles.",
     "episodes_page": "Página {value}",
     "episode_untitled": "Sin título",
+    "episode_title": "Título: {value}",
     "episode_date": "Emitido: {value}",
     "episode_score": "Puntuación del episodio: {value}",
     "episode_filler": "Relleno",

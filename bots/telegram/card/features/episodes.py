@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -425,6 +426,12 @@ async def edit_episodes_view(
     ):
         session.episode_segment_backend = "all"
 
+    # Claim this card render before any network wait. A later click increments the
+    # generation and makes this invocation stale, so a slow AniDB/Baha request
+    # cannot overwrite a newer source or episode page.
+    session.episode_render_generation += 1
+    generation = session.episode_render_generation
+
     view_page = max(0, int(view_page))
     upstream_page, offset = _view_slice(view_page)
 
@@ -444,6 +451,8 @@ async def edit_episodes_view(
     try:
         page = await load_page(upstream_page)
     except Exception:
+        if session.episode_render_generation != generation:
+            return
         logging.exception("Could not load %s episode list", source_name)
         await message.edit_text(
             text=text("card", "episodes_load_failed", locale=locale),
@@ -458,6 +467,9 @@ async def edit_episodes_view(
                 ]
             ),
         )
+        return
+
+    if session.episode_render_generation != generation:
         return
 
     source_is_empty = upstream_page == 1 and not page.items and not page.has_next
@@ -527,11 +539,12 @@ async def edit_episodes_view(
         if detailed is not None:
             episode = detailed
 
+    if session.episode_render_generation != generation:
+        return
+
     projection_text = _episode_release_projection_text(
         session.anime, requested_episode_number, locale=locale
     )
-    timecode_plain = ""
-    timecode_html = ""
     selected_segment_backend = session.episode_segment_backend
     if episode is None:
         if projection is None:
@@ -547,31 +560,18 @@ async def edit_episodes_view(
                         source=source_name,
                     ),
                     "",
-                    text("card", "episode_untitled", locale=locale),
+                    text(
+                        "card",
+                        "episode_title",
+                        locale=locale,
+                        value=text("card", "episode_untitled", locale=locale),
+                    ),
                 ]
             )
     else:
         detail_text = _episode_detail_text(
             episode, locale=locale, source_name=source_name
         )
-        (
-            timecode_plain,
-            timecode_html,
-            segment_backends,
-            selected_segment_backend,
-        ) = await _episode_timecodes(
-            session,
-            episode_number=view_page + 1,
-            episode_length_seconds=episode.duration_seconds,
-            locale=locale,
-        )
-
-    content_blocks = [detail_text]
-    if projection_text:
-        content_blocks.append(projection_text)
-    if timecode_plain:
-        content_blocks.append(timecode_plain)
-    content = "\n\n".join(content_blocks)
 
     keyboard = _episode_keyboard(
         token,
@@ -589,15 +589,126 @@ async def edit_episodes_view(
         segment_service=segment_service,
     )
 
+    # Render episode metadata and the release projection immediately. Timestamp
+    # providers are independent and can be much slower (notably Baha fallback),
+    # so they must not block the first useful frame of the episode page.
+    await _render_episode_view(
+        message,
+        detail_text=detail_text,
+        projection_text=projection_text,
+        timecode_plain="",
+        timecode_html="",
+        keyboard=keyboard,
+        locale=locale,
+        detail_as_table=episode is not None or projection is not None,
+    )
+
+    if episode is None or not segment_backends:
+        return
+
+    (
+        timecode_plain,
+        timecode_html,
+        segment_backends,
+        selected_segment_backend,
+    ) = await _episode_timecodes(
+        session,
+        episode_number=view_page + 1,
+        episode_length_seconds=episode.duration_seconds,
+        locale=locale,
+    )
+
+    # A newer episode/source click owns the card now. Do not let this older,
+    # slower timestamp request overwrite the current page when it finally ends.
+    if session.episode_render_generation != generation:
+        return
+
+    keyboard = _episode_keyboard(
+        token,
+        backends=backends,
+        backend=backend,
+        segment_backends=segment_backends,
+        segment_backend=selected_segment_backend,
+        view_page=view_page,
+        total_episodes=total_episodes,
+        has_prev=has_prev,
+        current_episode=0 if source_is_empty else None,
+        has_next=has_next,
+        locale=locale,
+        service=service,
+        segment_service=segment_service,
+    )
+    await _render_episode_view(
+        message,
+        detail_text=detail_text,
+        projection_text=projection_text,
+        timecode_plain=timecode_plain,
+        timecode_html=timecode_html,
+        keyboard=keyboard,
+        locale=locale,
+        detail_as_table=True,
+    )
+
+
+def _episode_detail_html(detail_text: str) -> str:
+    lines = detail_text.splitlines()
+    if not lines:
+        return ""
+    caption = lines[0].strip()
+    body = [line.strip() for line in lines[1:] if line.strip()]
+    return (
+        _table_html(caption, body)
+        if caption and body
+        else plain_text_to_rich_html(detail_text)
+    )
+
+
+def _message_not_modified(error: TelegramBadRequest) -> bool:
+    return "message is not modified" in str(error).casefold()
+
+
+async def _render_episode_view(
+    message: Message,
+    *,
+    detail_text: str,
+    projection_text: str,
+    timecode_plain: str,
+    timecode_html: str,
+    keyboard: InlineKeyboardMarkup,
+    locale: str,
+    detail_as_table: bool,
+) -> None:
+    content_blocks = [detail_text]
+    if projection_text:
+        content_blocks.append(projection_text)
+    if timecode_plain:
+        content_blocks.append(timecode_plain)
+    content = "\n\n".join(content_blocks)
+
+    rich_html = (
+        _episode_detail_html(detail_text)
+        if detail_as_table
+        else plain_text_to_rich_html(detail_text)
+    )
+    if projection_text:
+        rich_html += plain_text_to_rich_html(projection_text)
+    if timecode_html:
+        rich_html += timecode_html
     try:
-        rich_html = plain_text_to_rich_html(detail_text)
-        if projection_text:
-            rich_html += plain_text_to_rich_html(projection_text)
-        if timecode_html:
-            rich_html += timecode_html
         await message.edit_text(
             rich_message=InputRichMessage(html=rich_html),
             reply_markup=keyboard,
+        )
+    except TelegramBadRequest as exc:
+        if _message_not_modified(exc):
+            return
+        logging.exception("Rich episode edit failed; falling back to text")
+        await edit_standard_text(
+            message,
+            content,
+            reply_markup=keyboard,
+            locale=locale,
+            limit=3900,
         )
     except Exception:
         logging.exception("Rich episode edit failed; falling back to text")
@@ -633,7 +744,12 @@ def _episode_detail_text(
             source=source_name,
         ),
         "",
-        _episode_title(episode, locale),
+        text(
+            "card",
+            "episode_title",
+            locale=locale,
+            value=_episode_title(episode, locale),
+        ),
     ]
     primary_title = _episode_title(episode, locale)
     other_titles: list[str] = []
@@ -787,8 +903,22 @@ async def edit_episode_detail(
 
     try:
         await message.edit_text(
-            rich_message=InputRichMessage(html=plain_text_to_rich_html(content)),
+            rich_message=InputRichMessage(
+                html=_episode_detail_html(content)
+                if episode is not None
+                else plain_text_to_rich_html(content)
+            ),
             reply_markup=keyboard,
+        )
+    except TelegramBadRequest as exc:
+        if _message_not_modified(exc):
+            return
+        await edit_standard_text(
+            message,
+            content,
+            reply_markup=keyboard,
+            locale=locale,
+            limit=3900,
         )
     except Exception:
         await edit_standard_text(

@@ -74,7 +74,7 @@ class TypedTemporalModelTests(unittest.TestCase):
         self.assertEqual(episode.aired_at, PartialDate(2026, 4, 1))
         self.assertEqual(broadcast.time, time(20, 0))
 
-    def test_renderer_keeps_existing_iso_visible_format(self) -> None:
+    def test_renderer_uses_human_readable_release_datetime(self) -> None:
         anime = AggregatedAnime(
             title="Temporal",
             aired_on="2026-04",
@@ -84,7 +84,8 @@ class TypedTemporalModelTests(unittest.TestCase):
         rendered = anime_sections(anime, locale="ru")["main"]
         self.assertIn("2026-04", rendered)
         self.assertIn("2026-09-16", rendered)
-        self.assertIn("2026-04-02T12:30:00+00:00", rendered)
+        self.assertIn("2 апреля 2026, 12:30 (UTC)", rendered)
+        self.assertNotIn("2026-04-02T12:30:00+00:00", rendered)
 
 
 class TemporalAggregationTests(unittest.TestCase):

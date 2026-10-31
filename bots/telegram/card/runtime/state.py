@@ -20,6 +20,7 @@ class AnimeCardSession:
     episode_backend: str | None = None
     episode_view_page: int = 0
     episode_segment_backend: str = "all"
+    episode_render_generation: int = 0
     trailers_loaded: bool = False
     trailers_by_source: dict[str, list[TrailerRecord]] = field(default_factory=dict)
     trailer_key_by_source: dict[str, str] = field(default_factory=dict)
