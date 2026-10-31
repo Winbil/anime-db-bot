@@ -394,6 +394,10 @@ python scripts/project.py doctor
 
 GitHub Actions требует успешного прохождения полного unit suite на **Ubuntu, macOS и Windows** для Python 3.11, 3.12, 3.13 и 3.14. Каждый matrix job также запускает cross-platform launcher doctor. Linux quality job дополнительно запускает Ruff, formatter check typed foundation, mypy typed foundation, полный suite с coverage gate `>=70%` и ShellCheck для Unix-wrapper'ов.
 
+## Контрибьюторы
+
+- [OpenAI Codex](https://github.com/apps/openai-codex) — официальный GitHub App Codex; помощь в разработке и реализации проекта с использованием ИИ.
+
 ## Участие в разработке
 
 Pull requests приветствуются. Перед изменениями прочитайте [CONTRIBUTING.md](../CONTRIBUTING.md) и соблюдайте [Code of Conduct](../CODE_OF_CONDUCT.md). Для bug reports и feature requests используйте issue forms репозитория.

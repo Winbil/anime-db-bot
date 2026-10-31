@@ -432,6 +432,10 @@ Bei Windows kann `py -3 scripts\project.py ...` anstelle von `python` verwendet 
 
 Für GitHub Aktionen ist die vollständige Einheitensuite erforderlich, um **Ubuntu, macOS und Windows** für Python 3.11, 3.12, 3.13 und 3.14 weiterzugeben. Jeder Matrixjob führt auch den plattformübergreifenden Launcher Doctor aus. Der Linux-Qualitätsjob führt zusätzlich Ruff-Korrektheitsprüfungen, Formatterprüfungen für die typisierte Grundlage, Mypy für die typisierte Grundlage, vollständige Tests mit einem Coverage Gate von mindestens 70 % und ShellCheck für Unix-Shell-Wrapper durch.
 
+## Mitwirkende
+
+- [OpenAI Codex](https://github.com/apps/openai-codex) — offizielle GitHub-App von Codex; KI-gestützte Entwicklung und Implementierung des Projekts.
+
 ## Mitwirken
 
 Beiträge sind willkommen. Lesen Sie [CONTRIBUTING.md](../CONTRIBUTING.md), bevor Sie eine Pull-Anfrage öffnen, und befolgen Sie den Projekt-[Verhaltenskodex](../CODE_OF_CONDUCT.md). Für Fehlerberichte und Funktionsanfragen sollten die Repository-Problemformulare verwendet werden.
