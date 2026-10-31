@@ -6,14 +6,15 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from bots.telegram.card.features.episodes import (
-    _episode_release_projection_text,
-    edit_episodes_view,
     _episode_detail_text,
     _episode_keyboard,
+    _episode_release_projection_text,
     _episode_summary_lines,
     _view_slice,
+    edit_episodes_view,
     resolve_backend_selector,
 )
+from bots.telegram.card.runtime.state import AnimeCardSession
 from core.identity import AnimeIdentity
 from core.models import (
     AggregatedAnime,
@@ -22,7 +23,6 @@ from core.models import (
     EpisodeReleaseProjection,
     EpisodeSkipSegment,
 )
-from bots.telegram.card.runtime.state import AnimeCardSession
 from services.media.episode_segments import EpisodeSegmentService
 from services.media.episodes import EpisodeService
 
@@ -137,8 +137,22 @@ class EpisodeBackendTests(unittest.TestCase):
         self.assertIn("Опенинг: 1:01.0–1:31.0", detail)
         self.assertNotIn("10001", detail)
 
+    def test_kitsu_ui_uses_simple_episode_number(self) -> None:
+        item = EpisodeRecord(
+            number=1,
+            source="kitsu",
+            backend="kitsu",
+            season_number=1,
+            episode_number=1,
+        )
+        summary = _episode_summary_lines(item, locale="ru")
+        self.assertTrue(summary[0].startswith("1. "))
+        self.assertNotIn("S1E1", "\n".join(summary))
+        detail = _episode_detail_text(item, locale="ru", source_name="Kitsu")
+        self.assertIn("Серия 1 — Kitsu", detail)
+        self.assertNotIn("S1E1", detail)
+
     def test_episode_keyboard_separates_episode_and_timestamp_sources(self) -> None:
-        item = EpisodeRecord(number=4, source="anidb", backend="anidb")
         service = EpisodeService(
             [
                 _EpisodeSource("jikan", "mal", "MAL / Jikan"),
@@ -307,6 +321,98 @@ class EpisodeProjectionUiTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertIn("ap:token:jikan:4", callbacks)
         self.assertIn("ap:token:jikan:6", callbacks)
+
+    async def test_empty_backend_with_known_total_shows_zero_of_total(self) -> None:
+        source = _EpisodeSource("jikan", "mal", "MAL / Jikan")
+        episode_service = EpisodeService([source])
+        segment_service = EpisodeSegmentService([])
+        anime = AggregatedAnime(
+            title="Known total, empty source",
+            external_ids={"mal": "1"},
+            episodes_total=12,
+        )
+        session = AnimeCardSession(anime=anime, owner_user_id=1)
+        message = _CaptureMessage()
+        context = SimpleNamespace(
+            episode_service=episode_service,
+            episode_segment_service=segment_service,
+        )
+
+        with patch(
+            "bots.telegram.card.features.episodes.get_app_context",
+            return_value=context,
+        ):
+            await edit_episodes_view(
+                message,
+                "token",
+                session,
+                view_page=0,
+                locale="ru",
+                backend="jikan",
+            )
+
+        call = message.calls[0]
+        html = call["rich_message"].html or ""
+        self.assertIn("Список серий пока пуст", html)
+        flattened = [
+            button for row in call["reply_markup"].inline_keyboard for button in row
+        ]
+        self.assertTrue(any(button.text == "0/12" for button in flattened))
+        self.assertFalse(any(button.text == "1/12" for button in flattened))
+        self.assertFalse(any(button.text in {"◀️", "▶️"} for button in flattened))
+
+    async def test_release_schedule_is_rendered_before_timestamps(self) -> None:
+        source = _EpisodeSource("jikan", "mal", "MAL / Jikan")
+
+        async def load_page(identity, *, page=1):
+            return EpisodePage(
+                items=[EpisodeRecord(number=1, source="mal", backend="jikan")],
+                page=page,
+                last_visible_page=1,
+                has_next=False,
+            )
+
+        async def load_episode(identity, episode_number):
+            return EpisodeRecord(number=1, source="mal", backend="jikan")
+
+        source.load_episode_page = load_page
+        source.load_episode = load_episode
+        episode_service = EpisodeService([source])
+        segment_service = EpisodeSegmentService([_SegmentSource()])
+        anime = AggregatedAnime(
+            title="Ordering",
+            external_ids={"mal": "1"},
+            episodes_total=1,
+            episode_release_schedule=[
+                EpisodeReleaseProjection(
+                    episode_number=1,
+                    airs_at=datetime(2026, 11, 6, 14, 0, tzinfo=timezone.utc),
+                    estimated=False,
+                )
+            ],
+        )
+        session = AnimeCardSession(anime=anime, owner_user_id=1)
+        message = _CaptureMessage()
+        context = SimpleNamespace(
+            episode_service=episode_service,
+            episode_segment_service=segment_service,
+        )
+
+        with patch(
+            "bots.telegram.card.features.episodes.get_app_context",
+            return_value=context,
+        ):
+            await edit_episodes_view(
+                message,
+                "token",
+                session,
+                view_page=0,
+                locale="ru",
+                backend="jikan",
+            )
+
+        html = message.calls[0]["rich_message"].html or ""
+        self.assertLess(html.index("График выхода серий"), html.index("⏱ Все"))
 
     def test_projection_text_is_scoped_to_requested_episode(self) -> None:
         first = datetime(2026, 11, 6, 14, 0, tzinfo=timezone.utc)

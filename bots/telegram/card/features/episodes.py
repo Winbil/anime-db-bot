@@ -10,15 +10,15 @@ from aiogram.types import (
 )
 
 from bots.telegram.callbacks import KeyedPageCallback, resolve_key_or_legacy_index
-from bots.telegram.pagination import card_picker_callback
 from bots.telegram.card.runtime.state import AnimeCardSession
 from bots.telegram.card.views.release_schedule import format_release_projection
-from bots.telegram.card.views.titles import preferred_title_keys
 from bots.telegram.card.views.renderer import (
     edit_standard_text,
     plain_text_to_rich_html,
 )
 from bots.telegram.card.views.rendering import _table_html
+from bots.telegram.card.views.titles import preferred_title_keys
+from bots.telegram.pagination import card_picker_callback
 from core.episode_segments import AggregatedEpisodeSegment, EpisodeSegment
 from core.models import AggregatedAnime, EpisodeRecord, EpisodeReleaseProjection
 from localization import text
@@ -48,8 +48,17 @@ def _episode_title(episode: EpisodeRecord, locale: str) -> str:
 
 
 def _episode_reference(episode: EpisodeRecord) -> str:
-    if episode.season_number is not None and episode.episode_number is not None:
+    # SkipDB uses an internal selector as ``number`` (for example 10001), so
+    # its season/episode pair is the user-facing reference. Ordinary anime
+    # episode sources such as Kitsu should keep the simple episode ordinal.
+    if (
+        episode.backend == "skipdb"
+        and episode.season_number is not None
+        and episode.episode_number is not None
+    ):
         return f"S{episode.season_number}E{episode.episode_number}"
+    if episode.episode_number is not None:
+        return str(episode.episode_number)
     return str(episode.number)
 
 
@@ -201,6 +210,7 @@ def _episode_keyboard(
     view_page: int,
     total_episodes: int | None,
     has_prev: bool,
+    current_episode: int | None = None,
     has_next: bool,
     locale: str,
     service: EpisodeService,
@@ -216,11 +226,13 @@ def _episode_keyboard(
                 ).encode(),
             )
         )
-    current_episode = view_page + 1
-    center = f"{current_episode}/{total_episodes if total_episodes else '?'}"
+    displayed_episode = (
+        view_page + 1 if current_episode is None else max(0, int(current_episode))
+    )
+    center = f"{displayed_episode}/{total_episodes if total_episodes else '?'}"
     center_callback = (
         card_picker_callback(token, f"ap~{backend}", view_page, total_episodes)
-        if total_episodes and total_episodes > 1
+        if displayed_episode > 0 and total_episodes and total_episodes > 1
         else "noop"
     )
     nav.append(InlineKeyboardButton(text=center, callback_data=center_callback))
@@ -448,8 +460,20 @@ async def edit_episodes_view(
         )
         return
 
+    source_is_empty = upstream_page == 1 and not page.items and not page.has_next
+    if source_is_empty:
+        # Metadata may still know the title has N episodes, but this particular
+        # episode backend has provided none. Keep that distinction explicit in
+        # the UI as 0/N instead of pretending page 1 exists.
+        view_page = 0
+        offset = 0
+
     requested_episode_number = view_page + 1
-    projection = _episode_release_projection(session.anime, requested_episode_number)
+    projection = (
+        None
+        if source_is_empty
+        else _episode_release_projection(session.anime, requested_episode_number)
+    )
 
     items = page.items[offset : offset + EPISODES_PER_VIEW]
     if not items and view_page > 0 and projection is None:
@@ -472,9 +496,10 @@ async def edit_episodes_view(
             )
 
     source_has_next = offset + EPISODES_PER_VIEW < len(page.items) or page.has_next
-    has_prev = view_page > 0
+    has_prev = view_page > 0 and not source_is_empty
     has_projected_next = (
-        _episode_release_projection(session.anime, view_page + 2) is not None
+        not source_is_empty
+        and _episode_release_projection(session.anime, view_page + 2) is not None
     )
     has_next = source_has_next or has_projected_next
     total_episodes = session.anime.episodes_total
@@ -510,9 +535,9 @@ async def edit_episodes_view(
     selected_segment_backend = session.episode_segment_backend
     if episode is None:
         if projection is None:
-            content = _episodes_text([], locale=locale, source_name=source_name)
+            detail_text = _episodes_text([], locale=locale, source_name=source_name)
         else:
-            content = "\n".join(
+            detail_text = "\n".join(
                 [
                     text(
                         "card",
@@ -526,7 +551,9 @@ async def edit_episodes_view(
                 ]
             )
     else:
-        content = _episode_detail_text(episode, locale=locale, source_name=source_name)
+        detail_text = _episode_detail_text(
+            episode, locale=locale, source_name=source_name
+        )
         (
             timecode_plain,
             timecode_html,
@@ -538,11 +565,13 @@ async def edit_episodes_view(
             episode_length_seconds=episode.duration_seconds,
             locale=locale,
         )
-        if timecode_plain:
-            content = f"{content}\n\n{timecode_plain}"
 
+    content_blocks = [detail_text]
     if projection_text:
-        content = f"{content}\n\n{projection_text}"
+        content_blocks.append(projection_text)
+    if timecode_plain:
+        content_blocks.append(timecode_plain)
+    content = "\n\n".join(content_blocks)
 
     keyboard = _episode_keyboard(
         token,
@@ -553,6 +582,7 @@ async def edit_episodes_view(
         view_page=view_page,
         total_episodes=total_episodes,
         has_prev=has_prev,
+        current_episode=0 if source_is_empty else None,
         has_next=has_next,
         locale=locale,
         service=service,
@@ -560,16 +590,11 @@ async def edit_episodes_view(
     )
 
     try:
-        detail_text = content
-        if projection_text:
-            detail_text = detail_text[: -(len(projection_text) + 2)]
-        if timecode_plain:
-            detail_text = detail_text[: -(len(timecode_plain) + 2)]
         rich_html = plain_text_to_rich_html(detail_text)
-        if timecode_html:
-            rich_html += timecode_html
         if projection_text:
             rich_html += plain_text_to_rich_html(projection_text)
+        if timecode_html:
+            rich_html += timecode_html
         await message.edit_text(
             rich_message=InputRichMessage(html=rich_html),
             reply_markup=keyboard,
