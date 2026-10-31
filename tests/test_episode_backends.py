@@ -177,10 +177,47 @@ class EpisodeBackendTests(unittest.TestCase):
         self.assertIn("Серия 1 — Kitsu", detail)
         self.assertIn("Название: Без названия", detail)
         self.assertNotIn("S1E1", detail)
-        rich = _episode_detail_html(detail)
+        rich = _episode_detail_html(detail, locale="ru")
         self.assertIn("<table", rich)
         self.assertIn("<caption><b>Серия 1 — Kitsu</b></caption>", rich)
         self.assertIn('<th align="left" valign="top">Название</th>', rich)
+
+    def test_episode_synopsis_is_rendered_outside_structured_table(self) -> None:
+        item = EpisodeRecord(
+            number=1,
+            source="mal",
+            backend="jikan",
+            episode_number=1,
+            titles={"english": "Kirai na Classmate"},
+            synopsis=(
+                "Akane copes with her trauma by being popular and working hard "
+                "to make people like her, but one boy in her class doesn’t care "
+                "about her at all.\n(Source: HIDIVE)"
+            ),
+        )
+        theme = AnimeThemeEntry(
+            kind="opening",
+            slug="OP1",
+            title="HIGHEST",
+            artists=("OxT",),
+            sequence=1,
+            episodes="1-5",
+            episode_ranges=((1, 5),),
+        )
+        detail = _episode_detail_text(
+            item,
+            locale="ru",
+            source_name="MAL (MyAnimeList) / Jikan",
+            themes=[theme],
+        )
+        rich = _episode_detail_html(detail, locale="ru")
+
+        self.assertIn('<th align="left" valign="top">OP1</th>', rich)
+        self.assertIn("HIGHEST", rich)
+        self.assertIn("</table><p><b>Описание:</b><br>", rich)
+        self.assertIn("(Source: HIDIVE)", rich)
+        self.assertNotIn('<th align="left" valign="top">Описание</th>', rich)
+        self.assertNotIn('<th align="left" valign="top">Source</th>', rich)
 
     def test_grouping_is_hidden_for_one_season_and_supports_cours(self) -> None:
         one_season = [
