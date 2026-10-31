@@ -39,8 +39,6 @@ PROFILE_FILES = (
     "jikan.toml",
     "aniskip.toml",
     "anime_skip.toml",
-    "bahamut.toml",
-    "baha_anime_skip.toml",
     "skipdb.toml",
     "trace_moe.toml",
     "whatanimeisthis.toml",
@@ -513,6 +511,13 @@ def run_mappings(arguments: list[str]) -> int:
     ).returncode
 
 
+def update_baha_anime_skip(arguments: list[str]) -> int:
+    if _ensure_environment() != 0:
+        return 1
+    script = ROOT_DIR / "scripts" / "update-baha-anime-skip.py"
+    return _run([str(venv_python()), str(script), *arguments], check=False).returncode
+
+
 def doctor() -> int:
     _info(
         f"Platform: {platform.system()} {platform.release()} ({platform.machine() or 'unknown-arch'})"
@@ -586,6 +591,11 @@ def build_parser() -> argparse.ArgumentParser:
     mappings_parser = sub.add_parser("mappings", help="Run the mappings CLI.")
     mappings_parser.add_argument("args", nargs=argparse.REMAINDER)
 
+    baha_parser = sub.add_parser(
+        "baha-index", help="Build the local Baha Anime Skip SQLite index."
+    )
+    baha_parser.add_argument("args", nargs=argparse.REMAINDER)
+
     sub.add_parser("doctor", help="Check platform/runtime compatibility.")
     return parser
 
@@ -594,6 +604,8 @@ def main(argv: list[str] | None = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
     if raw_args and raw_args[0] == "mappings":
         return run_mappings(raw_args[1:])
+    if raw_args and raw_args[0] == "baha-index":
+        return update_baha_anime_skip(raw_args[1:])
 
     args = build_parser().parse_args(raw_args)
     if args.command == "setup":
@@ -613,6 +625,8 @@ def main(argv: list[str] | None = None) -> int:
         return status_bot()
     if args.command == "mappings":
         return run_mappings(args.args)
+    if args.command == "baha-index":
+        return update_baha_anime_skip(args.args)
     if args.command == "doctor":
         return doctor()
     return _fail(f"Unknown command: {args.command}")

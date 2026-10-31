@@ -204,8 +204,19 @@ Runtime-логи разделены по назначению в `logs/YYYY.MM.D
 | `USER_SETTINGS_DB_PATH` | Нет | SQLite для user settings и known-user registry. |
 | `BANS_DB_PATH` | Нет | SQLite для moderation bans. |
 | `MAPPINGS_DB_PATH` | Нет | Runtime cross-ID mapping database. |
+| `BAHA_ANIME_SKIP_DB_PATH` | Нет | Локальный SQLite-индекс таймкодов Baha Anime Skip; runtime бота не обращается к Bahamut/Baha для этого источника. |
 
 Не коммитьте `.env`, `.env.d/`, `.proxies.d/`, bot/access tokens, пароли, credentials прокси и другие приватные данные.
+
+### Локальный индекс Baha Anime Skip
+
+Baha Anime Skip теперь читается из локального SQLite snapshot без HTTP-запросов во время работы бота. После появления `mappings.db` индекс создаётся или обновляется явно:
+
+```bash
+python scripts/project.py baha-index
+```
+
+Builder один раз скачивает архив Baha Anime Skip, берёт подтверждённые `bahamut` ID из `mappings.db`, получает соответствие серий к `videoSn` и атомарно записывает `data/baha_anime_skip.sqlite3`. Обычный runtime только читает эту SQLite. Если у тайтла нет подтверждённого Bahamut mapping или строки в индексе, источник просто возвращает пустой результат без сетевого fallback.
 
 ### Прокси по источникам
 
@@ -229,7 +240,7 @@ url = "http://127.0.0.1:8080"
 
 Профили полностью независимы: `mal.toml` действует только на MAL, `anilist.toml` — только на AniList и т.д. Несколько включённых записей выбираются round-robin, а при сетевой/proxy-ошибке запрос пробует оставшиеся включённые прокси. Одинаковые URL разрешены, если у записей разные `name`, поэтому повторением одного endpoint можно намеренно увеличить его вес в ротации. `enabled = false` выключает либо весь профиль, либо конкретную запись. Если у профиля есть хотя бы один активный proxy, при отказе всех прокси **нет скрытого fallback на прямое соединение**; напрямую source ходит только когда активных proxy нет. Изменения proxy-конфигов применяются после перезапуска бота. Если в `telegram.toml` есть активные прокси, именно этот бот намеренно обходит настроенный локальный/общий `telegram-bot-api` и подключается к официальному `api.telegram.org` через свой proxy-pool — так прокси не влияет на другие боты, использующие тот же локальный сервер. `jikan.toml` тоже обрабатывается специально: Python → локальный Jikan остаётся direct, а выбранный proxy передаётся внутрь Jikan и применяется уже к его исходящему запросу в MyAnimeList.
 
-Фиксированные профили: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `bahamut`, `baha_anime_skip`, `skipdb`, `trace_moe`, `whatanimeisthis`. Посторонние TOML-файлы игнорируются. `.proxies.d/` gitignored, потому что в URL могут быть логин/пароль; `start.sh` выставляет каталогу mode `700`, известным файлам — `600`.
+Фиксированные профили: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `skipdb`, `trace_moe`, `whatanimeisthis`. Посторонние TOML-файлы игнорируются. `.proxies.d/` gitignored, потому что в URL могут быть логин/пароль; `start.sh` выставляет каталогу mode `700`, известным файлам — `600`.
 
 ### AniDB
 

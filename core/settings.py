@@ -240,9 +240,8 @@ class SourceSettings:
     anime_skip_cache_ttl_seconds: float
     bahamut_api_url: str
     bahamut_request_timeout_seconds: float
-    bahamut_fallback_cache_ttl_seconds: float
     baha_anime_skip_data_url: str
-    baha_anime_skip_cache_ttl_seconds: float
+    baha_anime_skip_db_path: Path
     shikimori_api_url: str
     shikimori_site_url: str
     shikimori_people_cache_ttl_seconds: float
@@ -326,8 +325,6 @@ class AppSettings:
             "anisearch": 12,
             "skipdb": 30,
             "anime_skip": 60,
-            "bahamut": 30,
-            "baha_anime_skip": 20,
             "trace_moe": 30,
             "whatanimeisthis": 10,
         }
@@ -360,9 +357,6 @@ class AppSettings:
             ("skipdb", "episodes"): 30,
             ("skipdb", "episode"): 120,
             ("anime_skip", "episode_segments"): 60,
-            ("bahamut", "identity"): 20,
-            ("bahamut", "episodes"): 30,
-            ("baha_anime_skip", "episode_segments"): 20,
             ("trace_moe", "quota"): 30,
             ("trace_moe", "image_search"): 20,
             ("whatanimeisthis", "image_search"): 10,
@@ -581,20 +575,15 @@ class AppSettings:
                     20.0,
                     3.0,
                 ),
-                bahamut_fallback_cache_ttl_seconds=_float(
-                    values,
-                    "BAHAMUT_FALLBACK_CACHE_TTL_SECONDS",
-                    86400.0,
-                ),
                 baha_anime_skip_data_url=_raw(
                     values,
                     "BAHA_ANIME_SKIP_DATA_URL",
                     "https://raw.githubusercontent.com/JacobLinCool/baha-anime-skip/main/packages/baha-anime-skip-db/data.json",
                 ),
-                baha_anime_skip_cache_ttl_seconds=_float(
+                baha_anime_skip_db_path=_path(
                     values,
-                    "BAHA_ANIME_SKIP_CACHE_TTL_SECONDS",
-                    21600.0,
+                    "BAHA_ANIME_SKIP_DB_PATH",
+                    "data/baha_anime_skip.sqlite3",
                 ),
                 shikimori_api_url=_raw(
                     values,

@@ -206,8 +206,19 @@ Toute l'analyse de l'environnement d'exécution est centralisée dans `core/sett
 | `USER_SETTINGS_DB_PATH` | Non | SQLite chemin pour les paramètres par utilisateur et le registre des utilisateurs connus. |
 | `BANS_DB_PATH` | Non | SQLite chemin pour les interdictions de modération. |
 | `MAPPINGS_DB_PATH` | Non | Base de données de mappage d'ID croisés d'exécution. |
+| `BAHA_ANIME_SKIP_DB_PATH` | Non | Index SQLite local pour les timecodes Baha Anime Skip ; le runtime ne contacte pas Bahamut/Baha pour cette source. |
 
 Ne validez pas `.env`, `.env.d/`, `.proxies.d/`, les jetons de bot, les jetons d'accès, les mots de passe, les informations d'identification de proxy ou les informations d'identification privées API.
+
+### Index local Baha Anime Skip
+
+Baha Anime Skip est lu depuis un snapshot SQLite local au lieu de requêtes HTTP pendant le runtime. Une fois `mappings.db` disponible, l’index se construit ou se met à jour explicitement :
+
+```bash
+python scripts/project.py baha-index
+```
+
+Le builder télécharge une fois le dataset archivé, utilise les ID `bahamut` confirmés de `mappings.db`, associe les épisodes à leurs `videoSn` et écrit atomiquement `data/baha_anime_skip.sqlite3`. Le bot ne fait ensuite que lire cette SQLite ; sans mapping confirmé ou ligne indexée, la source renvoie vide sans fallback réseau.
 
 ### Pools de proxy par source
 
@@ -231,7 +242,7 @@ url = "http://127.0.0.1:8080"
 
 Les profils sont indépendants : `mal.toml` n'affecte que MAL, `anilist.toml` uniquement AniList, et ainsi de suite. Les valeurs `priority` plus élevées sont essayées avant les valeurs inférieures, quel que soit l'ordre TOML. Les inscriptions à égalité avec la même priorité sont sélectionnées à la ronde ; Les niveaux de priorité inférieure sont utilisés uniquement comme basculement après la défaillance du niveau supérieur. Les URL de proxy en double sont autorisées lorsqu'elles ont des noms d'entrée distincts. Par conséquent, la répétition d'un point de terminaison peut intentionnellement lui donner plus de poids de rotation. `enabled = false` peut désactiver soit l'ensemble du profil, soit une entrée individuelle. Si au moins une entrée de proxy est active pour un profil, ce profil ne revient **pas** silencieusement à la connexion directe lorsque tous les proxys échouent ; l'accès direct est utilisé uniquement lorsque le profil n'a pas de proxy actif. La configuration du proxy est chargée au démarrage du processus, donc les modifications prennent effet après le redémarrage du robot. Lorsque `telegram.toml` a des proxys actifs, ce bot contourne intentionnellement tout point de terminaison local/partagé `telegram-bot-api` configuré et parle au `api.telegram.org` officiel via son propre pool de proxy ; cela maintient le proxy limité à ce bot au lieu de modifier les autres robots qui partagent le serveur local. `jikan.toml` est également spécial : le saut Python vers le service de bouclage Jikan reste direct, tandis que le proxy sélectionné est transmis au service Jikan local et appliqué à son scrape sortant MyAnimeList.
 
-Les profils d'exécution fixes sont : `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `bahamut`, `baha_anime_skip`, `skipdb`, `trace_moe` et `whatanimeisthis`. Les fichiers TOML parasites sont ignorés. Les fichiers proxy peuvent contenir des informations d'identification et sont ignorés par git ; `start.sh` conserve `.proxies.d` en mode `700` et les fichiers de profil connus en mode `600`.
+Les profils d'exécution fixes sont : `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `skipdb`, `trace_moe` et `whatanimeisthis`. Les fichiers TOML parasites sont ignorés. Les fichiers proxy peuvent contenir des informations d'identification et sont ignorés par git ; `start.sh` conserve `.proxies.d` en mode `700` et les fichiers de profil connus en mode `600`.
 
 ### Profils d'agent utilisateur par source
 
