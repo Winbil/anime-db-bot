@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
@@ -327,7 +328,7 @@ class _MappingResolverStub:
 class BahaAnimeSkipSegmentSourceTests(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _database(path: Path) -> None:
-        with sqlite3.connect(path) as conn:
+        with closing(sqlite3.connect(path)) as conn:
             conn.executescript(
                 """
                 CREATE TABLE segments (
@@ -357,6 +358,7 @@ class BahaAnimeSkipSegmentSourceTests(unittest.IsolatedAsyncioTestCase):
                     ("113142", 2, "31600", "opening", 2.0, 90.0, "OP"),
                 ],
             )
+            conn.commit()
 
     async def test_direct_bahamut_id_reads_segments_from_local_sqlite(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -386,9 +388,7 @@ class BahaAnimeSkipSegmentSourceTests(unittest.IsolatedAsyncioTestCase):
                 db_path=db_path,
                 mapping_resolver=resolver,  # type: ignore[arg-type]
             )
-            values = await source.load_segments(
-                AnimeIdentity({"anilist": "130003"}), 2
-            )
+            values = await source.load_segments(AnimeIdentity({"anilist": "130003"}), 2)
 
         self.assertEqual(len(values), 1)
         self.assertEqual(values[0].source_segment_id, "31600:OP")

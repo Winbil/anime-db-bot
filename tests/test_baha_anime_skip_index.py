@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 import importlib.util
 from pathlib import Path
 import sqlite3
@@ -15,7 +16,9 @@ SPEC.loader.exec_module(MODULE)
 
 
 class BahaAnimeSkipIndexTests(unittest.TestCase):
-    def test_episode_video_map_prefers_primary_group_and_rejects_ambiguity(self) -> None:
+    def test_episode_video_map_prefers_primary_group_and_rejects_ambiguity(
+        self,
+    ) -> None:
         anime = {
             "episodes": {
                 "0": [
@@ -58,7 +61,7 @@ class BahaAnimeSkipIndexTests(unittest.TestCase):
                 mappings_path=mappings,
             )
             self.assertEqual(indexed, (1, 1, 2))
-            with sqlite3.connect(output) as conn:
+            with closing(sqlite3.connect(output)) as conn:
                 rows = conn.execute(
                     "SELECT anime_sn, episode_number, video_sn, kind, start_seconds, end_seconds "
                     "FROM segments ORDER BY kind"
@@ -77,7 +80,7 @@ class BahaAnimeSkipIndexTests(unittest.TestCase):
     def test_bahamut_ids_are_collected_from_edges_and_manual_accepts(self) -> None:
         with TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "mappings.db"
-            with sqlite3.connect(db_path) as conn:
+            with closing(sqlite3.connect(db_path)) as conn:
                 conn.executescript(
                     """
                     CREATE TABLE edges (
@@ -102,6 +105,7 @@ class BahaAnimeSkipIndexTests(unittest.TestCase):
                     "INSERT INTO mapping_overrides VALUES (?, ?, ?, ?, ?)",
                     ("mal", "4", "bahamut", "40", "accept"),
                 )
+                conn.commit()
             self.assertEqual(MODULE._bahamut_ids(db_path), ["10", "20", "40"])
 
 
