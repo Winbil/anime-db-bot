@@ -22,6 +22,7 @@ from bots.telegram.card.views.renderer import (
 from bots.telegram.card.views.rendering import _table_html
 from bots.telegram.card.views.titles import preferred_title_keys
 from bots.telegram.pagination import card_picker_callback
+from core.anime_themes import AnimeThemeEntry
 from core.episode_segments import AggregatedEpisodeSegment, EpisodeSegment
 from core.models import AggregatedAnime, EpisodeRecord, EpisodeReleaseProjection
 from localization import text
@@ -47,6 +48,15 @@ class _EpisodeGroup:
     @property
     def count(self) -> int:
         return self.end - self.start + 1
+
+
+@dataclass(slots=True)
+class _EpisodeTimecodes:
+    caption: str
+    aggregated: list[AggregatedEpisodeSegment]
+    source_values: list[EpisodeSegment]
+    available: list[str]
+    selected: str
 
 
 def _positive_number(value: int | None) -> int | None:
@@ -187,6 +197,72 @@ def _segment_kind_label(kind: str, locale: str) -> str:
     return kind.replace("_", " ").strip().title() or "?"
 
 
+def _theme_segment_label(
+    kind: str,
+    *,
+    locale: str,
+    themes: list[AnimeThemeEntry],
+) -> str:
+    wanted = {
+        "opening": "opening",
+        "mixed_opening": "opening",
+        "ending": "ending",
+        "mixed_ending": "ending",
+    }.get(kind)
+    if wanted is None:
+        return _segment_kind_label(kind, locale)
+    labels = list(
+        dict.fromkeys(theme.label for theme in themes if theme.kind == wanted)
+    )
+    return labels[0] if len(labels) == 1 else _segment_kind_label(kind, locale)
+
+
+def _theme_description(theme: AnimeThemeEntry, *, locale: str) -> str:
+    parts: list[str] = []
+    if theme.title:
+        parts.append(f'"{theme.title}"')
+    if theme.artists:
+        artists = ", ".join(theme.artists)
+        parts.append(f"— {artists}" if parts else artists)
+    if theme.episodes:
+        parts.append(
+            "· "
+            + text(
+                "card",
+                "episode_theme_episodes",
+                locale=locale,
+                value=theme.episodes.replace("-", "–"),
+            )
+        )
+    if theme.version and theme.version > 1:
+        parts.append(f"· v{theme.version}")
+    return " ".join(parts) or "AnimeThemes"
+
+
+def _episode_theme_lines(
+    themes: list[AnimeThemeEntry],
+    *,
+    locale: str,
+) -> list[str]:
+    return [
+        f"{theme.label}: {_theme_description(theme, locale=locale)}" for theme in themes
+    ]
+
+
+def _theme_links(themes: list[AnimeThemeEntry]) -> list[tuple[str, str]]:
+    result: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for theme in themes:
+        if not theme.video_url:
+            continue
+        item = (theme.label, theme.video_url)
+        if item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+    return result
+
+
 def _timestamp_ms(value: int | None) -> str:
     if value is None or value < 0:
         return "?"
@@ -317,6 +393,7 @@ def _episode_keyboard(
     episode_groups: list[_EpisodeGroup] | None = None,
     selected_episode_group: str | None = None,
     source_switch_page: int | None = None,
+    theme_links: list[tuple[str, str]] | None = None,
     has_next: bool,
     locale: str,
     service: EpisodeService,
@@ -423,6 +500,19 @@ def _episode_keyboard(
             for index in range(0, len(segment_buttons), 2)
         )
 
+    if theme_links:
+        theme_buttons = [
+            InlineKeyboardButton(
+                text=f"▶ {label} · AnimeThemes",
+                url=url,
+            )
+            for label, url in theme_links
+        ]
+        rows.extend(
+            theme_buttons[index : index + 2]
+            for index in range(0, len(theme_buttons), 2)
+        )
+
     rows.append(
         [
             InlineKeyboardButton(
@@ -439,13 +529,14 @@ def _aggregate_segment_lines(
     *,
     locale: str,
     service: EpisodeSegmentService,
+    themes: list[AnimeThemeEntry],
 ) -> list[str]:
     lines: list[str] = []
     for segment in values:
         source_names = ", ".join(service.display_name(key) for key in segment.sources)
         suffix = f" · {source_names}" if source_names else ""
         lines.append(
-            f"{_segment_kind_label(segment.kind, locale)}: "
+            f"{_theme_segment_label(segment.kind, locale=locale, themes=themes)}: "
             f"{_segment_range(segment.start_seconds, segment.end_seconds)}{suffix}"
         )
     return lines
@@ -455,21 +546,22 @@ def _source_segment_lines(
     values: list[EpisodeSegment],
     *,
     locale: str,
+    themes: list[AnimeThemeEntry],
 ) -> list[str]:
     return [
-        f"{_segment_kind_label(segment.kind, locale)}: "
+        f"{_theme_segment_label(segment.kind, locale=locale, themes=themes)}: "
         f"{_segment_range(segment.start_seconds, segment.end_seconds)}"
         for segment in values
     ]
 
 
-async def _episode_timecodes(
+async def _load_episode_timecodes(
     session: AnimeCardSession,
     *,
     episode_number: int,
     episode_length_seconds: int | None,
     locale: str,
-) -> tuple[str, str, list[str], str]:
+) -> _EpisodeTimecodes:
     service = get_app_context().episode_segment_service
     available = service.available_backends(session.anime.identity)
     selected = session.episode_segment_backend
@@ -477,7 +569,7 @@ async def _episode_timecodes(
         selected = "all"
         session.episode_segment_backend = "all"
     if not available:
-        return "", "", available, selected
+        return _EpisodeTimecodes("", [], [], available, selected)
 
     if selected == "all":
         values, _errors = await service.load_aggregated(
@@ -485,29 +577,80 @@ async def _episode_timecodes(
             episode_number,
             episode_length_seconds=episode_length_seconds,
         )
-        lines = _aggregate_segment_lines(values, locale=locale, service=service)
-        caption = f"⏱ {text('search_ui', 'all', locale=locale)}"
-    else:
-        try:
-            source_values = await service.load_segments(
-                session.anime.identity,
-                episode_number,
-                backend=selected,
-                episode_length_seconds=episode_length_seconds,
-            )
-        except Exception:
-            logging.exception(
-                "Could not load %s timestamps",
-                service.display_name(selected),
-            )
-            source_values = []
-        lines = _source_segment_lines(source_values, locale=locale)
-        caption = f"⏱ {service.display_name(selected)}"
+        return _EpisodeTimecodes(
+            f"⏱ {text('search_ui', 'all', locale=locale)}",
+            values,
+            [],
+            available,
+            selected,
+        )
 
+    try:
+        source_values = await service.load_segments(
+            session.anime.identity,
+            episode_number,
+            backend=selected,
+            episode_length_seconds=episode_length_seconds,
+        )
+    except Exception:
+        logging.exception(
+            "Could not load %s timestamps",
+            service.display_name(selected),
+        )
+        source_values = []
+    return _EpisodeTimecodes(
+        f"⏱ {service.display_name(selected)}",
+        [],
+        source_values,
+        available,
+        selected,
+    )
+
+
+def _render_episode_timecodes(
+    values: _EpisodeTimecodes | None,
+    *,
+    themes: list[AnimeThemeEntry],
+    locale: str,
+    service: EpisodeSegmentService,
+) -> tuple[str, str]:
+    if values is None or not values.caption:
+        return "", ""
+    if values.selected == "all":
+        lines = _aggregate_segment_lines(
+            values.aggregated,
+            locale=locale,
+            service=service,
+            themes=themes,
+        )
+    else:
+        lines = _source_segment_lines(
+            values.source_values,
+            locale=locale,
+            themes=themes,
+        )
     rendered_lines = lines or [text("common", "no_data", locale=locale)]
-    plain = "\n".join([caption, *rendered_lines])
-    rich_html = _table_html(caption, rendered_lines)
-    return plain, rich_html, available, selected
+    plain = "\n".join([values.caption, *rendered_lines])
+    rich_html = _table_html(values.caption, rendered_lines)
+    return plain, rich_html
+
+
+async def _episode_themes(
+    session: AnimeCardSession,
+    *,
+    episode_number: int,
+) -> list[AnimeThemeEntry]:
+    service = getattr(get_app_context(), "anime_theme_service", None)
+    if service is None or not service.supports_identity(session.anime.identity):
+        return []
+    try:
+        return await service.load_episode_themes(
+            session.anime.identity,
+            episode_number,
+        )
+    except Exception:
+        logging.exception("Could not load AnimeThemes episode themes")
+        return []
 
 
 async def edit_episodes_view(
@@ -739,11 +882,57 @@ async def edit_episodes_view(
             if episode.episode_kind == "regular"
             else 0
         )
-    if episode is None:
-        if projection is None:
-            detail_text = _episodes_text([], locale=locale, source_name=source_name)
-        else:
-            detail_text = "\n".join(
+    themes: list[AnimeThemeEntry] = []
+    timecode_values: _EpisodeTimecodes | None = None
+    timecodes_ready = True
+    themes_ready = True
+    timecode_task: asyncio.Task[_EpisodeTimecodes] | None = None
+    theme_task: asyncio.Task[list[AnimeThemeEntry]] | None = None
+    if episode is not None and episode.episode_kind == "regular":
+        theme_task = asyncio.create_task(
+            _episode_themes(
+                session,
+                episode_number=episode.episode_number or requested_episode_number,
+            )
+        )
+        themes_ready = False
+        if segment_backends:
+            timecode_task = asyncio.create_task(
+                _load_episode_timecodes(
+                    session,
+                    episode_number=episode.episode_number or requested_episode_number,
+                    episode_length_seconds=episode.duration_seconds,
+                    locale=locale,
+                )
+            )
+            timecodes_ready = False
+
+    initial_tasks = {task for task in (timecode_task, theme_task) if task is not None}
+    if initial_tasks:
+        done, _pending = await asyncio.wait(
+            initial_tasks,
+            timeout=_INITIAL_TIMECODE_WAIT_SECONDS,
+        )
+        if timecode_task is not None and timecode_task in done:
+            timecode_values = await timecode_task
+            segment_backends = timecode_values.available
+            selected_segment_backend = timecode_values.selected
+            timecodes_ready = True
+        if theme_task is not None and theme_task in done:
+            themes = await theme_task
+            themes_ready = True
+
+    if session.episode_render_generation != generation:
+        for task in (timecode_task, theme_task):
+            if task is not None and not task.done():
+                task.cancel()
+        return
+
+    def detail_with_themes() -> str:
+        if episode is None:
+            if projection is None:
+                return _episodes_text([], locale=locale, source_name=source_name)
+            return "\n".join(
                 [
                     text(
                         "card",
@@ -761,72 +950,59 @@ async def edit_episodes_view(
                     ),
                 ]
             )
-    else:
-        detail_text = _episode_detail_text(
-            episode, locale=locale, source_name=source_name
+        return _episode_detail_text(
+            episode,
+            locale=locale,
+            source_name=source_name,
+            themes=themes,
         )
 
-    timecode_plain = ""
-    timecode_html = ""
-    timecodes_ready = False
-    timecode_task: asyncio.Task[tuple[str, str, list[str], str]] | None = None
-    if episode is not None and episode.episode_kind == "regular" and segment_backends:
-        timecode_task = asyncio.create_task(
-            _episode_timecodes(
-                session,
-                episode_number=episode.episode_number or requested_episode_number,
-                episode_length_seconds=episode.duration_seconds,
-                locale=locale,
-            )
+    def build_keyboard() -> InlineKeyboardMarkup:
+        keyboard_segment_backends = (
+            segment_backends
+            if episode is None or episode.episode_kind == "regular"
+            else []
         )
-        done, _pending = await asyncio.wait(
-            {timecode_task}, timeout=_INITIAL_TIMECODE_WAIT_SECONDS
+        return _episode_keyboard(
+            token,
+            backends=backends,
+            backend=backend,
+            segment_backends=keyboard_segment_backends,
+            segment_backend=selected_segment_backend,
+            view_page=view_page,
+            total_episodes=total_episodes,
+            has_prev=has_prev,
+            current_episode=0 if source_is_empty else None,
+            displayed_episode=nav_displayed_episode,
+            display_total=nav_display_total,
+            picker_route=nav_picker_route,
+            picker_index=nav_picker_index,
+            episode_groups=episode_groups,
+            selected_episode_group=(
+                selected_episode_group.key
+                if selected_episode_group is not None
+                else None
+            ),
+            source_switch_page=source_switch_page,
+            theme_links=_theme_links(themes),
+            has_next=has_next,
+            locale=locale,
+            service=service,
+            segment_service=segment_service,
         )
-        if timecode_task in done:
-            (
-                timecode_plain,
-                timecode_html,
-                segment_backends,
-                selected_segment_backend,
-            ) = await timecode_task
-            timecodes_ready = True
 
-    if session.episode_render_generation != generation:
-        if timecode_task is not None and not timecode_task.done():
-            timecode_task.cancel()
-        return
-
-    keyboard_segment_backends = (
-        segment_backends if episode is None or episode.episode_kind == "regular" else []
-    )
-    keyboard = _episode_keyboard(
-        token,
-        backends=backends,
-        backend=backend,
-        segment_backends=keyboard_segment_backends,
-        segment_backend=selected_segment_backend,
-        view_page=view_page,
-        total_episodes=total_episodes,
-        has_prev=has_prev,
-        current_episode=0 if source_is_empty else None,
-        displayed_episode=nav_displayed_episode,
-        display_total=nav_display_total,
-        picker_route=nav_picker_route,
-        picker_index=nav_picker_index,
-        episode_groups=episode_groups,
-        selected_episode_group=(
-            selected_episode_group.key if selected_episode_group is not None else None
-        ),
-        source_switch_page=source_switch_page,
-        has_next=has_next,
+    detail_text = detail_with_themes()
+    timecode_plain, timecode_html = _render_episode_timecodes(
+        timecode_values,
+        themes=themes,
         locale=locale,
-        service=service,
-        segment_service=segment_service,
+        service=segment_service,
     )
+    keyboard = build_keyboard()
 
-    # Give fast timestamp providers a tiny head start so local/cache hits can be
-    # included in the first Telegram edit. Slow network providers still fall
-    # back to the two-phase render, keeping episode metadata responsive.
+    # Give fast timestamp/theme providers a tiny head start so local/cache hits
+    # can be included in the first Telegram edit. Slow network providers still
+    # fall back to one final enrichment edit.
     await _render_episode_view(
         message,
         detail_text=detail_text,
@@ -838,48 +1014,31 @@ async def edit_episodes_view(
         detail_as_table=episode is not None or projection is not None,
     )
 
-    if timecode_task is None or timecodes_ready:
+    if timecodes_ready and themes_ready:
         return
 
-    (
-        timecode_plain,
-        timecode_html,
-        segment_backends,
-        selected_segment_backend,
-    ) = await timecode_task
+    if not themes_ready and theme_task is not None:
+        themes = await theme_task
+        themes_ready = True
+    if not timecodes_ready and timecode_task is not None:
+        timecode_values = await timecode_task
+        segment_backends = timecode_values.available
+        selected_segment_backend = timecode_values.selected
+        timecodes_ready = True
 
-    # A newer episode/source click owns the card now. Do not let this older,
-    # slower timestamp request overwrite the current page when it finally ends.
+    # A newer episode/source click owns the card now. Do not let older, slower
+    # timestamp or theme requests overwrite the current page when they finish.
     if session.episode_render_generation != generation:
         return
 
-    keyboard_segment_backends = (
-        segment_backends if episode is None or episode.episode_kind == "regular" else []
-    )
-    keyboard = _episode_keyboard(
-        token,
-        backends=backends,
-        backend=backend,
-        segment_backends=keyboard_segment_backends,
-        segment_backend=selected_segment_backend,
-        view_page=view_page,
-        total_episodes=total_episodes,
-        has_prev=has_prev,
-        current_episode=0 if source_is_empty else None,
-        displayed_episode=nav_displayed_episode,
-        display_total=nav_display_total,
-        picker_route=nav_picker_route,
-        picker_index=nav_picker_index,
-        episode_groups=episode_groups,
-        selected_episode_group=(
-            selected_episode_group.key if selected_episode_group is not None else None
-        ),
-        source_switch_page=source_switch_page,
-        has_next=has_next,
+    detail_text = detail_with_themes()
+    timecode_plain, timecode_html = _render_episode_timecodes(
+        timecode_values,
+        themes=themes,
         locale=locale,
-        service=service,
-        segment_service=segment_service,
+        service=segment_service,
     )
+    keyboard = build_keyboard()
     await _render_episode_view(
         message,
         detail_text=detail_text,
@@ -976,6 +1135,7 @@ def _episode_detail_text(
     *,
     locale: str,
     source_name: str,
+    themes: list[AnimeThemeEntry] | None = None,
 ) -> str:
     lines = [
         text(
@@ -1034,6 +1194,8 @@ def _episode_detail_text(
         lines.append(text("card", "episode_filler", locale=locale))
     if episode.recap:
         lines.append(text("card", "episode_recap", locale=locale))
+    if themes:
+        lines.extend(_episode_theme_lines(themes, locale=locale))
     if episode.synopsis:
         lines.extend(
             ["", text("card", "episode_synopsis", locale=locale), episode.synopsis]

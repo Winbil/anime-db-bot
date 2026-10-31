@@ -29,6 +29,7 @@ The project is designed around explicit boundaries between **search**, **identit
 - **Seven UI languages** — English is the default/fallback locale; Russian, Japanese, German, Spanish, French, and Italian are fully selectable in `/settings`.
 - **Release metadata and projections** — age rating, airing status, aired/total episode counts, and source-backed next-episode timestamps are aggregated; airing TV titles with known totals get clearly marked weekly estimates for all remaining episodes.
 - **Structured episode navigation** — when an episode source explicitly provides season, cour, or special-episode structure, the episode view adds source-backed Season/Cour/OVA-Specials groups with local pagination; ordinary flat episode lists stay unchanged and no season boundaries are guessed from episode numbers.
+- **Episode-integrated OP/ED metadata** — AnimeThemes is resolved conservatively through confirmed AniList/MAL IDs and enriches the existing episode/timestamp UI with OP/ED sequence, song, artist, episode scope, and direct theme-video links; it is not exposed as a separate card section and title-only matching is never used.
 - **Production-oriented checks** — Python 3.11–3.14 CI, Ruff, formatter checks, mypy scope, coverage gate, and ShellCheck.
 
 ## Source capabilities
@@ -42,6 +43,8 @@ The project is designed around explicit boundaries between **search**, **identit
 | AniDB | — | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ |
 | AniSearch | — | ✓ | ✓ | ✓ | — | ✓ | — | ✓ | ✓ |
 | SkipDB (dormant) | — | — | — | — | — | — | — | — | — |
+
+AnimeThemes is a read-only episode enrichment capability rather than a peer anime identity/metadata source, so it is intentionally absent from the table above. It is queried lazily only for episode views, uses confirmed AniList or MyAnimeList IDs, and never participates in title search or cross-source identity creation.
 
 Kitsu is an identity-native public JSON:API source. Public read-only GET requests do not require OAuth credentials; confirmed Kitsu IDs already participate in `mappings.db`, and Kitsu can also return direct MAL/AniList/AniDB mappings with search results and metadata. Kitsu currently contributes search, metadata, popularity, descriptions, episodes, and a YouTube trailer when available. People/characters are intentionally not advertised because those relationships are often sparse.
 
@@ -207,6 +210,7 @@ All runtime environment parsing is centralized in `core/settings.py`. New deploy
 | `USER_SETTINGS_DB_PATH` | No | SQLite path for per-user settings and known-user registry. |
 | `BANS_DB_PATH` | No | SQLite path for moderation bans. |
 | `MAPPINGS_DB_PATH` | No | Runtime cross-ID mapping database. |
+| `ANIMETHEMES_API_URL` | No | AnimeThemes API endpoint used lazily to enrich episode OP/ED metadata and video links. |
 | `BAHA_ANIME_SKIP_DB_PATH` | No | Local SQLite index for Baha Anime Skip timestamps; bot runtime never queries Bahamut/Baha for this source. |
 
 Do not commit `.env`, `.env.d/`, `.proxies.d/`, bot tokens, access tokens, passwords, proxy credentials, or private API credentials.
@@ -243,7 +247,7 @@ url = "http://127.0.0.1:8080"
 
 Profiles are independent: `mal.toml` affects only MAL, `anilist.toml` only AniList, and so on. Higher `priority` values are tried before lower values regardless of TOML order. Entries tied at the same priority are round-robin selected; lower-priority tiers are used only as failover after the higher tier fails. Duplicate proxy URLs are allowed when they have distinct entry names, so repeating an endpoint can intentionally give it more rotation weight. `enabled = false` can disable either the whole profile or an individual entry. If at least one proxy entry is active for a profile, that profile does **not** silently fall back to the direct connection when all proxies fail; direct access is used only when the profile has no active proxies. Proxy configuration is loaded at process startup, so edits take effect after a bot restart. When `telegram.toml` has active proxies, this bot intentionally bypasses any configured local/shared `telegram-bot-api` endpoint and talks to the official `api.telegram.org` through its own proxy pool; this keeps the proxy scoped to this bot instead of changing other bots that share the local server. `jikan.toml` is also special: the Python hop to the loopback Jikan service stays direct, while the selected proxy is forwarded to the local Jikan service and applied to its outbound MyAnimeList scrape.
 
-Fixed runtime profiles are: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `skipdb`, `trace_moe`, and `whatanimeisthis`. Stray TOML files are ignored. Proxy files may contain credentials and are gitignored; `start.sh` keeps `.proxies.d` at mode `700` and known profile files at mode `600`.
+Fixed runtime profiles are: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `animethemes`, `skipdb`, `trace_moe`, and `whatanimeisthis`. Stray TOML files are ignored. Proxy files may contain credentials and are gitignored; `start.sh` keeps `.proxies.d` at mode `700` and known profile files at mode `600`.
 
 ### Per-source User-Agent profiles
 

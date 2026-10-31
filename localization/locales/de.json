@@ -249,6 +249,7 @@
     "episode_filler": "Füller",
     "episode_recap": "Zusammenfassung",
     "episode_duration": "Dauer: {value} min.",
+    "episode_theme_episodes": "Folgen {value}",
     "episode_detail_title": "Episode {number} — {source}",
     "episode_group_main": "Hauptfolgen",
     "episode_group_season": "Staffel {number}",

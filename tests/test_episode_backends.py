@@ -22,6 +22,8 @@ from bots.telegram.card.features.episodes import (
     resolve_backend_selector,
 )
 from bots.telegram.card.runtime.state import AnimeCardSession
+from core.anime_themes import AnimeThemeEntry
+from core.episode_segments import EpisodeSegment
 from core.identity import AnimeIdentity
 from core.models import (
     AggregatedAnime,
@@ -73,6 +75,22 @@ class _SegmentSource:
         episode_length_seconds: int | None = None,
     ) -> list:
         return []
+
+
+class _ThemeService:
+    def __init__(self, themes: list[AnimeThemeEntry]) -> None:
+        self.themes = themes
+
+    @staticmethod
+    def supports_identity(identity: AnimeIdentity) -> bool:
+        return identity.has("anilist") or identity.has("mal")
+
+    async def load_episode_themes(
+        self,
+        identity: AnimeIdentity,
+        episode_number: int,
+    ) -> list[AnimeThemeEntry]:
+        return list(self.themes)
 
 
 class EpisodeBackendTests(unittest.TestCase):
@@ -398,7 +416,9 @@ class EpisodeProjectionUiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("ap:token:jikan:4", callbacks)
         self.assertIn("ap:token:jikan:6", callbacks)
 
-    async def test_season_groups_add_hierarchy_and_specials_hide_timecodes(self) -> None:
+    async def test_season_groups_add_hierarchy_and_specials_hide_timecodes(
+        self,
+    ) -> None:
         source = _EpisodeSource("kitsu", "kitsu", "Kitsu")
         records = [
             EpisodeRecord(
@@ -538,13 +558,14 @@ class EpisodeProjectionUiTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertIn("Спешл 1 — Kitsu", special_html)
         self.assertNotIn("График выхода серий", special_html)
-        self.assertTrue(any(button.text == "✓ OVA / Спешлы" for button in special_buttons))
+        self.assertTrue(
+            any(button.text == "✓ OVA / Спешлы" for button in special_buttons)
+        )
         self.assertTrue(any(button.text == "1/1" for button in special_buttons))
         self.assertFalse(any("⏱" in button.text for button in special_buttons))
         self.assertTrue(
             any(
-                button.callback_data == "ap:token:jikan:0"
-                for button in special_buttons
+                button.callback_data == "ap:token:jikan:0" for button in special_buttons
             )
         )
 
@@ -643,6 +664,182 @@ class EpisodeProjectionUiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("График выхода серий", html)
         self.assertIn("⏱ Все", html)
         self.assertLess(html.index("График выхода серий"), html.index("⏱ Все"))
+
+    async def test_animethemes_is_integrated_into_episode_and_timestamp_ui(
+        self,
+    ) -> None:
+        source = _EpisodeSource("jikan", "mal", "MAL / Jikan")
+
+        async def load_page(identity, *, page=1):
+            return EpisodePage(
+                items=[
+                    EpisodeRecord(
+                        number=1,
+                        source="mal",
+                        backend="jikan",
+                        episode_number=1,
+                        titles={"english": "Episode 1"},
+                    )
+                ],
+                page=page,
+                last_visible_page=1,
+                has_next=False,
+            )
+
+        async def load_episode(identity, episode_number):
+            return EpisodeRecord(
+                number=1,
+                source="mal",
+                backend="jikan",
+                episode_number=1,
+                titles={"english": "Episode 1"},
+            )
+
+        class _MusicSegmentSource(_SegmentSource):
+            async def load_segments(
+                self,
+                identity,
+                episode_number,
+                *,
+                episode_length_seconds=None,
+            ):
+                return [
+                    EpisodeSegment("opening", "aniskip", 90.0, 180.0),
+                    EpisodeSegment("ending", "aniskip", 1300.0, 1390.0),
+                ]
+
+        source.load_episode_page = load_page
+        source.load_episode = load_episode
+        episode_service = EpisodeService([source])
+        segment_service = EpisodeSegmentService([_MusicSegmentSource()])
+        themes = [
+            AnimeThemeEntry(
+                kind="opening",
+                slug="OP1",
+                title="Yuusha",
+                artists=("YOASOBI",),
+                sequence=1,
+                episodes="1-16",
+                episode_ranges=((1, 16),),
+                version=1,
+                video_url="https://v.animethemes.test/Frieren-OP1.webm",
+            ),
+            AnimeThemeEntry(
+                kind="ending",
+                slug="ED1",
+                title="Anytime Anywhere",
+                artists=("milet",),
+                sequence=1,
+                episodes="1-14, 16",
+                episode_ranges=((1, 14), (16, 16)),
+                version=1,
+                video_url="https://v.animethemes.test/Frieren-ED1.webm",
+            ),
+        ]
+        anime = AggregatedAnime(
+            title="Frieren",
+            external_ids={"mal": "52991", "anilist": "154587"},
+            episodes_total=28,
+        )
+        session = AnimeCardSession(anime=anime, owner_user_id=1)
+        message = _CaptureMessage()
+        context = SimpleNamespace(
+            episode_service=episode_service,
+            episode_segment_service=segment_service,
+            anime_theme_service=_ThemeService(themes),
+        )
+
+        with patch(
+            "bots.telegram.card.features.episodes.get_app_context",
+            return_value=context,
+        ):
+            await edit_episodes_view(
+                message,
+                "token",
+                session,
+                view_page=0,
+                locale="ru",
+                backend="jikan",
+            )
+
+        self.assertEqual(len(message.calls), 1)
+        call = message.calls[0]
+        html = call["rich_message"].html or ""
+        self.assertIn("OP1", html)
+        self.assertIn("Yuusha", html)
+        self.assertIn("YOASOBI", html)
+        self.assertIn("Серии 1–16", html)
+        self.assertIn("ED1", html)
+        self.assertIn("Anytime Anywhere", html)
+        self.assertIn("1:30.0–3:00.0", html)
+        self.assertIn("21:40.0–23:10.0", html)
+        self.assertNotIn("Музыка", html)
+
+        buttons = [
+            button for row in call["reply_markup"].inline_keyboard for button in row
+        ]
+        op_button = next(
+            button for button in buttons if button.text.startswith("▶ OP1")
+        )
+        ed_button = next(
+            button for button in buttons if button.text.startswith("▶ ED1")
+        )
+        self.assertEqual(op_button.url, "https://v.animethemes.test/Frieren-OP1.webm")
+        self.assertEqual(ed_button.url, "https://v.animethemes.test/Frieren-ED1.webm")
+
+    async def test_animethemes_remains_visible_without_timestamp_provider(self) -> None:
+        source = _EpisodeSource("jikan", "mal", "MAL / Jikan")
+
+        async def load_page(identity, *, page=1):
+            return EpisodePage(
+                items=[EpisodeRecord(number=1, source="mal", backend="jikan")],
+                page=page,
+                last_visible_page=1,
+                has_next=False,
+            )
+
+        async def load_episode(identity, episode_number):
+            return EpisodeRecord(number=1, source="mal", backend="jikan")
+
+        source.load_episode_page = load_page
+        source.load_episode = load_episode
+        theme = AnimeThemeEntry(
+            kind="opening",
+            slug="OP1",
+            title="Song",
+            artists=("Artist",),
+            sequence=1,
+            episodes="1-12",
+            episode_ranges=((1, 12),),
+        )
+        context = SimpleNamespace(
+            episode_service=EpisodeService([source]),
+            episode_segment_service=EpisodeSegmentService([]),
+            anime_theme_service=_ThemeService([theme]),
+        )
+        session = AnimeCardSession(
+            anime=AggregatedAnime(
+                title="Theme only",
+                external_ids={"mal": "1", "anilist": "2"},
+                episodes_total=12,
+            ),
+            owner_user_id=1,
+        )
+        message = _CaptureMessage()
+
+        with patch(
+            "bots.telegram.card.features.episodes.get_app_context",
+            return_value=context,
+        ):
+            await edit_episodes_view(
+                message, "token", session, view_page=0, locale="ru", backend="jikan"
+            )
+
+        self.assertEqual(len(message.calls), 1)
+        html = message.calls[0]["rich_message"].html or ""
+        self.assertIn("OP1", html)
+        self.assertIn("Song", html)
+        self.assertNotIn("⏱", html)
 
     async def test_slow_timestamps_keep_two_phase_render(self) -> None:
         source = _EpisodeSource("jikan", "mal", "MAL / Jikan")

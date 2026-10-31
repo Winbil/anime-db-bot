@@ -63,6 +63,11 @@ class AppSettingsTests(unittest.TestCase):
                 "ANIME_SKIP_REQUEST_TIMEOUT_SECONDS": "11.5",
                 "ANIME_SKIP_CACHE_TTL_SECONDS": "2345",
                 "UPSTREAM_RATE_LIMIT_ANIME_SKIP_PER_MINUTE": "41",
+                "ANIMETHEMES_API_URL": "https://themes.example/api/",
+                "ANIMETHEMES_REQUEST_TIMEOUT_SECONDS": "8.5",
+                "ANIMETHEMES_CACHE_TTL_SECONDS": "3456",
+                "UPSTREAM_RATE_LIMIT_ANIMETHEMES_PER_MINUTE": "17",
+                "UPSTREAM_RATE_LIMIT_ANIMETHEMES_THEMES_PER_MINUTE": "11",
                 "BAHAMUT_API_URL": "https://bahamut.example/api/",
                 "BAHAMUT_REQUEST_TIMEOUT_SECONDS": "9.5",
                 "BAHA_ANIME_SKIP_DATA_URL": "https://baha.example/data.json",
@@ -124,6 +129,15 @@ class AppSettingsTests(unittest.TestCase):
         self.assertEqual(settings.sources.anime_skip_request_timeout_seconds, 11.5)
         self.assertEqual(settings.sources.anime_skip_cache_ttl_seconds, 2345.0)
         self.assertEqual(settings.rate_limits.source_limit("anime_skip"), 41)
+        self.assertEqual(
+            settings.sources.animethemes_api_url, "https://themes.example/api"
+        )
+        self.assertEqual(settings.sources.animethemes_request_timeout_seconds, 8.5)
+        self.assertEqual(settings.sources.animethemes_cache_ttl_seconds, 3456.0)
+        self.assertEqual(settings.rate_limits.source_limit("animethemes"), 17)
+        self.assertEqual(
+            settings.rate_limits.operation_limit("animethemes", "themes"), 11
+        )
         self.assertEqual(
             settings.sources.bahamut_api_url, "https://bahamut.example/api"
         )
@@ -230,7 +244,7 @@ class AppSettingsTests(unittest.TestCase):
                     encoding="utf-8",
                 )
             values = project_env_values(root)
-        self.assertEqual(len(values), 123)
+        self.assertEqual(len(values), 128)
         self.assertIn("BOT_TOKEN", values)
         self.assertIn("TELEGRAM_BOT_API_LOCAL_FILE_ROOT", values)
         self.assertIn("KITSU_API_URL", values)
@@ -238,6 +252,7 @@ class AppSettingsTests(unittest.TestCase):
         self.assertIn("WHATANIMEISTHIS_API_KEY", values)
         self.assertIn("IMAGE_SEARCH_DB_PATH", values)
         self.assertIn("ANIME_SKIP_CLIENT_ID", values)
+        self.assertIn("ANIMETHEMES_API_URL", values)
         self.assertIn("BAHA_ANIME_SKIP_DB_PATH", values)
 
     def test_relative_paths_are_rooted_at_project(self) -> None:

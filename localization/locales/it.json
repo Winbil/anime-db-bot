@@ -253,6 +253,7 @@
     "episode_filler": "Riempitivo",
     "episode_recap": "Riepilogo",
     "episode_duration": "Durata: {value} min.",
+    "episode_theme_episodes": "Episodi {value}",
     "episode_detail_title": "Episodio {number} — {source}",
     "episode_group_main": "Episodi principali",
     "episode_group_season": "Stagione {number}",

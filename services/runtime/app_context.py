@@ -13,6 +13,7 @@ from core.user_agent_config import UserAgentSettings, load_user_agent_settings
 from core.source_keys import SourceKey
 from mappings.resolver import MappingResolver
 from services.users.bans import SQLiteBanStore, activate_ban_store
+from services.media.anime_themes import AnimeThemeService
 from services.media.characters import CharacterService
 from services.identity.direct_lookup import DirectIdLookupService
 from services.media.episode_segments import EpisodeSegmentService
@@ -33,6 +34,7 @@ from services.runtime.rate_limits import (
 from services.search.service import SearchService
 from services.search.image_quota import SQLiteImageSearchQuotaStore
 from services.search.image_service import ImageSearchService
+from sources.providers.animethemes import AnimeThemesSource
 from sources.providers.image_search import (
     TraceMoeImageSearchProvider,
     WhatAnimeIsThisImageSearchProvider,
@@ -75,6 +77,7 @@ class AppContext:
     character_service: CharacterService
     episode_service: EpisodeService
     episode_segment_service: EpisodeSegmentService
+    anime_theme_service: AnimeThemeService
     trailer_service: TrailerService
     screenshot_service: ScreenshotService
     popularity_service: PopularityService
@@ -151,6 +154,7 @@ class AppContext:
                     settings.sources, identity_resolver.mapping_resolver
                 )
             ),
+            anime_theme_service=AnimeThemeService(AnimeThemesSource(settings.sources)),
             trailer_service=TrailerService(
                 get_trailer_sources(settings.sources, source_health)
             ),
