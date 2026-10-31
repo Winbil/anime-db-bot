@@ -66,11 +66,20 @@ class CrossPlatformProjectCliTests(unittest.TestCase):
             "restart",
             "status",
             "mappings",
+            "baha-index",
             "doctor",
         ):
             with self.subTest(command=command):
                 args = parser.parse_args([command])
                 self.assertEqual(args.command, command)
+
+    def test_start_sh_profile_contract_matches_project_profiles(self) -> None:
+        start_sh = (project.ROOT_DIR / "start.sh").read_text(encoding="utf-8")
+        self.assertNotIn("bahamut.toml", start_sh)
+        self.assertNotIn("baha_anime_skip.toml", start_sh)
+        for filename in project.PROFILE_FILES:
+            with self.subTest(filename=filename):
+                self.assertIn(filename, start_sh)
 
     def test_mappings_command_forwards_unknown_mapping_flags(self) -> None:
         with patch.object(project, "run_mappings", return_value=0) as run_mappings:
