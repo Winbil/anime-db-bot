@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from aiogram.exceptions import TelegramBadRequest
@@ -30,6 +31,7 @@ from services.runtime.app_context import get_app_context
 EPISODES_PER_VIEW = 1
 UPSTREAM_PAGE_SIZE = 100
 _SEGMENT_CALLBACK_PREFIX = "segments-"
+_INITIAL_TIMECODE_WAIT_SECONDS = 0.15
 
 
 def _view_slice(view_page: int) -> tuple[int, int]:
@@ -573,6 +575,36 @@ async def edit_episodes_view(
             episode, locale=locale, source_name=source_name
         )
 
+    timecode_plain = ""
+    timecode_html = ""
+    timecodes_ready = False
+    timecode_task: asyncio.Task[tuple[str, str, list[str], str]] | None = None
+    if episode is not None and segment_backends:
+        timecode_task = asyncio.create_task(
+            _episode_timecodes(
+                session,
+                episode_number=view_page + 1,
+                episode_length_seconds=episode.duration_seconds,
+                locale=locale,
+            )
+        )
+        done, _pending = await asyncio.wait(
+            {timecode_task}, timeout=_INITIAL_TIMECODE_WAIT_SECONDS
+        )
+        if timecode_task in done:
+            (
+                timecode_plain,
+                timecode_html,
+                segment_backends,
+                selected_segment_backend,
+            ) = await timecode_task
+            timecodes_ready = True
+
+    if session.episode_render_generation != generation:
+        if timecode_task is not None and not timecode_task.done():
+            timecode_task.cancel()
+        return
+
     keyboard = _episode_keyboard(
         token,
         backends=backends,
@@ -589,21 +621,21 @@ async def edit_episodes_view(
         segment_service=segment_service,
     )
 
-    # Render episode metadata and the release projection immediately. Timestamp
-    # providers are independent and can be much slower (notably Baha fallback),
-    # so they must not block the first useful frame of the episode page.
+    # Give fast timestamp providers a tiny head start so local/cache hits can be
+    # included in the first Telegram edit. Slow network providers still fall
+    # back to the two-phase render, keeping episode metadata responsive.
     await _render_episode_view(
         message,
         detail_text=detail_text,
         projection_text=projection_text,
-        timecode_plain="",
-        timecode_html="",
+        timecode_plain=timecode_plain,
+        timecode_html=timecode_html,
         keyboard=keyboard,
         locale=locale,
         detail_as_table=episode is not None or projection is not None,
     )
 
-    if episode is None or not segment_backends:
+    if timecode_task is None or timecodes_ready:
         return
 
     (
@@ -611,12 +643,7 @@ async def edit_episodes_view(
         timecode_html,
         segment_backends,
         selected_segment_backend,
-    ) = await _episode_timecodes(
-        session,
-        episode_number=view_page + 1,
-        episode_length_seconds=episode.duration_seconds,
-        locale=locale,
-    )
+    ) = await timecode_task
 
     # A newer episode/source click owns the card now. Do not let this older,
     # slower timestamp request overwrite the current page when it finally ends.
