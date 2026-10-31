@@ -41,6 +41,17 @@ class PaginationPickerTests(unittest.TestCase):
             "ap:token:jikan:32",
         )
 
+    def test_episode_group_picker_offsets_local_index(self) -> None:
+        route = "apg~kitsu~12"
+        self.assertEqual(
+            card_route_callback("token", route, 0),
+            "ap:token:kitsu:12",
+        )
+        self.assertEqual(
+            card_route_callback("token", route, 5),
+            "ap:token:kitsu:17",
+        )
+
     def test_people_visible_position_maps_back_to_portrait_page(self) -> None:
         route = "pv~av~voices~3"
         self.assertEqual(card_route_callback("token", route, 0), "av:token:voices:0")

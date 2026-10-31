@@ -118,17 +118,27 @@ class AniDBSourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(voices[0].external_ids, {"anidb": "200"})
         self.assertTrue(voices[0].portraits["AniDB"][0].endswith("voice.jpg"))
 
-    async def test_regular_episode_page_and_detail_use_anidb_backend(self) -> None:
+    async def test_regular_and_special_episodes_use_anidb_backend(self) -> None:
         page = await self.source.load_episode_page(self.identity, page=1)
-        self.assertEqual([item.number for item in page.items], [1, 2])
+        self.assertEqual([item.number for item in page.items], [1, 2, 1_000_001])
         self.assertFalse(page.has_next)
         self.assertEqual(page.items[0].backend, "anidb")
         self.assertEqual(page.items[0].duration_seconds, 1440)
         self.assertEqual(page.items[0].titles["romaji"], "Hajimari")
+        self.assertEqual(page.items[0].episode_number, 1)
+        special = page.items[-1]
+        self.assertEqual(special.episode_kind, "special")
+        self.assertEqual(special.episode_number, 1)
+        self.assertEqual(special.titles["english"], "Special")
+
         detail = await self.source.load_episode(self.identity, 2)
         self.assertIsNotNone(detail)
         assert detail is not None
         self.assertEqual(detail.urls["AniDB"], "https://anidb.net/episode/1001")
+        special_detail = await self.source.load_episode(self.identity, 1_000_001)
+        self.assertIsNotNone(special_detail)
+        assert special_detail is not None
+        self.assertEqual(special_detail.urls["AniDB"], "https://anidb.net/episode/1099")
 
     async def test_missing_anidb_identity_is_noop(self) -> None:
         self.assertIsNone(await self.source.get_details(AnimeIdentity({"mal": "20"})))

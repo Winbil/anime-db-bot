@@ -28,6 +28,7 @@ The project is designed around explicit boundaries between **search**, **identit
 - **Persistent platform-scoped settings** — user locale, known users, and moderation state are stored in SQLite.
 - **Seven UI languages** — English is the default/fallback locale; Russian, Japanese, German, Spanish, French, and Italian are fully selectable in `/settings`.
 - **Release metadata and projections** — age rating, airing status, aired/total episode counts, and source-backed next-episode timestamps are aggregated; airing TV titles with known totals get clearly marked weekly estimates for all remaining episodes.
+- **Structured episode navigation** — when an episode source explicitly provides season, cour, or special-episode structure, the episode view adds source-backed Season/Cour/OVA-Specials groups with local pagination; ordinary flat episode lists stay unchanged and no season boundaries are guessed from episode numbers.
 - **Production-oriented checks** — Python 3.11–3.14 CI, Ruff, formatter checks, mypy scope, coverage gate, and ShellCheck.
 
 ## Source capabilities
