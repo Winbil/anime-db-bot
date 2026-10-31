@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -39,14 +40,18 @@ def _number(value: Any) -> float | None:
         parsed = float(value)
     except (TypeError, ValueError):
         return None
-    return parsed if parsed == parsed and parsed not in (float("inf"), float("-inf")) else None
+    return (
+        parsed
+        if parsed == parsed and parsed not in (float("inf"), float("-inf"))
+        else None
+    )
 
 
 def _bahamut_ids(path: Path) -> list[str]:
     if not path.is_file():
         raise FileNotFoundError(f"mappings database does not exist: {path}")
     uri = f"file:{path.resolve().as_posix()}?mode=ro"
-    with sqlite3.connect(uri, uri=True, timeout=5.0) as conn:
+    with closing(sqlite3.connect(uri, uri=True, timeout=5.0)) as conn:
         rows = conn.execute(
             """
             SELECT DISTINCT anime_sn FROM (
@@ -124,12 +129,16 @@ def _episode_video_map(anime: dict[str, Any]) -> dict[int, str]:
     if not isinstance(groups, dict):
         return {}
     preferred = groups.get("0")
-    candidates = preferred if isinstance(preferred, list) and preferred else [
-        item
-        for values in groups.values()
-        if isinstance(values, list)
-        for item in values
-    ]
+    candidates = (
+        preferred
+        if isinstance(preferred, list) and preferred
+        else [
+            item
+            for values in groups.values()
+            if isinstance(values, list)
+            for item in values
+        ]
+    )
     by_episode: dict[int, set[str]] = {}
     for item in candidates:
         if not isinstance(item, dict):
@@ -156,7 +165,7 @@ def _create_database(
     mappings_path: Path,
 ) -> tuple[int, int, int]:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(path) as conn:
+    with closing(sqlite3.connect(path)) as conn:
         conn.executescript(
             """
             PRAGMA journal_mode=DELETE;
@@ -239,6 +248,7 @@ def _create_database(
             "INSERT INTO metadata(key, value) VALUES (?, ?)", metadata.items()
         )
         conn.execute("PRAGMA optimize")
+        conn.commit()
     return len(indexed_anime), len(indexed_episodes), segment_count
 
 
