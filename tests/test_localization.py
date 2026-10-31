@@ -153,6 +153,24 @@ class LocalizationCatalogTests(unittest.TestCase):
                     canonical_genre("Action Comedy", locale=locale), expected
                 )
 
+        self.assertEqual(canonical_genre_key("Ninja"), "ninja")
+        self.assertEqual(canonical_genre_key("Fighting-Shounen"), "fighting_shounen")
+        self.assertEqual(canonical_genre_key("Fighting Shonen"), "fighting_shounen")
+        expected_fighting_shounen = {
+            "en": "Fighting Shounen",
+            "ru": "Боевой сёнэн",
+            "ja": "バトル少年",
+            "de": "Kampf-Shōnen",
+            "es": "Shōnen de lucha",
+            "fr": "Shōnen de combat",
+            "it": "Shōnen di combattimento",
+        }
+        for locale, expected in expected_fighting_shounen.items():
+            with self.subTest(locale=locale):
+                self.assertEqual(
+                    canonical_genre("Fighting-Shounen", locale=locale), expected
+                )
+
     def test_kitsu_category_aliases_are_localized(self) -> None:
         expected = {
             "Fantasy World": ("fantasy_world", "Фэнтезийный мир", "ファンタジー世界"),
