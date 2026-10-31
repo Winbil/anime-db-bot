@@ -6,6 +6,53 @@ from bots.telegram.card.views.rendering import dedupe_strings
 from localization import text
 
 
+ALL_TITLE_KEYS = (
+    "russian",
+    "licensed_ru",
+    "romaji",
+    "english",
+    "japanese",
+    "german",
+    "spanish",
+    "french",
+    "italian",
+)
+_LOCALE_TITLE_KEY = {
+    "ru": "russian",
+    "en": "english",
+    "ja": "japanese",
+    "de": "german",
+    "es": "spanish",
+    "fr": "french",
+    "it": "italian",
+}
+
+
+def preferred_title_keys(locale: str) -> tuple[str, ...]:
+    preferred: tuple[str, ...]
+    if locale == "ru":
+        preferred = ("russian", "licensed_ru", "romaji", "english", "japanese")
+    elif locale == "ja":
+        preferred = ("japanese", "romaji", "english", "russian", "licensed_ru")
+    elif locale == "en":
+        preferred = ("english", "romaji", "japanese", "russian", "licensed_ru")
+    else:
+        localized = _LOCALE_TITLE_KEY.get(locale)
+        preferred = tuple(
+            key
+            for key in (
+                localized,
+                "romaji",
+                "english",
+                "japanese",
+                "russian",
+                "licensed_ru",
+            )
+            if key
+        )
+    return tuple(dict.fromkeys((*preferred, *ALL_TITLE_KEYS)))
+
+
 def _title_rows(
     titles_map: dict[str, str],
     synonyms_values: list[str],
@@ -17,11 +64,15 @@ def _title_rows(
         "romaji": text("card", "title_romaji", locale=locale),
         "english": text("card", "title_english", locale=locale),
         "japanese": text("card", "title_japanese", locale=locale),
+        "german": text("card", "title_german", locale=locale),
+        "spanish": text("card", "title_spanish", locale=locale),
+        "french": text("card", "title_french", locale=locale),
+        "italian": text("card", "title_italian", locale=locale),
         "licensed_ru": text("card", "title_licensed_ru", locale=locale),
     }
     rows: list[tuple[str, str]] = []
     seen_titles: set[str] = set()
-    for key in ("russian", "romaji", "english", "japanese", "licensed_ru"):
+    for key in preferred_title_keys(locale):
         value = (titles_map.get(key) or "").strip()
         if value and value.casefold() not in seen_titles:
             seen_titles.add(value.casefold())

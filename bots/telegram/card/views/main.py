@@ -4,6 +4,7 @@ import html
 
 from aiogram.types import InputRichMessage
 
+from bots.telegram.card.views.titles import preferred_title_keys
 from bots.telegram.card.views.rendering import (
     _table_html,
     append_block,
@@ -19,13 +20,7 @@ from localization import text
 
 
 def display_anime_title(anime: AggregatedAnime, locale: str) -> str:
-    if locale == "ja":
-        order = ("japanese", "romaji", "english", "russian", "licensed_ru")
-    elif locale == "ru":
-        order = ("russian", "licensed_ru", "romaji", "english", "japanese")
-    else:
-        order = ("english", "romaji", "japanese", "russian", "licensed_ru")
-    for key in order:
+    for key in preferred_title_keys(locale):
         value = (anime.titles.get(key) or "").strip()
         if value:
             return value

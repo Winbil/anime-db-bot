@@ -1,7 +1,7 @@
 > **AI-assisted project:** This project was developed with the help of AI.
 
 <p align="center">
-  <strong>English</strong> · <a href="docs/README.ru.md">Русский</a> · <a href="docs/README.ja.md">日本語</a>
+  <strong>English</strong> · <a href="docs/README.ru.md">Русский</a> · <a href="docs/README.ja.md">日本語</a> · <a href="docs/README.de.md">Deutsch</a> · <a href="docs/README.es.md">Español</a> · <a href="docs/README.fr.md">Français</a> · <a href="docs/README.it.md">Italiano</a>
 </p>
 
 # anime-db-bot
@@ -26,7 +26,7 @@ The project is designed around explicit boundaries between **search**, **identit
 - **Manifest + lazy enrichment** — staff/seiyuu IDs, names, and roles are prefetched as a lightweight exact roster; portraits are enriched in global batches (50 by default), while characters, screenshots, detailed popularity, descriptions/backgrounds, trailers, and episodes remain lazy.
 - **Shared resilience layer** — typed source errors, retries, circuit breakers, half-open recovery, rate limits, and shared HTTP lifecycle.
 - **Persistent platform-scoped settings** — user locale, known users, and moderation state are stored in SQLite.
-- **Three UI languages** — English is the default/fallback locale; Russian and Japanese are fully selectable in `/settings`.
+- **Seven UI languages** — English is the default/fallback locale; Russian, Japanese, German, Spanish, French, and Italian are fully selectable in `/settings`.
 - **Production-oriented checks** — Python 3.11–3.14 CI, Ruff, formatter checks, mypy scope, coverage gate, and ShellCheck.
 
 ## Source capabilities
@@ -43,7 +43,7 @@ The project is designed around explicit boundaries between **search**, **identit
 
 Kitsu is an identity-native public JSON:API source. Public read-only GET requests do not require OAuth credentials; confirmed Kitsu IDs already participate in `mappings.db`, and Kitsu can also return direct MAL/AniList/AniDB mappings with search results and metadata. Kitsu currently contributes search, metadata, popularity, descriptions, episodes, and a YouTube trailer when available. People/characters are intentionally not advertised because those relationships are often sparse.
 
-AniDB is optional and is enabled only when `ANIDB_CLIENT` is configured. Jikan is **not** a separate identity database: it is a local MAL backend used for data that is not available through the official MAL API. Its main-card licensors and lazy popularity statistics use separate local endpoints, so score-distribution scraping is not on the initial card path. AniSearch is an identity-native Database API source resolved through confirmed `anisearch` mapping edges. Its public API does not expose normal title-query search, so it does not join the fast `/anime <title>` search path. Because AniSearch puts ID and `/full` in the same strict throttle group, the source performs one cached `/full` fetch per title and keeps heavy fields out of initial aggregation; people, characters, and episodes later reuse that same payload without another network wait. Only English and Japanese localized AniSearch data is consumed for now. Public no-token requests are paced to the documented 10-second ID-family interval (5 seconds with a valid token), and AniSearch-sourced synopsis text keeps the required direct AniSearch attribution link. SkipDB support remains in the codebase as a dormant IMDb-backed provider, but it is intentionally not registered in the runtime because current anime skip-segment coverage is too small to justify exposing it in the UI. Its parser/settings/tests are kept so it can be re-enabled later if coverage improves. SkipDB data is served under ODbL 1.0 + reciprocity.
+AniDB is optional and is enabled only when `ANIDB_CLIENT` is configured. Jikan is **not** a separate identity database: it is a local MAL backend used for data that is not available through the official MAL API. Its main-card licensors and lazy popularity statistics use separate local endpoints, so score-distribution scraping is not on the initial card path. AniSearch is an identity-native Database API source resolved through confirmed `anisearch` mapping edges. Its public API does not expose normal title-query search, so it does not join the fast `/anime <title>` search path. Because AniSearch puts ID and `/full` in the same strict throttle group, the source performs one cached `/full` fetch per title and keeps heavy fields out of initial aggregation; people, characters, and episodes later reuse that same payload without another network wait. English, Japanese, German, Spanish, French, and Italian AniSearch localizations are consumed for localized titles/synonyms, synopses, episode titles, regional licensors, and voice credits. Public no-token requests are paced to the documented 10-second ID-family interval (5 seconds with a valid token), and AniSearch-sourced synopsis text keeps the required direct AniSearch attribution link. SkipDB support remains in the codebase as a dormant IMDb-backed provider, but it is intentionally not registered in the runtime because current anime skip-segment coverage is too small to justify exposing it in the UI. Its parser/settings/tests are kept so it can be re-enabled later if coverage improves. SkipDB data is served under ODbL 1.0 + reciprocity.
 
 ## How it works
 
@@ -117,7 +117,7 @@ Image-search credentials are optional. trace.moe runs anonymously when `TRACE_MO
 The main card stays metadata-first. The following sections are loaded only when requested:
 
 - staff and creators;
-- original Japanese voice actors;
+- voice actors, including language-tagged AniSearch dub credits;
 - characters and portraits;
 - screenshots;
 - detailed popularity/ranking distributions;
@@ -125,7 +125,7 @@ The main card stays metadata-first. The following sections are loaded only when 
 - trailers/promos;
 - episodes.
 
-Foreign dub credits are not mixed into the original Japanese voice list. Localization/ADR staff is excluded from the primary production staff list.
+Japanese voice credits remain the untagged original-language baseline. AniSearch dub credits are retained with explicit `[EN]`, `[DE]`, `[ES]`, `[FR]`, or `[IT]` role suffixes so they never masquerade as original Japanese credits. Localization/ADR staff is excluded from the primary production staff list.
 
 ## Requirements and platform support
 
@@ -329,7 +329,11 @@ Supported UI locales:
 
 - `en` — English (**default and fallback**);
 - `ru` — Русский;
-- `ja` — 日本語.
+- `ja` — 日本語;
+- `de` — Deutsch;
+- `es` — Español;
+- `fr` — Français;
+- `it` — Italiano.
 
 Existing users keep their explicitly saved locale. New users, missing settings, invalid locale values, and missing translation keys fall back to English.
 

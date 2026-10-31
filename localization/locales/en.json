@@ -5,7 +5,11 @@
   "locale_names": {
     "en": "English",
     "ru": "Russian",
-    "ja": "Japanese"
+    "ja": "Japanese",
+    "de": "German",
+    "es": "Spanish",
+    "fr": "French",
+    "it": "Italian"
   },
   "common": {
     "unknown": "Unknown",
@@ -174,6 +178,10 @@
     "title_romaji": "Original / romaji",
     "title_english": "English",
     "title_japanese": "日本語",
+    "title_german": "German",
+    "title_spanish": "Spanish",
+    "title_french": "French",
+    "title_italian": "Italian",
     "title_licensed_ru": "Licensed RU",
     "synonyms": "Synonyms",
     "staff": "Staff and creators",

@@ -15,6 +15,10 @@ class CardLocalizationTests(unittest.TestCase):
                 "english": "That Time I Got Reincarnated as a Slime",
                 "romaji": "Tensei Shitara Slime Datta Ken",
                 "japanese": "転生したらスライムだった件",
+                "german": "Meine Wiedergeburt als Schleim in einer anderen Welt",
+                "spanish": "Aquella vez que me convertí en Slime",
+                "french": "Moi, quand je me réincarne en Slime",
+                "italian": "Vita da slime",
             },
             kind="tv",
             status="airing",
@@ -48,7 +52,9 @@ class CardLocalizationTests(unittest.TestCase):
         ru = anime_sections(anime, locale="ru")
         en = anime_sections(anime, locale="en")
 
-        self.assertEqual(display_anime_title(anime, "ru"), "О моём перерождении в слизь")
+        self.assertEqual(
+            display_anime_title(anime, "ru"), "О моём перерождении в слизь"
+        )
         self.assertEqual(
             display_anime_title(anime, "en"),
             "That Time I Got Reincarnated as a Slime",
@@ -66,6 +72,18 @@ class CardLocalizationTests(unittest.TestCase):
         self.assertIn("Source material: Light Novel", en["main"])
         self.assertIn("Schedule: Monday 20:00", en["main"])
 
+    def test_western_locales_prefer_matching_localized_anime_title(self) -> None:
+        anime = self._sample()
+        expected = {
+            "de": "Meine Wiedergeburt als Schleim in einer anderen Welt",
+            "es": "Aquella vez que me convertí en Slime",
+            "fr": "Moi, quand je me réincarne en Slime",
+            "it": "Vita da slime",
+        }
+        for locale, title in expected.items():
+            with self.subTest(locale=locale):
+                self.assertEqual(display_anime_title(anime, locale), title)
+
     def test_people_names_and_roles_are_rendered_once_per_locale(self) -> None:
         anime = self._sample()
         ru = anime_sections(anime, locale="ru")
@@ -73,7 +91,10 @@ class CardLocalizationTests(unittest.TestCase):
 
         self.assertIn("Дзюн Фукуяма (Jun Fukuyama, 福山 潤) — Режиссёр", ru["staff"])
         self.assertIn("Jun Fukuyama (福山 潤) — Director", en["staff"])
-        self.assertIn("Михо Окасаки (Miho Okasaki, 岡咲 美保) — Озвучка: Rimuru Tempest", ru["voices"])
+        self.assertIn(
+            "Михо Окасаки (Miho Okasaki, 岡咲 美保) — Озвучка: Rimuru Tempest",
+            ru["voices"],
+        )
         self.assertIn("Miho Okasaki (岡咲 美保) — Voice: Rimuru Tempest", en["voices"])
         self.assertNotIn("Дзюн Фукуяма (Jun Fukuyama, Дзюн Фукуяма", ru["staff"])
 

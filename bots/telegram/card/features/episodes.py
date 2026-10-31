@@ -12,6 +12,7 @@ from aiogram.types import (
 from bots.telegram.callbacks import KeyedPageCallback, resolve_key_or_legacy_index
 from bots.telegram.pagination import card_picker_callback
 from bots.telegram.card.runtime.state import AnimeCardSession
+from bots.telegram.card.views.titles import preferred_title_keys
 from bots.telegram.card.views.renderer import (
     edit_standard_text,
     plain_text_to_rich_html,
@@ -38,16 +39,7 @@ def _view_slice(view_page: int) -> tuple[int, int]:
 
 
 def _episode_title(episode: EpisodeRecord, locale: str) -> str:
-    order = (
-        ("english", "romaji", "japanese")
-        if locale == "en"
-        else (
-            "romaji",
-            "english",
-            "japanese",
-        )
-    )
-    for key in order:
+    for key in preferred_title_keys(locale):
         value = (episode.titles.get(key) or "").strip()
         if value:
             return value
@@ -550,12 +542,14 @@ def _episode_detail_text(
         "",
         _episode_title(episode, locale),
     ]
-    other_titles = [
-        value
-        for key in ("english", "romaji", "japanese")
-        if (value := (episode.titles.get(key) or "").strip())
-        and value != _episode_title(episode, locale)
-    ]
+    primary_title = _episode_title(episode, locale)
+    other_titles: list[str] = []
+    seen_titles = {primary_title.casefold()}
+    for key in preferred_title_keys(locale):
+        value = (episode.titles.get(key) or "").strip()
+        if value and value.casefold() not in seen_titles:
+            seen_titles.add(value.casefold())
+            other_titles.append(value)
     if other_titles:
         lines.append(
             text(

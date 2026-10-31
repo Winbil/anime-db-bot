@@ -157,7 +157,17 @@ def _dynamic_voice_character(value: str) -> str | None:
     if cleaned.startswith(VOICE_OF_PREFIX):
         return clean_text(cleaned.removeprefix(VOICE_OF_PREFIX))
     folded = cleaned.casefold()
-    for prefix in ("озвучка:", "voice:", "声:", "声："):
+    for prefix in (
+        "озвучка:",
+        "voice:",
+        "stimme:",
+        "voz:",
+        "voix:",
+        "voix :",
+        "voce:",
+        "声:",
+        "声：",
+    ):
         if folded.startswith(prefix):
             return clean_text(cleaned[len(prefix):])
     return None
@@ -303,10 +313,10 @@ def preferred_person_name(names: list[str], *, locale: str = DEFAULT_LOCALE) -> 
 
     if locale == "ja":
         preferred_groups = (japanese, latin, cyrillic)
-    elif locale == "en":
-        preferred_groups = (latin, japanese, cyrillic)
-    else:
+    elif locale == "ru":
         preferred_groups = (cyrillic, latin, japanese)
+    else:
+        preferred_groups = (latin, japanese, cyrillic)
     for group in preferred_groups:
         if group:
             return min(group, key=lambda value: (len(value), value.casefold()))
