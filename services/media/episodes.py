@@ -50,7 +50,6 @@ class EpisodeService:
             return EpisodePage(items=[], page=max(1, int(page)), has_next=False)
         return await source.load_episode_page(identity, page=page)
 
-
     async def load_catalog(
         self,
         identity: AnimeIdentity,
