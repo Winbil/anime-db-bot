@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, time, timezone
 
-from bots.telegram.card.features.episodes import _episode_release_schedule_text
+from bots.telegram.card.features.episodes import _episode_release_projection_text
 from bots.telegram.card.ui.constants import SECTION_LABELS
 from bots.telegram.card.views.renderer import anime_sections
 from core.models import AggregatedAnime, AnimeRecord, BroadcastSlot
@@ -112,13 +112,17 @@ class ReleaseScheduleTests(unittest.TestCase):
         self.assertIn("Всего серий: 10", ru["main"])
         self.assertIn("Возрастной рейтинг: PG-13", ru["main"])
         self.assertIn("Следующая серия №8", ru["main"])
-        integrated = _episode_release_schedule_text(anime, locale="ru")
-        self.assertIn("График выхода серий", integrated)
-        self.assertIn("Серия 8:", integrated)
-        self.assertIn("дата источника", integrated)
-        self.assertIn("Серия 9:", integrated)
-        self.assertIn("предположительно", integrated)
-        self.assertIn("недельному интервалу", integrated)
+        episode_8 = _episode_release_projection_text(anime, 8, locale="ru")
+        self.assertIn("График выхода серий", episode_8)
+        self.assertIn("Серия 8:", episode_8)
+        self.assertIn("дата источника", episode_8)
+        self.assertNotIn("Серия 9:", episode_8)
+
+        episode_9 = _episode_release_projection_text(anime, 9, locale="ru")
+        self.assertIn("Серия 9:", episode_9)
+        self.assertIn("предположительно", episode_9)
+        self.assertIn("недельному интервалу", episode_9)
+        self.assertNotIn("Серия 8:", episode_9)
         self.assertNotIn("release_schedule", ru)
         self.assertNotIn("release_schedule", SECTION_LABELS)
 

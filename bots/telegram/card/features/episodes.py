@@ -12,7 +12,7 @@ from aiogram.types import (
 from bots.telegram.callbacks import KeyedPageCallback, resolve_key_or_legacy_index
 from bots.telegram.pagination import card_picker_callback
 from bots.telegram.card.runtime.state import AnimeCardSession
-from bots.telegram.card.views.release_schedule import format_release_schedule
+from bots.telegram.card.views.release_schedule import format_release_projection
 from bots.telegram.card.views.titles import preferred_title_keys
 from bots.telegram.card.views.renderer import (
     edit_standard_text,
@@ -20,7 +20,7 @@ from bots.telegram.card.views.renderer import (
 )
 from bots.telegram.card.views.rendering import _table_html
 from core.episode_segments import AggregatedEpisodeSegment, EpisodeSegment
-from core.models import AggregatedAnime, EpisodeRecord
+from core.models import AggregatedAnime, EpisodeRecord, EpisodeReleaseProjection
 from localization import text
 from services.media.episode_segments import EpisodeSegmentService
 from services.media.episodes import EpisodeService
@@ -139,10 +139,34 @@ def _episode_summary_lines(episode: EpisodeRecord, *, locale: str) -> list[str]:
     return lines
 
 
-def _episode_release_schedule_text(anime: AggregatedAnime, *, locale: str) -> str:
-    if not anime.episode_release_schedule:
+def _episode_release_projection(
+    anime: AggregatedAnime, episode_number: int
+) -> EpisodeReleaseProjection | None:
+    return next(
+        (
+            item
+            for item in anime.episode_release_schedule
+            if item.episode_number == episode_number
+        ),
+        None,
+    )
+
+
+def _episode_release_projection_text(
+    anime: AggregatedAnime, episode_number: int, *, locale: str
+) -> str:
+    projection = _episode_release_projection(anime, episode_number)
+    if projection is None:
         return ""
-    return format_release_schedule(anime, locale=locale)
+    lines = [
+        f"{text('card', 'release_schedule_title', locale=locale)}:",
+        format_release_projection(projection, locale=locale),
+    ]
+    if projection.estimated:
+        lines.extend(
+            ["", text("card", "release_schedule_estimate_note", locale=locale)]
+        )
+    return "\n".join(lines)
 
 
 def _episodes_text(
@@ -424,8 +448,11 @@ async def edit_episodes_view(
         )
         return
 
+    requested_episode_number = view_page + 1
+    projection = _episode_release_projection(session.anime, requested_episode_number)
+
     items = page.items[offset : offset + EPISODES_PER_VIEW]
-    if not items and view_page > 0:
+    if not items and view_page > 0 and projection is None:
         target_upstream = min(upstream_page, max(1, page.last_visible_page))
         if target_upstream != upstream_page:
             try:
@@ -439,11 +466,19 @@ async def edit_episodes_view(
             )
             view_page = (target_upstream - 1) * UPSTREAM_PAGE_SIZE + offset
             items = page.items[offset : offset + EPISODES_PER_VIEW]
+            requested_episode_number = view_page + 1
+            projection = _episode_release_projection(
+                session.anime, requested_episode_number
+            )
 
+    source_has_next = offset + EPISODES_PER_VIEW < len(page.items) or page.has_next
     has_prev = view_page > 0
-    has_next = offset + EPISODES_PER_VIEW < len(page.items) or page.has_next
+    has_projected_next = (
+        _episode_release_projection(session.anime, view_page + 2) is not None
+    )
+    has_next = source_has_next or has_projected_next
     total_episodes = session.anime.episodes_total
-    if not page.has_next:
+    if not page.has_next and not session.anime.episode_release_schedule:
         backend_total = (page.page - 1) * UPSTREAM_PAGE_SIZE + len(page.items)
         if backend_total > 0:
             total_episodes = backend_total
@@ -467,15 +502,31 @@ async def edit_episodes_view(
         if detailed is not None:
             episode = detailed
 
+    projection_text = _episode_release_projection_text(
+        session.anime, requested_episode_number, locale=locale
+    )
     timecode_plain = ""
     timecode_html = ""
     selected_segment_backend = session.episode_segment_backend
     if episode is None:
-        detail_text = _episodes_text([], locale=locale, source_name=source_name)
+        if projection is None:
+            content = _episodes_text([], locale=locale, source_name=source_name)
+        else:
+            content = "\n".join(
+                [
+                    text(
+                        "card",
+                        "episode_detail_title",
+                        locale=locale,
+                        number=str(requested_episode_number),
+                        source=source_name,
+                    ),
+                    "",
+                    text("card", "episode_untitled", locale=locale),
+                ]
+            )
     else:
-        detail_text = _episode_detail_text(
-            episode, locale=locale, source_name=source_name
-        )
+        content = _episode_detail_text(episode, locale=locale, source_name=source_name)
         (
             timecode_plain,
             timecode_html,
@@ -487,14 +538,11 @@ async def edit_episodes_view(
             episode_length_seconds=episode.duration_seconds,
             locale=locale,
         )
+        if timecode_plain:
+            content = f"{content}\n\n{timecode_plain}"
 
-    schedule_plain = _episode_release_schedule_text(session.anime, locale=locale)
-    content_blocks = [detail_text]
-    if timecode_plain:
-        content_blocks.append(timecode_plain)
-    if schedule_plain:
-        content_blocks.append(schedule_plain)
-    content = "\n\n".join(content_blocks)
+    if projection_text:
+        content = f"{content}\n\n{projection_text}"
 
     keyboard = _episode_keyboard(
         token,
@@ -512,11 +560,16 @@ async def edit_episodes_view(
     )
 
     try:
+        detail_text = content
+        if projection_text:
+            detail_text = detail_text[: -(len(projection_text) + 2)]
+        if timecode_plain:
+            detail_text = detail_text[: -(len(timecode_plain) + 2)]
         rich_html = plain_text_to_rich_html(detail_text)
         if timecode_html:
             rich_html += timecode_html
-        if schedule_plain:
-            rich_html += plain_text_to_rich_html(schedule_plain)
+        if projection_text:
+            rich_html += plain_text_to_rich_html(projection_text)
         await message.edit_text(
             rich_message=InputRichMessage(html=rich_html),
             reply_markup=keyboard,
