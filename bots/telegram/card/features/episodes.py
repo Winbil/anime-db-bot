@@ -770,11 +770,7 @@ async def edit_episodes_view(
     timecode_html = ""
     timecodes_ready = False
     timecode_task: asyncio.Task[tuple[str, str, list[str], str]] | None = None
-    if (
-        episode is not None
-        and episode.episode_kind == "regular"
-        and segment_backends
-    ):
+    if episode is not None and episode.episode_kind == "regular" and segment_backends:
         timecode_task = asyncio.create_task(
             _episode_timecodes(
                 session,
