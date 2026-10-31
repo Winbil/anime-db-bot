@@ -14,6 +14,7 @@ from core.models import (
     PopularityStats,
 )
 from core.people_loading import PeopleBatch
+from core.related_anime import AnimeReference, canonical_relation_kind
 from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
@@ -55,6 +56,8 @@ POPULARITY_FIELDS = ",".join(
     )
 )
 DESCRIPTION_FIELDS = "synopsis,background"
+RELATIONS_FIELDS = "related_anime"
+RECOMMENDATIONS_FIELDS = "recommendations"
 
 
 def _settings() -> SourceSettings:
@@ -142,6 +145,28 @@ def _status_distribution(value: dict[str, Any] | None) -> dict[str, int]:
         if key and count is not None and count >= 0:
             result[key] = count
     return result
+
+
+def _anime_reference(
+    node: dict[str, Any],
+    *,
+    relation: object | None = None,
+    rank: int = 1,
+) -> AnimeReference | None:
+    mal_id = _clean(node.get("id"))
+    title = _clean(node.get("title"))
+    if not mal_id.isdigit() or not title:
+        return None
+    picture = node.get("main_picture") or {}
+    poster = _clean(picture.get("large")) or _clean(picture.get("medium"))
+    return AnimeReference(
+        source="MAL (MyAnimeList)",
+        titles={"romaji": title},
+        external_ids={"mal": mal_id},
+        posters=[poster] if poster else [],
+        relation=canonical_relation_kind(relation) if relation else None,
+        rank=max(1, int(rank)),
+    )
 
 
 def _posters(raw: dict[str, Any]) -> list[str]:
@@ -373,6 +398,50 @@ class MALSource:
             description=_clean(raw.get("synopsis")) or None,
             background=_clean(raw.get("background")) or None,
         )
+
+    async def load_relations(self, identity: AnimeIdentity) -> list[AnimeReference]:
+        mal_id = str(identity.get("mal") or "").strip()
+        if not mal_id.isdigit():
+            return []
+        raw = await _get_raw(
+            mal_id,
+            self.settings,
+            fields=RELATIONS_FIELDS,
+            operation="relations",
+        )
+        result: list[AnimeReference] = []
+        for index, item in enumerate((raw or {}).get("related_anime") or [], 1):
+            if not isinstance(item, dict) or not isinstance(item.get("node"), dict):
+                continue
+            reference = _anime_reference(
+                item["node"],
+                relation=item.get("relation_type"),
+                rank=index,
+            )
+            if reference is not None:
+                result.append(reference)
+        return result
+
+    async def load_recommendations(
+        self, identity: AnimeIdentity
+    ) -> list[AnimeReference]:
+        mal_id = str(identity.get("mal") or "").strip()
+        if not mal_id.isdigit():
+            return []
+        raw = await _get_raw(
+            mal_id,
+            self.settings,
+            fields=RECOMMENDATIONS_FIELDS,
+            operation="recommendations",
+        )
+        result: list[AnimeReference] = []
+        for index, item in enumerate((raw or {}).get("recommendations") or [], 1):
+            if not isinstance(item, dict) or not isinstance(item.get("node"), dict):
+                continue
+            reference = _anime_reference(item["node"], rank=index)
+            if reference is not None:
+                result.append(reference)
+        return result
 
     async def load_characters(self, identity: AnimeIdentity) -> list[CharacterRecord]:
         return await self._jikan.load_characters(identity)

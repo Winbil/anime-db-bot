@@ -23,6 +23,7 @@ from core.models import (
     PopularityStats,
 )
 from core.people_loading import PeopleBatch, PeopleManifest
+from core.related_anime import AnimeReference, canonical_relation_kind
 from core.settings import SourceSettings, get_settings
 from core.temporal import PartialDate, parse_datetime, parse_partial_date
 from core.source_errors import SourceInvalidResponse
@@ -65,6 +66,16 @@ DETAIL_FIELDS = """
       previewUrl
     }
     url
+"""
+
+
+BRIEF_MAL_IDS_QUERY = """
+query AnimePeerIds($ids: String!) {
+  animes(ids: $ids, limit: 50) {
+    id
+    malId
+  }
+}
 """
 
 PERSON_ROLES_FIELDS = """
@@ -409,6 +420,93 @@ def _screenshot_urls(values: Any, settings: SourceSettings | None = None) -> lis
     return _dedupe(result)
 
 
+def _reference_from_brief(
+    raw: dict[str, Any],
+    *,
+    relation: object | None = None,
+    rank: int = 1,
+    settings: SourceSettings | None = None,
+    mal_id: str | None = None,
+) -> AnimeReference | None:
+    shikimori_id = _clean_text(raw.get("id"))
+    romaji = _clean_text(raw.get("name"))
+    russian = _clean_text(raw.get("russian"))
+    if not shikimori_id.isdigit() or not (romaji or russian):
+        return None
+    image = raw.get("image") or {}
+    poster = _clean_text(image.get("original")) or _clean_text(image.get("preview"))
+    if poster.startswith("/"):
+        poster = f"{site_url(settings)}{poster}"
+    titles = {}
+    if romaji:
+        titles["romaji"] = romaji
+    if russian:
+        titles["russian"] = russian
+    external_ids = {"shikimori": shikimori_id}
+    if str(mal_id or "").isdigit():
+        external_ids["mal"] = str(mal_id)
+    return AnimeReference(
+        source="Shikimori",
+        titles=titles,
+        external_ids=external_ids,
+        posters=[poster] if poster else [],
+        relation=canonical_relation_kind(relation) if relation else None,
+        rank=max(1, int(rank)),
+    )
+
+
+async def _load_peer_mal_ids(
+    shikimori_ids: list[str],
+    settings: SourceSettings | None = None,
+) -> dict[str, str]:
+    values = [value for value in dict.fromkeys(shikimori_ids) if value.isdigit()][:50]
+    if not values:
+        return {}
+    data = await _graphql(
+        BRIEF_MAL_IDS_QUERY,
+        {"ids": ",".join(values)},
+        settings,
+        operation="relations",
+    )
+    result: dict[str, str] = {}
+    for raw in data.get("animes") or []:
+        shikimori_id = _clean_text(raw.get("id"))
+        mal_id = _clean_text(raw.get("malId"))
+        if shikimori_id.isdigit() and mal_id.isdigit():
+            result[shikimori_id] = mal_id
+    return result
+
+
+async def _load_related_rest(
+    anime_id: str,
+    endpoint: str,
+    settings: SourceSettings | None = None,
+) -> list[dict[str, Any]]:
+    response = await http_request(
+        "shikimori",
+        "GET",
+        f"{site_url(settings)}/api/animes/{anime_id}/{endpoint}",
+        operation="relations" if endpoint == "related" else "recommendations",
+        timeout=15.0,
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+    )
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise SourceInvalidResponse(
+            "Shikimori returned non-JSON related anime payload",
+            source="shikimori",
+            operation=endpoint,
+        ) from exc
+    if not isinstance(body, list):
+        raise SourceInvalidResponse(
+            "Shikimori returned an unexpected related anime payload",
+            source="shikimori",
+            operation=endpoint,
+        )
+    return [item for item in body if isinstance(item, dict)]
+
+
 def _record(raw: dict[str, Any], settings: SourceSettings | None = None) -> AnimeRecord:
     russian = _clean_text(raw.get("russian"))
     romaji = _clean_text(raw.get("name"))
@@ -530,6 +628,59 @@ class ShikimoriSource:
             anime_id,
         )
         return record
+
+    async def load_relations(self, identity: AnimeIdentity) -> list[AnimeReference]:
+        anime_id = self._anime_id(identity)
+        if not anime_id.isdigit():
+            return []
+        raw_items = await _load_related_rest(anime_id, "related", self._settings)
+        anime_items: list[dict[str, Any]] = []
+        for item in raw_items:
+            anime = item.get("anime")
+            if isinstance(anime, dict) and anime:
+                anime_items.append(anime)
+        mal_ids = await _load_peer_mal_ids(
+            [_clean_text(item.get("id")) for item in anime_items], self._settings
+        )
+        result: list[AnimeReference] = []
+        for index, item in enumerate(raw_items, 1):
+            anime = item.get("anime")
+            if not isinstance(anime, dict) or not anime:
+                continue
+            shikimori_peer_id = _clean_text(anime.get("id"))
+            reference = _reference_from_brief(
+                anime,
+                relation=item.get("relation"),
+                rank=index,
+                settings=self._settings,
+                mal_id=mal_ids.get(shikimori_peer_id),
+            )
+            if reference is not None:
+                result.append(reference)
+        return result
+
+    async def load_recommendations(
+        self, identity: AnimeIdentity
+    ) -> list[AnimeReference]:
+        anime_id = self._anime_id(identity)
+        if not anime_id.isdigit():
+            return []
+        raw_items = (await _load_related_rest(anime_id, "similar", self._settings))[:30]
+        mal_ids = await _load_peer_mal_ids(
+            [_clean_text(item.get("id")) for item in raw_items], self._settings
+        )
+        result: list[AnimeReference] = []
+        for index, item in enumerate(raw_items, 1):
+            shikimori_peer_id = _clean_text(item.get("id"))
+            reference = _reference_from_brief(
+                item,
+                rank=index,
+                settings=self._settings,
+                mal_id=mal_ids.get(shikimori_peer_id),
+            )
+            if reference is not None:
+                result.append(reference)
+        return result
 
     async def load_screenshots(self, identity: AnimeIdentity) -> list[str]:
         anime_id = self._anime_id(identity)

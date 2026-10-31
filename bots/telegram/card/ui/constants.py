@@ -16,6 +16,8 @@ SECTION_LABELS = {
     "voices": "section_voices",
     "characters": "section_characters",
     "screenshots": "section_screenshots",
+    "related": "section_related",
+    "recommendations": "section_recommendations",
 }
 
 SOURCE_SELECTABLE_SECTIONS = {"titles", "staff", "voices", "popularity", "screenshots"}

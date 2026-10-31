@@ -26,6 +26,7 @@ from services.media.episodes import EpisodeService
 from services.identity.resolver import IdentityResolver
 from services.identity.aggregator import AnimeAggregator
 from services.media.people import PeopleProgressService
+from services.media.related import RelatedAnimeService
 from services.media.sections import (
     DescriptionService,
     PopularityService,
@@ -89,6 +90,7 @@ class AppContext:
     popularity_service: PopularityService
     description_service: DescriptionService
     people_progress_service: PeopleProgressService
+    related_anime_service: RelatedAnimeService
     direct_lookup: DirectIdLookupService
     image_search_service: ImageSearchService
 
@@ -235,6 +237,9 @@ class AppContext:
                 sources,
                 aggregator,
                 portrait_batch_size=settings.sources.people_portrait_batch_size,
+            ),
+            related_anime_service=RelatedAnimeService(
+                sources, identity_resolver.mapping_resolver
             ),
             direct_lookup=direct_lookup,
             image_search_service=image_search_service,

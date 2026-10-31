@@ -314,7 +314,13 @@
     "episodes_total": "Total episodes: {value}",
     "next_episode_numbered": "Next episode #{episode}: {value}",
     "next_episode_estimated": "Expected next episode: ~{value}",
-    "next_episode_estimated_numbered": "Expected next episode #{episode}: ~{value}"
+    "next_episode_estimated_numbered": "Expected next episode #{episode}: ~{value}",
+    "section_related": "Related",
+    "section_recommendations": "Recommendations",
+    "related_button": "Related",
+    "recommendations_button": "Recommendations",
+    "discovery_count": "Found: {count}",
+    "discovery_sources": "Sources: {sources}"
   },
   "people": {
     "staff": "Staff and creators",
@@ -567,6 +573,24 @@
     "main": "Main",
     "supporting": "Supporting",
     "background": "Background",
+    "other": "Other"
+  },
+  "relation_type": {
+    "prequel": "Prequel",
+    "sequel": "Sequel",
+    "parent": "Parent story",
+    "side_story": "Side story",
+    "spin_off": "Spin-off",
+    "alternative": "Alternative",
+    "alternative_setting": "Alternative setting",
+    "alternative_version": "Alternative version",
+    "summary": "Summary",
+    "full_story": "Full story",
+    "compilation": "Compilation",
+    "contains": "Contains",
+    "adaptation": "Adaptation",
+    "source": "Source",
+    "character": "Character",
     "other": "Other"
   }
 }

@@ -16,6 +16,7 @@ from bots.telegram.pagination import card_picker_keyboard
 from bots.telegram.card.features.characters import edit_characters_view
 from bots.telegram.card.features.descriptions import ensure_descriptions_loaded
 from bots.telegram.card.features.popularity import ensure_popularity_loaded
+from bots.telegram.card.features.related import edit_related_view, send_related_item
 from bots.telegram.card.ui.constants import SECTION_LABELS, SOURCE_SELECTABLE_SECTIONS
 from bots.telegram.card.features.episodes import edit_episode_detail, edit_episodes_view
 from bots.telegram.card.views.renderer import (
@@ -388,6 +389,39 @@ def build_dispatcher(mode_name: str, state: TelegramCardState) -> Dispatcher:
                 locale=locale,
             )
 
+    @dp.callback_query(F.data.startswith("ari:"))
+    async def related_item_callback_handler(callback: CallbackQuery) -> None:
+        locale = get_user_locale(callback.from_user.id)
+        data = KeyedPageCallback.parse(callback.data, prefix="ari")
+        if data is None or data.key not in {"related", "recommendations"}:
+            await callback.answer(
+                text("card", "invalid_command", locale=locale), show_alert=True
+            )
+            return
+        session = _session_for_callback(callback, data.token, state)
+        if session is None:
+            raw_session = state.anime_sessions.get(data.token)
+            key = "not_owner" if raw_session is not None else "expired"
+            await callback.answer(text("card", key, locale=locale), show_alert=True)
+            return
+        if callback.message is None:
+            await callback.answer()
+            return
+        await callback.answer()
+        try:
+            await send_related_item(
+                callback.message,
+                session,
+                state,
+                section=data.key,
+                index=data.page,
+                owner_user_id=callback.from_user.id,
+            )
+        except IndexError:
+            await callback.message.answer(
+                text("card", "invalid_command", locale=locale)
+            )
+
     @dp.callback_query(F.data.startswith("av:"))
     async def anime_view_callback_handler(callback: CallbackQuery) -> None:
         locale = get_user_locale(callback.from_user.id)
@@ -422,6 +456,16 @@ def build_dispatcher(mode_name: str, state: TelegramCardState) -> Dispatcher:
             return
 
         await callback.answer()
+        if section in {"related", "recommendations"}:
+            await edit_related_view(
+                callback.message,
+                token,
+                raw_session,
+                section=section,
+                page=data.page,
+                locale=locale,
+            )
+            return
         if section == "episodes":
             await edit_episodes_view(
                 callback.message,

@@ -46,6 +46,11 @@ class AppContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(context.sources)
         self.assertTrue(context.search_service.provider_name)
         self.assertIsNotNone(context.people_progress_service)
+        self.assertIsNotNone(context.related_anime_service)
+        self.assertIs(
+            context.related_anime_service._mapping_resolver,
+            context.identity_resolver.mapping_resolver,
+        )
         self.assertEqual(
             context.episode_segment_service.available_backends(
                 AnimeIdentity({"mal": "1"})

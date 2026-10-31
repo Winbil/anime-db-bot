@@ -314,7 +314,13 @@
     "episodes_total": "全話数: {value}話",
     "next_episode_numbered": "次回 第{episode}話: {value}",
     "next_episode_estimated": "次回予測: 約 {value}",
-    "next_episode_estimated_numbered": "次回 第{episode}話の予測: 約 {value}"
+    "next_episode_estimated_numbered": "次回 第{episode}話の予測: 約 {value}",
+    "section_related": "関連作品",
+    "section_recommendations": "おすすめ",
+    "related_button": "関連作品",
+    "recommendations_button": "おすすめ",
+    "discovery_count": "見つかった作品: {count}",
+    "discovery_sources": "ソース: {sources}"
   },
   "people": {
     "staff": "スタッフ・制作陣",
@@ -567,6 +573,24 @@
     "main": "メイン",
     "supporting": "サブ",
     "background": "背景",
+    "other": "その他"
+  },
+  "relation_type": {
+    "prequel": "前日譚",
+    "sequel": "続編",
+    "parent": "本編",
+    "side_story": "サイドストーリー",
+    "spin_off": "スピンオフ",
+    "alternative": "別作品",
+    "alternative_setting": "別設定",
+    "alternative_version": "別バージョン",
+    "summary": "総集編",
+    "full_story": "完全版",
+    "compilation": "コンピレーション",
+    "contains": "収録",
+    "adaptation": "アダプテーション",
+    "source": "原作",
+    "character": "キャラクター",
     "other": "その他"
   }
 }
