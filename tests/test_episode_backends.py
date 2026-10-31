@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -452,12 +453,86 @@ class EpisodeProjectionUiTests(unittest.IsolatedAsyncioTestCase):
                 backend="jikan",
             )
 
+        self.assertEqual(len(message.calls), 1)
+        html = message.calls[0]["rich_message"].html or ""
+        self.assertIn("<table", html)
+        self.assertIn("График выхода серий", html)
+        self.assertIn("⏱ Все", html)
+        self.assertLess(html.index("График выхода серий"), html.index("⏱ Все"))
+
+    async def test_slow_timestamps_keep_two_phase_render(self) -> None:
+        source = _EpisodeSource("jikan", "mal", "MAL / Jikan")
+
+        async def load_page(identity, *, page=1):
+            return EpisodePage(
+                items=[EpisodeRecord(number=1, source="mal", backend="jikan")],
+                page=page,
+                last_visible_page=1,
+                has_next=False,
+            )
+
+        async def load_episode(identity, episode_number):
+            return EpisodeRecord(number=1, source="mal", backend="jikan")
+
+        class _SlowSegmentSource(_SegmentSource):
+            async def load_segments(
+                self,
+                identity,
+                episode_number,
+                *,
+                episode_length_seconds=None,
+            ):
+                await asyncio.sleep(0.05)
+                return []
+
+        source.load_episode_page = load_page
+        source.load_episode = load_episode
+        episode_service = EpisodeService([source])
+        segment_service = EpisodeSegmentService([_SlowSegmentSource()])
+        anime = AggregatedAnime(
+            title="Slow timestamps",
+            external_ids={"mal": "1"},
+            episodes_total=1,
+            episode_release_schedule=[
+                EpisodeReleaseProjection(
+                    episode_number=1,
+                    airs_at=datetime(2026, 11, 6, 14, 0, tzinfo=timezone.utc),
+                    estimated=False,
+                )
+            ],
+        )
+        session = AnimeCardSession(anime=anime, owner_user_id=1)
+        message = _CaptureMessage()
+        context = SimpleNamespace(
+            episode_service=episode_service,
+            episode_segment_service=segment_service,
+        )
+
+        with (
+            patch(
+                "bots.telegram.card.features.episodes.get_app_context",
+                return_value=context,
+            ),
+            patch(
+                "bots.telegram.card.features.episodes._INITIAL_TIMECODE_WAIT_SECONDS",
+                0.005,
+            ),
+        ):
+            await edit_episodes_view(
+                message,
+                "token",
+                session,
+                view_page=0,
+                locale="ru",
+                backend="jikan",
+            )
+
         self.assertEqual(len(message.calls), 2)
         first_html = message.calls[0]["rich_message"].html or ""
         final_html = message.calls[-1]["rich_message"].html or ""
-        self.assertIn("<table", first_html)
         self.assertIn("График выхода серий", first_html)
         self.assertNotIn("⏱ Все", first_html)
+        self.assertIn("⏱ Все", final_html)
         self.assertLess(
             final_html.index("График выхода серий"), final_html.index("⏱ Все")
         )
