@@ -144,7 +144,19 @@
     "source_health_state_open": "открыт",
     "source_health_state_half_open": "полуоткрыт",
     "source_health_probe_yes": "да",
-    "source_health_probe_no": "нет"
+    "source_health_probe_no": "нет",
+    "status_title": "Статус anime-db-bot",
+    "status_uptime": "Uptime: {value}",
+    "status_process_note": "Метрики хранятся в памяти текущего процесса и сбрасываются при рестарте.",
+    "status_sources": "Источники:",
+    "status_no_sources": "Активные источники не найдены.",
+    "status_cache": "TTL-кэш:",
+    "status_cache_summary": "Hit rate за 24ч: {rate} · hit/miss/expired {hits}/{misses}/{expired}",
+    "status_cache_line": "{cache}: {rate} · обращений {accesses}",
+    "status_load": "Нагрузка:",
+    "status_window_line": "{window}: запросов {total} · вызовов источников {sources} · ошибок {errors}",
+    "status_unavailable": "Runtime-метрики недоступны.",
+    "status_source_line": "{source}: {state}{note} · {latency} · вызовы 1ч/24ч {calls} · ошибки {errors}"
   },
   "rate_limit": {
     "too_many_requests": "Ошибка: Too Many Requests\nСлишком много запросов. Повторите через {seconds} секунд."

@@ -21,6 +21,7 @@ from core.logging_config import configure_logging
 from core.models import SearchCandidate
 from core.observability import bind_observability_context, new_correlation_id
 from core.proxy_config import ProxyProfile, load_proxy_settings
+from core.runtime_metrics import get_runtime_metrics
 from core.settings import TelegramSettings, get_settings
 from core.user_agent_config import UserAgentProfile, load_user_agent_settings
 from localization import text
@@ -121,6 +122,9 @@ class _ObservabilityMiddleware(BaseMiddleware):
             try:
                 result = await handler(event, data)
             except Exception as exc:
+                metrics = get_runtime_metrics()
+                if metrics is not None:
+                    metrics.record_update(outcome="error")
                 logging.error(
                     "Telegram update failed",
                     extra={
@@ -131,6 +135,9 @@ class _ObservabilityMiddleware(BaseMiddleware):
                     },
                 )
                 raise
+            metrics = get_runtime_metrics()
+            if metrics is not None:
+                metrics.record_update(outcome="success")
             logging.info(
                 "Telegram update completed",
                 extra={
@@ -262,7 +269,12 @@ async def run_bot(
             dp.callback_query.outer_middleware(rate_limit)
             dp.callback_query.outer_middleware(_CallbackRoutingMiddleware(card_state))
 
-            register_admin_handlers(dp, source_health=context.source_health)
+            register_admin_handlers(
+                dp,
+                source_health=context.source_health,
+                runtime_metrics=context.runtime_metrics,
+                source_descriptors=context.runtime_source_descriptors(),
+            )
 
             async def aggregate_search_result(
                 message: Message,
@@ -281,7 +293,10 @@ async def run_bot(
                 aggregate_callback=aggregate_search_result,
                 default_service=context.search_service,
                 direct_lookup=context.direct_lookup,
-                provider_map=context.search_provider_map,
+                provider_map={
+                    str(key): provider
+                    for key, provider in context.search_provider_map.items()
+                },
                 image_search_service=context.image_search_service,
                 image_search_max_bytes=context.settings.sources.image_search_max_bytes,
                 input_ttl_seconds=context.settings.telegram.anime_input_ttl_seconds,

@@ -20,6 +20,7 @@ from bots.telegram.admin import (
     _parse_mapping_set,
     register_admin_handlers,
 )
+from core.runtime_metrics import RuntimeMetricsRegistry, RuntimeSourceDescriptor
 from core.source_errors import SourceUnavailable
 from mappings.resolver import MappingOverride, MappingOverrideHistory
 from services.runtime.source_health import SourceHealthRegistry
@@ -153,7 +154,23 @@ class AdminAiogramIntegrationTests(unittest.IsolatedAsyncioTestCase):
             cooldown_seconds=30.0,
             clock=lambda: 100.0,
         )
-        register_admin_handlers(self.dispatcher, source_health=self.source_health)
+        self.runtime_metrics = RuntimeMetricsRegistry(clock=lambda: 100.0)
+        self.source_descriptors = (
+            RuntimeSourceDescriptor("anilist", "AniList"),
+            RuntimeSourceDescriptor(
+                "anidb", "AniDB", mode="limited", note="pacing 2.2s"
+            ),
+            RuntimeSourceDescriptor(
+                "baha_anime_skip", "Baha Anime Skip", mode="local", note="SQLite"
+            ),
+            RuntimeSourceDescriptor("trace_moe", "trace.moe"),
+        )
+        register_admin_handlers(
+            self.dispatcher,
+            source_health=self.source_health,
+            runtime_metrics=self.runtime_metrics,
+            source_descriptors=self.source_descriptors,
+        )
         self.update_id = 0
 
     async def asyncTearDown(self) -> None:
@@ -200,6 +217,55 @@ class AdminAiogramIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("anilist: open", text)
         self.assertIn("failures=1", text)
         self.assertNotIn("private upstream detail", text)
+
+    async def test_status_reports_sources_cache_and_requested_time_windows(
+        self,
+    ) -> None:
+        for _ in range(4):
+            self.runtime_metrics.record_update(outcome="success")
+        self.runtime_metrics.record_update(outcome="error")
+        self.runtime_metrics.record_source_call(
+            "anilist", outcome="success", duration_ms=142.0
+        )
+        self.runtime_metrics.record_source_call(
+            "anidb", outcome="success", duration_ms=381.0
+        )
+        self.runtime_metrics.record_source_call(
+            "baha_anime_skip", outcome="success", duration_ms=0.7
+        )
+        self.runtime_metrics.record_source_call(
+            "trace_moe", outcome="limited", duration_ms=25.0
+        )
+        self.runtime_metrics.record_cache_access("search_page", result="hit")
+        self.runtime_metrics.record_cache_access("search_page", result="hit")
+        self.runtime_metrics.record_cache_access("search_page", result="miss")
+
+        with (
+            patch("bots.telegram.admin.is_telegram_admin", return_value=True),
+            patch("bots.telegram.admin.get_user_locale", return_value="ru"),
+        ):
+            rendered = await self._feed("/status")
+
+        self.assertIn("Статус anime-db-bot", rendered)
+        self.assertIn("AniList: OK · 142 ms", rendered)
+        self.assertIn("AniDB: LIMITED (pacing 2.2s) · 381 ms", rendered)
+        self.assertIn("Baha Anime Skip: LOCAL (SQLite) · 0.7 ms", rendered)
+        self.assertIn("trace.moe: LIMITED · 25 ms", rendered)
+        self.assertIn("Hit rate за 24ч: 66.7%", rendered)
+        self.assertIn("search_page: 66.7% · обращений 3", rendered)
+        for window in ("1h", "5h", "10h", "24h"):
+            self.assertIn(f"{window}: запросов 5", rendered)
+        self.assertIn("вызовов источников 4", rendered)
+        self.assertIn("ошибок 1", rendered)
+
+    async def test_status_is_admin_only(self) -> None:
+        with (
+            patch("bots.telegram.admin.is_telegram_admin", return_value=False),
+            patch("bots.telegram.admin.get_user_locale", return_value="ru"),
+        ):
+            rendered = await self._feed("/status", user_id=99)
+        self.assertEqual(rendered, "Недостаточно прав.")
+        self.assertNotIn("AniList", rendered)
 
     async def test_mapping_overrides_runs_through_command_filter_and_handler(
         self,

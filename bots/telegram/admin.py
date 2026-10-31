@@ -12,6 +12,7 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message, TelegramObject
 
 from bots.session_store import ExpiringSessionStore
+from core.runtime_metrics import RuntimeMetricsRegistry, RuntimeSourceDescriptor
 from localization import text
 from mappings.resolver import (
     MappingOverride,
@@ -309,10 +310,183 @@ def _source_health_line(snapshot: SourceHealthSnapshot, locale: str) -> str:
     )
 
 
+def _format_uptime(seconds: float) -> str:
+    total = max(0, int(seconds))
+    days, remainder = divmod(total, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days}d")
+    if hours or days:
+        parts.append(f"{hours}h")
+    if minutes or hours or days:
+        parts.append(f"{minutes}m")
+    if not parts:
+        parts.append(f"{seconds}s")
+    return " ".join(parts)
+
+
+def _format_latency(value: float | None) -> str:
+    if value is None:
+        return "—"
+    if value < 10:
+        return f"{value:.1f} ms"
+    return f"{round(value):d} ms"
+
+
+def _format_percent(value: float | None) -> str:
+    return "—" if value is None else f"{value * 100:.1f}%"
+
+
+def _runtime_source_state(
+    descriptor: RuntimeSourceDescriptor,
+    snapshot: SourceHealthSnapshot,
+    *,
+    calls_24h: int,
+    errors_1h: int,
+    limited_1h: int,
+) -> str:
+    if snapshot.circuit_open:
+        return "OPEN"
+    if snapshot.state == "half_open":
+        return "RECOVERING"
+    if descriptor.mode == "unavailable":
+        return "UNAVAILABLE"
+    if descriptor.mode == "local":
+        return "LOCAL"
+    if descriptor.mode == "limited":
+        return "LIMITED"
+    if limited_1h > 0:
+        return "LIMITED"
+    if calls_24h <= 0:
+        return "IDLE"
+    if errors_1h > 0:
+        return "DEGRADED"
+    return "OK"
+
+
+def _status_source_line(
+    descriptor: RuntimeSourceDescriptor,
+    *,
+    locale: str,
+    health: SourceHealthRegistry,
+    metrics: RuntimeMetricsRegistry,
+) -> str:
+    one_hour = metrics.source_window(descriptor.key, 3600)
+    one_day = metrics.source_window(descriptor.key, 86400)
+    snapshot = health.snapshot(descriptor.key)
+    state = _runtime_source_state(
+        descriptor,
+        snapshot,
+        calls_24h=one_day.calls,
+        errors_1h=one_hour.errors,
+        limited_1h=one_hour.limited,
+    )
+    latency = (
+        one_hour.average_latency_ms
+        if one_hour.average_latency_ms is not None
+        else one_day.average_latency_ms
+    )
+    note = f" ({descriptor.note})" if descriptor.note else ""
+    return _t(
+        locale,
+        "status_source_line",
+        source=descriptor.display_name,
+        state=state,
+        note=note,
+        latency=_format_latency(latency),
+        calls=f"{one_hour.calls}/{one_day.calls}",
+        errors=f"{one_hour.errors}/{one_day.errors}",
+    )
+
+
+def _status_lines(
+    locale: str,
+    *,
+    source_health: SourceHealthRegistry,
+    runtime_metrics: RuntimeMetricsRegistry,
+    source_descriptors: tuple[RuntimeSourceDescriptor, ...],
+) -> list[str]:
+    windows = (
+        ("1h", 3600),
+        ("5h", 5 * 3600),
+        ("10h", 10 * 3600),
+        ("24h", 24 * 3600),
+    )
+    lines = [
+        _t(locale, "status_title"),
+        _t(
+            locale,
+            "status_uptime",
+            value=_format_uptime(runtime_metrics.uptime_seconds),
+        ),
+        _t(locale, "status_process_note"),
+        "",
+        _t(locale, "status_sources"),
+    ]
+    if source_descriptors:
+        lines.extend(
+            _status_source_line(
+                descriptor,
+                locale=locale,
+                health=source_health,
+                metrics=runtime_metrics,
+            )
+            for descriptor in source_descriptors
+        )
+    else:
+        lines.append(_t(locale, "status_no_sources"))
+
+    day = runtime_metrics.window(86400)
+    lines.extend(
+        [
+            "",
+            _t(locale, "status_cache"),
+            _t(
+                locale,
+                "status_cache_summary",
+                rate=_format_percent(day.cache_hit_rate),
+                hits=day.cache_hits,
+                misses=day.cache_misses,
+                expired=day.cache_expired,
+            ),
+        ]
+    )
+    for cache in runtime_metrics.cache_window(86400)[:5]:
+        lines.append(
+            _t(
+                locale,
+                "status_cache_line",
+                cache=cache.name,
+                rate=_format_percent(cache.hit_rate),
+                accesses=cache.accesses,
+            )
+        )
+
+    lines.extend(["", _t(locale, "status_load")])
+    for label, seconds in windows:
+        value = runtime_metrics.window(seconds)
+        lines.append(
+            _t(
+                locale,
+                "status_window_line",
+                window=label,
+                total=value.updates,
+                updates=value.updates,
+                sources=value.source_calls,
+                errors=value.update_errors + value.source_errors,
+            )
+        )
+    return lines
+
+
 def register_admin_handlers(
     dp: Dispatcher,
     *,
     source_health: SourceHealthRegistry | None = None,
+    runtime_metrics: RuntimeMetricsRegistry | None = None,
+    source_descriptors: tuple[RuntimeSourceDescriptor, ...] = (),
 ) -> None:
     pending_mapping_mutations = ExpiringSessionStore[_PendingMappingMutation](
         max_entries=128,
@@ -355,6 +529,28 @@ def register_admin_handlers(
             _t(locale, "source_health_title", count=len(snapshots)),
             lines,
             empty_text=_t(locale, "source_health_empty"),
+        ):
+            await message.answer(chunk)
+
+    @dp.message(Command("status"))
+    async def status_handler(message: Message) -> None:
+        admin_id, locale = await require_admin(message)
+        if admin_id is None:
+            return
+        if source_health is None or runtime_metrics is None:
+            await message.answer(_t(locale, "status_unavailable"))
+            return
+
+        lines = _status_lines(
+            locale,
+            source_health=source_health,
+            runtime_metrics=runtime_metrics,
+            source_descriptors=source_descriptors,
+        )
+        for chunk in _chunk_lines(
+            lines[0],
+            lines[1:],
+            empty_text=_t(locale, "status_unavailable"),
         ):
             await message.answer(chunk)
 

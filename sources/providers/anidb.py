@@ -400,6 +400,8 @@ class AniDBSource:
     display_name = ANIDB_SOURCE_NAME
     source_key = SourceKey.ANIDB
     backend_key = "anidb"
+    status_mode = "limited"
+    status_note = "pacing 2.2s"
 
     def __init__(self, settings: SourceSettings | None = None) -> None:
         self._settings = _settings(settings)
