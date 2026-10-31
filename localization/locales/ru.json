@@ -316,6 +316,7 @@
   },
   "genres": {
     "action": "Экшен",
+    "action_comedy": "Комедийный экшен",
     "adventure": "Приключения",
     "avant_garde": "Авангард",
     "award_winning": "Отмеченное наградами",
