@@ -154,13 +154,23 @@ class PopularityRanking:
 
 @dataclass(slots=True)
 class DescriptionDetails:
-    """Lazy source-scoped long-form description payload."""
+    """Lazy source-scoped long-form description payload.
+
+    ``localized_descriptions`` preserves source-provided language variants without
+    machine translation. Platform renderers may select the current UI locale and
+    fall back to ``description`` when a provider has only one free-form value.
+    """
 
     description: str | None = None
     background: str | None = None
+    localized_descriptions: dict[str, str] = field(default_factory=dict)
 
     def has_data(self) -> bool:
-        return bool((self.description or "").strip() or (self.background or "").strip())
+        return bool(
+            (self.description or "").strip()
+            or (self.background or "").strip()
+            or any(value.strip() for value in self.localized_descriptions.values())
+        )
 
 
 @dataclass(slots=True)

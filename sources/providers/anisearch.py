@@ -34,7 +34,16 @@ from services.runtime.rate_limits import wait_for_upstream
 
 ANISEARCH_SOURCE_NAME = "AniSearch"
 DEFAULT_API_URL = "https://api.anisearch.com"
-SUPPORTED_LOCALIZATIONS = ("en", "ja")
+SUPPORTED_LOCALIZATIONS = ("en", "ja", "de", "es", "fr", "it")
+_LOCALIZED_TITLE_KEYS = {
+    "en": "english",
+    "ja": "japanese",
+    "de": "german",
+    "es": "spanish",
+    "fr": "french",
+    "it": "italian",
+}
+_EPISODE_LOCALIZATIONS = ("ja", "en", "de", "es", "fr", "it")
 _PAGE_SIZE = 100
 
 # The read-only Database API does not require OAuth. Keep its documented
@@ -127,23 +136,19 @@ def _titles(raw: dict[str, Any]) -> tuple[dict[str, str], list[str]]:
 
     main = _clean(raw.get("title"))
     native = _clean(raw.get("title_native"))
-    english = _clean(_release(raw, "en").get("title"))
-    japanese_release = _clean(_release(raw, "ja").get("title"))
-
     if main:
         titles["romaji"] = main
-    if english:
-        titles["english"] = english
     if native:
         titles["japanese"] = native
-    elif japanese_release:
-        titles["japanese"] = japanese_release
 
     synonyms.extend(_clean(item) for item in raw.get("synonyms") or [])
     for language in SUPPORTED_LOCALIZATIONS:
         release = _release(raw, language)
         synonyms.extend(_clean(item) for item in release.get("synonyms") or [])
         localized = _clean(release.get("title"))
+        title_key = _LOCALIZED_TITLE_KEYS[language]
+        if localized and not (language == "ja" and native):
+            titles[title_key] = localized
         if localized:
             synonyms.append(localized)
 
@@ -218,14 +223,16 @@ def _studios(raw: dict[str, Any]) -> list[str]:
 
 
 def _licensors(raw: dict[str, Any]) -> list[str]:
-    # The English release publishers are the closest semantic match to the
-    # existing "licensors" field. Japanese publishers are deliberately not mixed
-    # in because they usually represent original distribution rather than a
-    # localization license.
+    # Non-Japanese release publishers are localization/distribution licensors.
+    # Keep Japanese publishers out of this field because they usually describe
+    # original domestic distribution rather than a localization license.
     result: list[str] = []
-    for item in _release(raw, "en").get("publishers") or []:
-        if isinstance(item, dict):
-            result.append(_clean(item.get("name")))
+    for language in SUPPORTED_LOCALIZATIONS:
+        if language == "ja":
+            continue
+        for item in _release(raw, language).get("publishers") or []:
+            if isinstance(item, dict):
+                result.append(_clean(item.get("name")))
     return _dedupe(result)
 
 
@@ -365,10 +372,9 @@ def _voices(raw: dict[str, Any]) -> list[PersonCredit]:
         if not isinstance(voices, dict):
             continue
         for language in SUPPORTED_LOCALIZATIONS:
-            # The existing "seiyuu" aggregate is primarily Japanese. English
-            # credits are nevertheless kept because EN is one of the explicitly
-            # enabled AniSearch localizations; the role suffix prevents losing the
-            # distinction in the combined list.
+            # Japanese credits remain the untagged original-language baseline.
+            # Every localized dub keeps an explicit language suffix so the
+            # combined roster never disguises a dub actor as a Japanese seiyuu.
             for voice in voices.get(language) or []:
                 if not isinstance(voice, dict):
                     continue
@@ -380,8 +386,8 @@ def _voices(raw: dict[str, Any]) -> list[PersonCredit]:
                 if not name:
                     continue
                 role_character = character_name or _clean(voice.get("name"))
-                if language == "en" and role_character:
-                    role_character = f"{role_character} [EN]"
+                if language != "ja" and role_character:
+                    role_character = f"{role_character} [{language.upper()}]"
                 role = voice_role_token(role_character or None)
                 key = source_id or name.casefold()
                 existing = merged.get(key)
@@ -408,9 +414,10 @@ def _episodes(raw: dict[str, Any]) -> list[EpisodeRecord]:
         return []
 
     merged: dict[int, EpisodeRecord] = {}
-    # Japanese is the original-language baseline; English fills localization
-    # fields without replacing Japanese publication metadata.
-    for language in ("ja", "en"):
+    # Japanese is the original-language baseline. Localized rows add translated
+    # titles without replacing publication metadata already supplied by an
+    # earlier/original row.
+    for language in _EPISODE_LOCALIZATIONS:
         for item in by_language.get(language) or []:
             if not isinstance(item, dict):
                 continue
@@ -427,7 +434,7 @@ def _episodes(raw: dict[str, Any]) -> list[EpisodeRecord]:
                 merged[number] = record
             title = _clean(item.get("title"))
             if title:
-                record.titles["japanese" if language == "ja" else "english"] = title
+                record.titles[_LOCALIZED_TITLE_KEYS[language]] = title
             if record.duration_seconds is None:
                 minutes = _int(item.get("minutes"))
                 if minutes and minutes > 0:
@@ -442,24 +449,25 @@ def _episodes(raw: dict[str, Any]) -> list[EpisodeRecord]:
 
 def _description(raw: dict[str, Any]) -> DescriptionDetails:
     url = _clean(raw.get("url"))
-    blocks: list[str] = []
-    needs_attribution = False
-    for language, label in (("en", "English"), ("ja", "日本語")):
+    localized: dict[str, str] = {}
+    for language in SUPPORTED_LOCALIZATIONS:
         synopsis = _release(raw, language).get("synopsis")
         if not isinstance(synopsis, dict):
             continue
         value = _clean_multiline(synopsis.get("text"))
-        if value:
-            blocks.append(f"{label}:\n{value}")
-            needs_attribution = needs_attribution or (
-                _clean(synopsis.get("source")).casefold() == "anisearch"
-            )
-    if blocks and needs_attribution and url:
-        # aniSearch requires a direct entry link next to any synopsis whose source
-        # is aniSearch. Keeping the URL in the returned description ensures every
-        # renderer preserves that attribution requirement.
-        blocks.append(f"aniSearch: {url}")
-    return DescriptionDetails(description="\n\n".join(blocks) or None)
+        if not value:
+            continue
+        if _clean(synopsis.get("source")).casefold() == "anisearch" and url:
+            value = f"{value}\n\naniSearch: {url}"
+        localized[language] = value
+
+    fallback = localized.get("en") or localized.get("ja")
+    if fallback is None and localized:
+        fallback = next(iter(localized.values()))
+    return DescriptionDetails(
+        description=fallback,
+        localized_descriptions=localized,
+    )
 
 
 def _popularity(raw: dict[str, Any]) -> PopularityStats:

@@ -1,7 +1,7 @@
 > **AI 支援プロジェクト:** このプロジェクトの開発には AI が使用されています。
 
 <p align="center">
-  <a href="../README.md">English</a> · <a href="README.ru.md">Русский</a> · <strong>日本語</strong>
+  <a href="../README.md">English</a> · <a href="README.ru.md">Русский</a> · <strong>日本語</strong> · <a href="README.de.md">Deutsch</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.it.md">Italiano</a>
 </p>
 
 # anime-db-bot
@@ -26,7 +26,7 @@
 - **Manifest + lazy enrichment** — staff/seiyuu の ID・名前・役割を軽量 manifest として prefetch し、portrait は global batch（既定 50 件）で追加します。characters、screenshots、detailed popularity、descriptions/background、trailers、episodes は引き続き lazy です。
 - **共通 resilience layer** — typed source errors、retry、circuit breaker、half-open recovery、rate limits、shared HTTP lifecycle。
 - **永続化された platform-scoped settings** — user locale、known users、moderation state を SQLite に保存します。
-- **3 言語 UI** — English が default/fallback、Russian と Japanese は `/settings` から選択できます。
+- **7 言語 UI** — English が default/fallback で、Russian、Japanese、German、Spanish、French、Italian を `/settings` から選択できます。
 - **Production-oriented checks** — Python 3.11–3.14、Ruff、formatter、mypy scope、coverage gate、ShellCheck。
 
 ## Source capabilities
@@ -45,7 +45,7 @@ Kitsu は identity-native な public JSON:API source です。通常の read-onl
 
 AniDB は optional で、`ANIDB_CLIENT` が設定されている場合のみ有効になります。Jikan は**独立した identity database ではありません**。公式 MAL API に存在しないデータを補うためのローカル MAL backend です。Main-card licensors と lazy popularity statistics は別々の local endpoint を使うため、score distribution の取得は initial card path から外れています。
 
-AniSearch は、mappings.db の確認済み `anisearch` edge を使う identity-native Database API source です。公開 API には通常のタイトル query-search endpoint がないため、高速 `/anime <title>` 検索には参加しません。AniSearch は ID と `/full` を同じ厳しい rate-limit group に置いているため、title ごとに cached `/full` を 1 回だけ取得し、heavy fields は initial aggregation には混ぜません。people/characters/episodes はその同じ payload を再利用するため、追加の network wait は発生しません。現在取り込む AniSearch のローカライズは英語と日本語だけです。トークンなしの ID-family request は公式仕様どおり 10 秒間隔（有効な token がある場合は 5 秒）で送信し、AniSearch 由来の synopsis には必須の AniSearch 直接リンクを付けます。
+AniSearch は、mappings.db の確認済み `anisearch` edge を使う identity-native Database API source です。公開 API には通常のタイトル query-search endpoint がないため、高速 `/anime <title>` 検索には参加しません。AniSearch は ID と `/full` を同じ厳しい rate-limit group に置いているため、title ごとに cached `/full` を 1 回だけ取得し、heavy fields は initial aggregation には混ぜません。people/characters/episodes はその同じ payload を再利用するため、追加の network wait は発生しません。AniSearch の英語、日本語、ドイツ語、スペイン語、フランス語、イタリア語ローカライズを取り込み、ローカライズされた title/synonym、synopsis、episode title、regional licensor、voice credit に使用します。トークンなしの ID-family request は公式仕様どおり 10 秒間隔（有効な token がある場合は 5 秒）で送信し、AniSearch 由来の synopsis には必須の AniSearch 直接リンクを付けます。
 
 SkipDB対応はIMDbベースのdormant providerとしてコードベースに残していますが、現在のアニメ向けskip-segment coverageが小さすぎるためruntimeには登録していません。parser/settings/testsは保持し、coverageが十分に増えた場合に再有効化できる状態を維持します。SkipDBデータはODbL 1.0 + reciprocityです。
 
@@ -119,7 +119,7 @@ Hard cap によって upstream quota を保護します。最終件数を保証�
 メインカードは metadata-first のままです。以下の情報は必要になった時だけ読み込みます。
 
 - staff / creators;
-- オリジナルの日本語 voice actors;
+- voice actors（言語タグ付き AniSearch dub credit を含む）;
 - characters / portraits;
 - screenshots;
 - detailed popularity / ranking statistics;
@@ -127,7 +127,7 @@ Hard cap によって upstream quota を保護します。最終件数を保証�
 - trailers / promos;
 - episodes.
 
-海外吹き替えの voice credit はオリジナル日本語 voice list に混在させません。Localization/ADR staff も primary production staff から除外します。
+日本語 voice credit は言語 suffix のない original-language baseline のままです。AniSearch の吹き替え credit には `[EN]`、`[DE]`、`[ES]`、`[FR]`、`[IT]` の suffix を付け、オリジナル日本語 credit と区別します。Localization/ADR staff も primary production staff から除外します。
 
 ## 必要環境 / OS サポート
 
@@ -298,7 +298,11 @@ Domain model は locale-neutral です。Source adapter は upstream の status/
 
 - `en` — English (**default / fallback**);
 - `ru` — Русский;
-- `ja` — 日本語.
+- `ja` — 日本語;
+- `de` — Deutsch;
+- `es` — Español;
+- `fr` — Français;
+- `it` — Italiano.
 
 既存ユーザーの明示的に保存された locale は維持されます。新規ユーザー、設定がない場合、未知の locale、欠落 translation key は English に fallback します。
 

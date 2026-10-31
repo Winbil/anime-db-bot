@@ -64,8 +64,27 @@ def _payload() -> dict:
             },
             "de": {
                 "title": "Fullmetal Alchemist: Brotherhood DE",
+                "publishers": [{"id": 7001, "name": "KAZÉ Deutschland"}],
                 "synonyms": ["Deutscher Alias"],
                 "synopsis": {"text": "Deutsche Beschreibung", "source": "anisearch"},
+            },
+            "es": {
+                "title": "Fullmetal Alchemist: Brotherhood ES",
+                "publishers": [{"id": 7002, "name": "Selecta Visión"}],
+                "synonyms": ["Alias español"],
+                "synopsis": {"text": "Descripción española", "source": "blurb"},
+            },
+            "fr": {
+                "title": "Fullmetal Alchemist: Brotherhood FR",
+                "publishers": [{"id": 7003, "name": "Dybex"}],
+                "synonyms": ["Alias français"],
+                "synopsis": {"text": "Description française", "source": "anisearch"},
+            },
+            "it": {
+                "title": "Fullmetal Alchemist: Brotherhood IT",
+                "publishers": [{"id": 7004, "name": "Dynit"}],
+                "synonyms": ["Alias italiano"],
+                "synopsis": {"text": "Descrizione italiana", "source": "blurb"},
             },
         },
         "details": {
@@ -108,6 +127,9 @@ def _payload() -> dict:
                         "recap": False,
                     }
                 ],
+                "es": [{"number": "1", "title": "El alquimista de acero"}],
+                "fr": [{"number": "1", "title": "L'alchimiste d'acier"}],
+                "it": [{"number": "1", "title": "L'alchimista d'acciaio"}],
             },
             "characters": [
                 {
@@ -131,6 +153,24 @@ def _payload() -> dict:
                             {
                                 "name": "Edward Elric",
                                 "person": {"id": 4010, "name": "David TURBA"},
+                            }
+                        ],
+                        "es": [
+                            {
+                                "name": "Edward Elric",
+                                "person": {"id": 4011, "name": "Ricardo ESCobar"},
+                            }
+                        ],
+                        "fr": [
+                            {
+                                "name": "Edward Elric",
+                                "person": {"id": 4012, "name": "Arthur PESTEL"},
+                            }
+                        ],
+                        "it": [
+                            {
+                                "name": "Edward Elric",
+                                "person": {"id": 4013, "name": "Renato NOVARA"},
                             }
                         ],
                     },
@@ -170,9 +210,7 @@ def _payload() -> dict:
 
 
 class AniSearchParserTests(unittest.TestCase):
-    def test_metadata_uses_only_enabled_english_and_japanese_localizations(
-        self,
-    ) -> None:
+    def test_metadata_consumes_all_supported_localizations(self) -> None:
         record = anisearch._record(_payload(), "5048")
         self.assertEqual(record.source, "AniSearch")
         self.assertEqual(record.source_id, "5048")
@@ -180,12 +218,25 @@ class AniSearchParserTests(unittest.TestCase):
         self.assertEqual(record.external_ids["mal"], "5114")
         self.assertEqual(record.external_ids["anidb"], "6107")
         self.assertEqual(record.titles["english"], "Fullmetal Alchemist: Brotherhood")
+        self.assertEqual(record.titles["german"], "Fullmetal Alchemist: Brotherhood DE")
+        self.assertEqual(
+            record.titles["spanish"], "Fullmetal Alchemist: Brotherhood ES"
+        )
+        self.assertEqual(record.titles["french"], "Fullmetal Alchemist: Brotherhood FR")
+        self.assertEqual(
+            record.titles["italian"], "Fullmetal Alchemist: Brotherhood IT"
+        )
         self.assertEqual(
             record.titles["japanese"], "鋼の錬金術師 FULLMETAL ALCHEMIST （2009）"
         )
-        self.assertIn("ハガレン", record.synonyms)
-        self.assertNotIn("Deutscher Alias", record.synonyms)
-        self.assertNotIn("Fullmetal Alchemist: Brotherhood DE", record.synonyms)
+        for alias in (
+            "ハガレン",
+            "Deutscher Alias",
+            "Alias español",
+            "Alias français",
+            "Alias italiano",
+        ):
+            self.assertIn(alias, record.synonyms)
         self.assertEqual(record.kind, "tv")
         self.assertEqual(record.status, "finished")
         self.assertEqual(record.season, "spring")
@@ -194,34 +245,53 @@ class AniSearchParserTests(unittest.TestCase):
         self.assertEqual(record.duration_minutes, 25)
         self.assertEqual(record.score, 9.0)
         self.assertEqual(record.source_materials, ["manga"])
-        self.assertEqual(record.licensors, ["FUNimation"])
+        self.assertEqual(
+            record.licensors,
+            ["FUNimation", "KAZÉ Deutschland", "Selecta Visión", "Dybex", "Dynit"],
+        )
         self.assertEqual(record.posters, ["https://cdn.anisearch.com/fma.webp"])
 
-    def test_description_filters_locales_and_preserves_required_attribution(
-        self,
-    ) -> None:
+    def test_description_keeps_all_supported_locales_and_attribution(self) -> None:
         details = anisearch._description(_payload())
-        self.assertIsNotNone(details.description)
-        value = details.description or ""
-        self.assertIn("English:\nThe Elric brothers ...", value)
-        self.assertIn("日本語:\n兄弟の物語。", value)
-        self.assertNotIn("Deutsche Beschreibung", value)
-        self.assertIn("aniSearch: https://www.anisearch.com/anime/5048", value)
+        self.assertEqual(
+            set(details.localized_descriptions), {"en", "ja", "de", "es", "fr", "it"}
+        )
+        self.assertTrue(
+            details.localized_descriptions["en"].startswith("The Elric brothers ...")
+        )
+        self.assertTrue(details.localized_descriptions["ja"].startswith("兄弟の物語。"))
+        self.assertTrue(
+            details.localized_descriptions["de"].startswith("Deutsche Beschreibung")
+        )
+        self.assertEqual(details.localized_descriptions["es"], "Descripción española")
+        self.assertTrue(
+            details.localized_descriptions["fr"].startswith("Description française")
+        )
+        self.assertEqual(details.localized_descriptions["it"], "Descrizione italiana")
+        attribution = "aniSearch: https://www.anisearch.com/anime/5048"
+        for language in ("en", "de", "fr"):
+            self.assertIn(attribution, details.localized_descriptions[language])
+        for language in ("ja", "es", "it"):
+            self.assertNotIn(attribution, details.localized_descriptions[language])
+        self.assertEqual(details.description, details.localized_descriptions["en"])
 
-    def test_episode_parser_merges_only_japanese_and_english_rows(self) -> None:
+    def test_episode_parser_merges_all_supported_localized_titles(self) -> None:
         episodes = anisearch._episodes(_payload())
         self.assertEqual([item.number for item in episodes], [1, 2])
         first = episodes[0]
         self.assertEqual(first.titles["japanese"], "鋼の錬金術師")
         self.assertEqual(first.titles["english"], "Fullmetal Alchemist")
-        self.assertNotIn("german", first.titles)
+        self.assertEqual(first.titles["german"], "Der Stahlalchemist")
+        self.assertEqual(first.titles["spanish"], "El alquimista de acero")
+        self.assertEqual(first.titles["french"], "L'alchimiste d'acier")
+        self.assertEqual(first.titles["italian"], "L'alchimista d'acciaio")
         self.assertEqual(first.aired_at.isoformat(), "2009-04-05")
         self.assertEqual(first.duration_seconds, 1500)
         self.assertFalse(first.filler)
         self.assertTrue(first.recap)
         self.assertTrue(episodes[1].filler)
 
-    def test_characters_staff_and_voices_keep_anisearch_ids(self) -> None:
+    def test_characters_staff_and_multilingual_voices_keep_anisearch_ids(self) -> None:
         characters = anisearch._characters(_payload())
         self.assertEqual(len(characters), 2)
         self.assertEqual(characters[0].external_ids, {"anisearch": "563"})
@@ -235,14 +305,47 @@ class AniSearchParserTests(unittest.TestCase):
 
         voices = anisearch._voices(_payload())
         self.assertEqual(
-            {person.name for person in voices}, {"Romi PARK", "Vic MIGNOGNA"}
+            {person.name for person in voices},
+            {
+                "Romi PARK",
+                "Vic MIGNOGNA",
+                "David TURBA",
+                "Ricardo ESCobar",
+                "Arthur PESTEL",
+                "Renato NOVARA",
+            },
         )
-        self.assertNotIn("David TURBA", {person.name for person in voices})
-        romi = next(person for person in voices if person.name == "Romi PARK")
-        vic = next(person for person in voices if person.name == "Vic MIGNOGNA")
-        self.assertEqual(romi.external_ids, {"anisearch": "1067"})
-        self.assertTrue(any("Edward ELRIC" in role for role in romi.roles))
-        self.assertTrue(any("[EN]" in role for role in vic.roles))
+        expected_suffix = {
+            "Romi PARK": None,
+            "Vic MIGNOGNA": "[EN]",
+            "David TURBA": "[DE]",
+            "Ricardo ESCobar": "[ES]",
+            "Arthur PESTEL": "[FR]",
+            "Renato NOVARA": "[IT]",
+        }
+        for person in voices:
+            self.assertEqual(
+                person.external_ids.get("anisearch"),
+                str(
+                    next(
+                        item[0]
+                        for item in (
+                            (1067, "Romi PARK"),
+                            (8632, "Vic MIGNOGNA"),
+                            (4010, "David TURBA"),
+                            (4011, "Ricardo ESCobar"),
+                            (4012, "Arthur PESTEL"),
+                            (4013, "Renato NOVARA"),
+                        )
+                        if item[1] == person.name
+                    )
+                ),
+            )
+            suffix = expected_suffix[person.name]
+            if suffix:
+                self.assertTrue(any(suffix in role for role in person.roles))
+            else:
+                self.assertTrue(all("[" not in role for role in person.roles))
 
     def test_popularity_uses_cached_title_rating_fields(self) -> None:
         stats = anisearch._popularity(_payload())
@@ -281,7 +384,7 @@ class AniSearchSourceTests(unittest.IsolatedAsyncioTestCase):
             voices = await self.source.load_voices(self.identity)
         self.assertEqual(len(characters), 2)
         self.assertEqual(len(staff), 1)
-        self.assertEqual(len(voices), 2)
+        self.assertEqual(len(voices), 6)
         self.assertTrue(
             all(
                 call.kwargs["settings"] is self.settings
@@ -301,6 +404,7 @@ class AniSearchSourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(page.has_next)
         self.assertIsNotNone(episode)
         self.assertEqual(episode.titles["english"], "Fullmetal Alchemist")
+        self.assertEqual(episode.titles["german"], "Der Stahlalchemist")
 
     async def test_one_cached_full_request_serves_metadata_and_lazy_sections(
         self,
@@ -323,7 +427,7 @@ class AniSearchSourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(record)
         self.assertEqual(len(characters), 2)
         self.assertEqual(len(staff), 1)
-        self.assertEqual(len(voices), 2)
+        self.assertEqual(len(voices), 6)
         upstream.assert_awaited_once_with(
             "/v1/anime/5048/full", operation="full", settings=settings
         )

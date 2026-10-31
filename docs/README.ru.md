@@ -1,7 +1,7 @@
 > **Проект создан с помощью AI:** при разработке этого проекта использовался искусственный интеллект.
 
 <p align="center">
-  <a href="../README.md">English</a> · <strong>Русский</strong> · <a href="README.ja.md">日本語</a>
+  <a href="../README.md">English</a> · <strong>Русский</strong> · <a href="README.ja.md">日本語</a> · <a href="README.de.md">Deutsch</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.it.md">Italiano</a>
 </p>
 
 # anime-db-bot
@@ -26,7 +26,7 @@
 - **Manifest + lazy enrichment** — для staff/сэйю лёгкие ID/имена/роли prefetched для точного roster, портреты догружаются глобальными batch (по умолчанию 50), а персонажи, скриншоты, подробная популярность, descriptions/background, трейлеры и эпизоды остаются lazy.
 - **Общий resilience layer** — typed source errors, retry, circuit breaker, half-open recovery, rate limits и shared HTTP lifecycle.
 - **Persistent platform-scoped settings** — locale, known users и moderation state хранятся в SQLite.
-- **Три языка UI** — английский является default/fallback, русский и японский выбираются через `/settings`.
+- **Семь языков UI** — английский является default/fallback; русский, японский, немецкий, испанский, французский и итальянский выбираются через `/settings`.
 - **Production-oriented CI** — Python 3.11–3.14, Ruff, formatter, mypy scope, coverage gate и ShellCheck.
 
 ## Возможности источников
@@ -43,7 +43,7 @@
 
 Kitsu подключён как identity-native публичный JSON:API источник. Обычные read-only GET-запросы не требуют OAuth; подтверждённые Kitsu ID уже участвуют в `mappings.db`, а сам Kitsu возвращает прямые mappings к MAL/AniList/AniDB. Сейчас Kitsu даёт поиск, metadata, popularity, description, эпизоды и YouTube-трейлер при наличии. People/characters намеренно пока не заявлены как capability, потому что эти relationships у Kitsu часто неполные.
 
-AniDB опционален и включается только при настроенном `ANIDB_CLIENT`. Jikan **не является отдельной identity-базой**: это локальный backend MAL для данных, которых нет в официальном MAL API. Licensors для main card и lazy popularity statistics теперь используют разные local endpoints, поэтому score distribution больше не парсится на initial card path. AniSearch подключён как identity-native источник Database API через подтверждённые `anisearch` edges из mappings.db. Публичного query-search endpoint у AniSearch нет, поэтому он не добавляется в быстрый `/anime <title>` поиск. Так как AniSearch помещает ID и `/full` в одну строгую rate-limit группу, источник делает один cached `/full` запрос на тайтл, но не подмешивает heavy fields в initial aggregation; people/characters/episodes затем используют тот же payload без второго сетевого ожидания. Пока учитываются только английская и японская локализации AniSearch. Без токена запросы ID-family дополнительно выдерживают документированный интервал 10 секунд (5 секунд с валидным токеном); synopsis от AniSearch всегда сопровождается требуемой прямой ссылкой на запись AniSearch. Поддержка SkipDB сохранена в кодовой базе как dormant IMDb-backed provider, но намеренно не зарегистрирована в runtime: текущее покрытие anime skip-segments слишком мало, чтобы показывать источник пользователю. Parser/settings/tests остаются на месте, чтобы SkipDB можно было быстро включить позже, если покрытие заметно вырастет. Данные SkipDB распространяются по ODbL 1.0 + reciprocity.
+AniDB опционален и включается только при настроенном `ANIDB_CLIENT`. Jikan **не является отдельной identity-базой**: это локальный backend MAL для данных, которых нет в официальном MAL API. Licensors для main card и lazy popularity statistics теперь используют разные local endpoints, поэтому score distribution больше не парсится на initial card path. AniSearch подключён как identity-native источник Database API через подтверждённые `anisearch` edges из mappings.db. Публичного query-search endpoint у AniSearch нет, поэтому он не добавляется в быстрый `/anime <title>` поиск. Так как AniSearch помещает ID и `/full` в одну строгую rate-limit группу, источник делает один cached `/full` запрос на тайтл, но не подмешивает heavy fields в initial aggregation; people/characters/episodes затем используют тот же payload без второго сетевого ожидания. Используются английская, японская, немецкая, испанская, французская и итальянская локализации AniSearch: локализованные названия/синонимы, synopsis, названия эпизодов, региональные licensors и voice credits. Без токена запросы ID-family дополнительно выдерживают документированный интервал 10 секунд (5 секунд с валидным токеном); synopsis от AniSearch всегда сопровождается требуемой прямой ссылкой на запись AniSearch. Поддержка SkipDB сохранена в кодовой базе как dormant IMDb-backed provider, но намеренно не зарегистрирована в runtime: текущее покрытие anime skip-segments слишком мало, чтобы показывать источник пользователю. Parser/settings/tests остаются на месте, чтобы SkipDB можно было быстро включить позже, если покрытие заметно вырастет. Данные SkipDB распространяются по ODbL 1.0 + reciprocity.
 
 ## Как это работает
 
@@ -115,7 +115,7 @@ Hard caps защищают upstream quotas. Если бот не может до
 Основная карточка остаётся metadata-first. Только по запросу загружаются:
 
 - staff и creators;
-- оригинальные японские voice actors;
+- voice actors, включая помеченные языком дубляжные credits AniSearch;
 - characters и portraits;
 - screenshots;
 - подробная popularity/ranking statistics;
@@ -123,7 +123,7 @@ Hard caps защищают upstream quotas. Если бот не может до
 - trailers/promos;
 - episodes.
 
-Иностранные дубляжные роли не смешиваются с оригинальным японским voice list. Localization/ADR staff исключается из основного production staff.
+Японские voice credits остаются исходной дорожкой без языкового суффикса. Дубляжные credits AniSearch сохраняются с явными суффиксами `[EN]`, `[DE]`, `[ES]`, `[FR]` или `[IT]`, поэтому они не маскируются под оригинальный японский cast. Localization/ADR staff исключается из основного production staff.
 
 ## Требования и поддержка ОС
 
@@ -297,7 +297,11 @@ Domain model locale-neutral. Source adapters приводят upstream status/ty
 
 - `en` — English (**default и fallback**);
 - `ru` — Русский;
-- `ja` — 日本語.
+- `ja` — 日本語;
+- `de` — Deutsch;
+- `es` — Español;
+- `fr` — Français;
+- `it` — Italiano.
 
 Существующие пользователи сохраняют явно выбранный locale. Новые пользователи, отсутствующие settings, неизвестные locales и отсутствующие translation keys используют английский fallback.
 

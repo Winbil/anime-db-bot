@@ -25,10 +25,18 @@ class UserSettingsStoreTests(unittest.TestCase):
             self.assertEqual(second.get(123).locale, "en")
             self.assertEqual(second.get(999).locale, "en")
 
+    def test_supported_locales_are_persisted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteUserSettingsStore(Path(directory) / "settings.sqlite3")
+            for locale in ("en", "ru", "ja", "de", "es", "fr", "it"):
+                with self.subTest(locale=locale):
+                    self.assertEqual(store.set_locale(123, locale).locale, locale)
+                    self.assertEqual(store.get(123).locale, locale)
+
     def test_unsupported_locale_falls_back_to_english(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = SQLiteUserSettingsStore(Path(directory) / "settings.sqlite3")
-            self.assertEqual(store.set_locale(123, "de").locale, "en")
+            self.assertEqual(store.set_locale(123, "xx").locale, "en")
 
     def test_settings_are_platform_scoped(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

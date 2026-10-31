@@ -5,7 +5,11 @@
   "locale_names": {
     "en": "英語",
     "ru": "ロシア語",
-    "ja": "日本語"
+    "ja": "日本語",
+    "de": "ドイツ語",
+    "es": "スペイン語",
+    "fr": "フランス語",
+    "it": "イタリア語"
   },
   "common": {
     "unknown": "不明",
@@ -174,6 +178,10 @@
     "title_romaji": "原題 / ローマ字",
     "title_english": "英語",
     "title_japanese": "日本語",
+    "title_german": "ドイツ語",
+    "title_spanish": "スペイン語",
+    "title_french": "フランス語",
+    "title_italian": "イタリア語",
     "title_licensed_ru": "ロシア語ライセンス名",
     "synonyms": "別名",
     "staff": "スタッフ・制作陣",

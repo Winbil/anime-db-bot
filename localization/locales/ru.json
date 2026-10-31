@@ -5,7 +5,11 @@
   "locale_names": {
     "en": "Английский",
     "ru": "Русский",
-    "ja": "Японский"
+    "ja": "Японский",
+    "de": "Немецкий",
+    "es": "Испанский",
+    "fr": "Французский",
+    "it": "Итальянский"
   },
   "common": {
     "unknown": "Неизвестно",
@@ -174,6 +178,10 @@
     "title_romaji": "Оригинальное / romaji",
     "title_english": "English",
     "title_japanese": "日本語",
+    "title_german": "Немецкий",
+    "title_spanish": "Испанский",
+    "title_french": "Французский",
+    "title_italian": "Итальянский",
     "title_licensed_ru": "Лицензионное RU",
     "synonyms": "Синонимы",
     "staff": "Авторы и команда",
