@@ -428,7 +428,9 @@
     "superhero": "スーパーヒーロー",
     "android": "アンドロイド",
     "reverse_harem": "逆ハーレム",
-    "mafia": "マフィア"
+    "mafia": "マフィア",
+    "ninja": "忍者",
+    "fighting_shounen": "バトル少年"
   },
   "roles": {
     "director": "監督",
