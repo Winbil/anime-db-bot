@@ -38,9 +38,17 @@ class AnimeCardSession:
     description_errors: dict[str, str] = field(default_factory=dict)
     related_loaded: bool = False
     related_items: list[AggregatedAnimeReference] = field(default_factory=list)
+    related_by_source: dict[str, list[AggregatedAnimeReference]] = field(
+        default_factory=dict
+    )
+    related_source_names: dict[str, str] = field(default_factory=dict)
     related_errors: dict[str, str] = field(default_factory=dict)
     recommendations_loaded: bool = False
     recommendation_items: list[AggregatedAnimeReference] = field(default_factory=list)
+    recommendation_by_source: dict[str, list[AggregatedAnimeReference]] = field(
+        default_factory=dict
+    )
+    recommendation_source_names: dict[str, str] = field(default_factory=dict)
     recommendation_errors: dict[str, str] = field(default_factory=dict)
 
 

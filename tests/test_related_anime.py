@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import xml.etree.ElementTree as ET
 from unittest.mock import AsyncMock, patch
 
 from bots.telegram.card.features.related import related_keyboard
@@ -10,7 +11,10 @@ from core.identity import AnimeIdentity
 from core.models import AggregatedAnime
 from core.related_anime import AnimeReference, canonical_relation_kind
 from services.media.related import RelatedAnimeService
+from sources.providers.anidb import AniDBSource
 from sources.providers.anilist import AniListSource
+from sources.providers.anisearch import AniSearchSource
+from sources.providers.kitsu import KitsuSource
 from sources.providers.mal import MALSource
 from sources.providers.shikimori import ShikimoriSource
 
@@ -113,6 +117,10 @@ class RelatedAnimeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item.external_ids["anilist"], "200")
         self.assertEqual(item.external_ids["shikimori"], "2000")
         self.assertEqual(item.sources, ["MAL (MyAnimeList)", "AniList", "Shikimori"])
+        self.assertEqual(set(result.by_source), {"mal", "anilist", "shikimori"})
+        self.assertEqual(result.source_names["mal"], "MAL (MyAnimeList)")
+        self.assertEqual(len(result.by_source["mal"]), 1)
+        self.assertEqual(result.by_source["mal"][0].sources, ["MAL (MyAnimeList)"])
 
     async def test_same_title_without_identity_evidence_does_not_merge(self) -> None:
         service = RelatedAnimeService(
@@ -273,6 +281,100 @@ class RelatedAnimeSourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(relations[0].external_ids, {"shikimori": "20", "mal": "200"})
         self.assertEqual(len(recommendations), 30)
 
+    async def test_kitsu_relations_keep_only_anime_destinations(self) -> None:
+        source = KitsuSource.__new__(KitsuSource)
+        source._settings = object()
+        payload = {
+            "data": {
+                "type": "anime",
+                "id": "1",
+                "relationships": {
+                    "mediaRelationships": {
+                        "data": [
+                            {"type": "mediaRelationships", "id": "10"},
+                            {"type": "mediaRelationships", "id": "11"},
+                        ]
+                    }
+                },
+            },
+            "included": [
+                {
+                    "type": "mediaRelationships",
+                    "id": "10",
+                    "attributes": {"role": "sequel"},
+                    "relationships": {
+                        "destination": {"data": {"type": "anime", "id": "2"}}
+                    },
+                },
+                {
+                    "type": "mediaRelationships",
+                    "id": "11",
+                    "attributes": {"role": "adaptation"},
+                    "relationships": {
+                        "destination": {"data": {"type": "manga", "id": "3"}}
+                    },
+                },
+                {
+                    "type": "anime",
+                    "id": "2",
+                    "attributes": {
+                        "titles": {"en_jp": "Target"},
+                        "canonicalTitle": "Target",
+                        "posterImage": {"large": "https://img/2.jpg"},
+                    },
+                },
+                {"type": "manga", "id": "3", "attributes": {"canonicalTitle": "Manga"}},
+            ],
+        }
+        with patch(
+            "sources.providers.kitsu._request_json",
+            AsyncMock(return_value=payload),
+        ):
+            result = await source.load_relations(AnimeIdentity({"kitsu": "1"}))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].external_ids, {"kitsu": "2"})
+        self.assertEqual(result[0].relation, "sequel")
+        self.assertEqual(result[0].titles["romaji"], "Target")
+
+    async def test_anidb_uses_related_and_similar_anime_blocks(self) -> None:
+        source = AniDBSource.__new__(AniDBSource)
+        source._settings = object()
+        root = ET.fromstring(
+            """
+            <anime id="1">
+              <relatedanime>
+                <anime id="2" type="Sequel">Target sequel</anime>
+              </relatedanime>
+              <similaranime>
+                <anime id="3" approval="5" total="9">Lower</anime>
+                <anime id="4" approval="12" total="20">Higher</anime>
+              </similaranime>
+            </anime>
+            """
+        )
+        source._load_root = AsyncMock(return_value=root)
+        relations = await source.load_relations(AnimeIdentity({"anidb": "1"}))
+        recommendations = await source.load_recommendations(
+            AnimeIdentity({"anidb": "1"})
+        )
+        self.assertEqual(relations[0].external_ids, {"anidb": "2"})
+        self.assertEqual(relations[0].relation, "Sequel")
+        self.assertEqual(
+            [item.external_ids["anidb"] for item in recommendations], ["4", "3"]
+        )
+
+    async def test_anisearch_relations_use_related_anime_map(self) -> None:
+        source = AniSearchSource.__new__(AniSearchSource)
+        source._settings = object()
+        source._payload = AsyncMock(
+            return_value={"related": {"anime": {"20": "Side Story", "30": "Summary"}}}
+        )
+        result = await source.load_relations(AnimeIdentity({"anisearch": "1"}))
+        self.assertEqual(
+            [item.external_ids["anisearch"] for item in result], ["20", "30"]
+        )
+        self.assertEqual(result[0].relation, "Side Story")
+
 
 class RelatedAnimeUiTests(unittest.TestCase):
     def test_main_card_places_discovery_buttons_at_bottom(self) -> None:
@@ -307,16 +409,28 @@ class RelatedAnimeUiTests(unittest.TestCase):
             )
             for index in range(1, 8)
         ]
-        keyboard = related_keyboard("token", "related", items, 0, locale="ru")
+        keyboard = related_keyboard(
+            "token",
+            "related",
+            items,
+            0,
+            source_key="all",
+            source_names={"mal": "MAL", "anilist": "AniList"},
+            locale="ru",
+        )
         callbacks = [
             button.callback_data
             for row in keyboard.inline_keyboard
             for button in row
             if button.callback_data
         ]
-        self.assertIn("ari:token:related:0", callbacks)
-        self.assertIn("av:token:related:1", callbacks)
+        self.assertIn("ari:token:related~all:0", callbacks)
+        self.assertIn("ar:token:related~mal:0", callbacks)
+        self.assertIn("ar:token:related~anilist:0", callbacks)
         self.assertIn("av:token:main:0", callbacks)
+        self.assertTrue(
+            any(value.startswith("cp:token:ar~related~all:") for value in callbacks)
+        )
 
 
 if __name__ == "__main__":

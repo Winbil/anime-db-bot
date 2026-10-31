@@ -52,6 +52,13 @@ class PaginationPickerTests(unittest.TestCase):
             "ap:token:kitsu:17",
         )
 
+    def test_related_picker_preserves_section_and_source(self) -> None:
+        route = "ar~recommendations~anidb"
+        self.assertEqual(
+            card_route_callback("token", route, 4),
+            "ar:token:recommendations~anidb:4",
+        )
+
     def test_people_visible_position_maps_back_to_portrait_page(self) -> None:
         route = "pv~av~voices~3"
         self.assertEqual(card_route_callback("token", route, 0), "av:token:voices:0")

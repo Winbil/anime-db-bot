@@ -21,6 +21,7 @@ from core.models import (
     PersonCredit,
 )
 from core.people_loading import PeopleBatch
+from core.related_anime import AnimeReference
 from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse
 from core.source_keys import SourceKey
@@ -266,6 +267,50 @@ def _voices(root: ET.Element) -> list[PersonCredit]:
     return list(result.values())
 
 
+def _related_anime(root: ET.Element) -> list[AnimeReference]:
+    result: list[AnimeReference] = []
+    for rank, anime in enumerate(root.findall("./relatedanime/anime"), 1):
+        source_id = _clean(anime.attrib.get("id"))
+        title = _text(anime)
+        if not source_id:
+            continue
+        result.append(
+            AnimeReference(
+                source=ANIDB_SOURCE_NAME,
+                titles={"romaji": title} if title else {},
+                external_ids={"anidb": source_id},
+                relation=_clean(anime.attrib.get("type")),
+                rank=rank,
+            )
+        )
+    return result
+
+
+def _similar_anime(root: ET.Element) -> list[AnimeReference]:
+    result: list[AnimeReference] = []
+    values = list(root.findall("./similaranime/anime"))
+    values.sort(
+        key=lambda anime: (
+            -(_int(anime.attrib.get("approval")) or 0),
+            -(_int(anime.attrib.get("total")) or 0),
+        )
+    )
+    for rank, anime in enumerate(values, 1):
+        source_id = _clean(anime.attrib.get("id"))
+        title = _text(anime)
+        if not source_id:
+            continue
+        result.append(
+            AnimeReference(
+                source=ANIDB_SOURCE_NAME,
+                titles={"romaji": title} if title else {},
+                external_ids={"anidb": source_id},
+                rank=rank,
+            )
+        )
+    return result
+
+
 def _episodes(root: ET.Element) -> list[EpisodeRecord]:
     result: list[EpisodeRecord] = []
     for episode in root.findall("./episodes/episode"):
@@ -461,6 +506,16 @@ class AniDBSource:
             staff=_staff(root),
             voices=_voices(root),
         )
+
+    async def load_relations(self, identity: AnimeIdentity) -> list[AnimeReference]:
+        root = await self._load_root(identity)
+        return _related_anime(root) if root is not None else []
+
+    async def load_recommendations(
+        self, identity: AnimeIdentity
+    ) -> list[AnimeReference]:
+        root = await self._load_root(identity)
+        return _similar_anime(root) if root is not None else []
 
     async def load_description(self, identity: AnimeIdentity) -> DescriptionDetails:
         root = await self._load_root(identity)

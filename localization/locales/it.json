@@ -320,7 +320,10 @@
     "related_button": "Correlati",
     "recommendations_button": "Consigli",
     "discovery_count": "Trovati: {count}",
-    "discovery_sources": "Fonti: {sources}"
+    "discovery_sources": "Fonti: {sources}",
+    "discovery_relation": "Relazione: {value}",
+    "discovery_all_sources": "Tutte le fonti",
+    "discovery_open_card": "Apri scheda anime"
   },
   "people": {
     "staff": "Staff e creatori",

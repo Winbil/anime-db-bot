@@ -25,6 +25,7 @@ from core.models import (
     PopularityStats,
 )
 from core.people_loading import PeopleManifest, without_portraits
+from core.related_anime import AnimeReference
 from core.settings import SourceSettings, get_settings
 from core.source_errors import SourceInvalidResponse, SourceUnavailable
 from core.source_keys import SourceKey
@@ -481,6 +482,27 @@ def _popularity(raw: dict[str, Any]) -> PopularityStats:
     )
 
 
+def _relations(raw: dict[str, Any]) -> list[AnimeReference]:
+    related = raw.get("related") or {}
+    anime = related.get("anime") if isinstance(related, dict) else None
+    if not isinstance(anime, dict):
+        return []
+    result: list[AnimeReference] = []
+    for rank, (raw_id, raw_relation) in enumerate(anime.items(), 1):
+        source_id = _clean(raw_id)
+        if not source_id:
+            continue
+        result.append(
+            AnimeReference(
+                source=ANISEARCH_SOURCE_NAME,
+                external_ids={"anisearch": source_id},
+                relation=_clean(raw_relation),
+                rank=rank,
+            )
+        )
+    return result
+
+
 async def _paced_request(
     path: str,
     *,
@@ -633,6 +655,10 @@ class AniSearchSource:
         raw = await self._payload(identity)
         source_id = _anisearch_id(identity)
         return _record(raw, source_id) if raw is not None and source_id else None
+
+    async def load_relations(self, identity: AnimeIdentity) -> list[AnimeReference]:
+        raw = await self._payload(identity)
+        return _relations(raw) if raw is not None else []
 
     async def load_popularity(self, identity: AnimeIdentity) -> PopularityStats:
         raw = await self._payload(identity)

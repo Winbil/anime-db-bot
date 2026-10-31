@@ -320,7 +320,10 @@
     "related_button": "関連作品",
     "recommendations_button": "おすすめ",
     "discovery_count": "見つかった作品: {count}",
-    "discovery_sources": "ソース: {sources}"
+    "discovery_sources": "ソース: {sources}",
+    "discovery_relation": "関係: {value}",
+    "discovery_all_sources": "すべてのソース",
+    "discovery_open_card": "アニメカードを開く"
   },
   "people": {
     "staff": "スタッフ・制作陣",

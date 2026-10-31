@@ -22,6 +22,8 @@ class IdentityMappingResolver(Protocol):
 @dataclass(slots=True)
 class RelatedAnimeLoadResult:
     items: list[AggregatedAnimeReference] = field(default_factory=list)
+    by_source: dict[str, list[AggregatedAnimeReference]] = field(default_factory=dict)
+    source_names: dict[str, str] = field(default_factory=dict)
     errors: dict[str, str] = field(default_factory=dict)
 
 
@@ -35,6 +37,41 @@ def _dedupe(values: list[str]) -> list[str]:
             seen.add(key)
             result.append(value)
     return result
+
+
+def _sort_items(
+    items: list[AggregatedAnimeReference], *, recommendations: bool
+) -> None:
+    if recommendations:
+        items.sort(
+            key=lambda item: (
+                -len(item.sources),
+                -item.rank_score,
+                item.candidate.title.casefold(),
+            )
+        )
+        return
+    items.sort(
+        key=lambda item: (
+            min(
+                (RELATION_ORDER.get(value, 99) for value in item.relations),
+                default=99,
+            ),
+            -len(item.sources),
+            -item.rank_score,
+            item.candidate.title.casefold(),
+        )
+    )
+
+
+def _borrow_display_metadata(
+    target: AggregatedAnimeReference,
+    aggregate: AggregatedAnimeReference,
+) -> None:
+    for key, value in aggregate.titles.items():
+        target.titles.setdefault(key, value)
+    target.aliases = _dedupe([*target.aliases, *aggregate.aliases])
+    target.posters = _dedupe([*target.posters, *aggregate.posters])
 
 
 class RelatedAnimeService:
@@ -87,11 +124,17 @@ class RelatedAnimeService:
                 capable.append(source)
 
         async def run(source: Any):
+            source_key = str(getattr(source, "source_key", "") or "").strip().casefold()
             try:
                 values = await getattr(source, loader_name)(identity.copy())
-                return source.name, list(values or []), None
+                return source.name, source_key, list(values or []), None
             except Exception as exc:
-                return source.name, [], f"{type(exc).__name__}: {exc}"
+                return (
+                    source.name,
+                    source_key,
+                    [],
+                    f"{type(exc).__name__}: {exc}",
+                )
 
         result = RelatedAnimeLoadResult()
         if not capable:
@@ -99,10 +142,12 @@ class RelatedAnimeService:
 
         loaded = await asyncio.gather(*(run(source) for source in capable))
         merged: list[AggregatedAnimeReference] = []
-        for source_name, values, error in loaded:
+        for source_name, source_key, values, error in loaded:
             if error:
                 result.errors[source_name] = error
                 continue
+
+            local_items: list[AggregatedAnimeReference] = []
             for reference in values[:30]:
                 if (
                     not isinstance(reference, AnimeReference)
@@ -112,28 +157,38 @@ class RelatedAnimeService:
                 enriched = self._mapping_resolver.enrich(reference.identity)
                 if enriched.matches(identity):
                     continue
+                self._merge_reference(local_items, reference, enriched)
                 self._merge_reference(merged, reference, enriched)
 
-        if recommendations:
-            merged.sort(
-                key=lambda item: (
-                    -len(item.sources),
-                    -item.rank_score,
-                    item.candidate.title.casefold(),
-                )
-            )
-        else:
-            merged.sort(
-                key=lambda item: (
-                    min(
-                        (RELATION_ORDER.get(value, 99) for value in item.relations),
-                        default=99,
+            if local_items:
+                _sort_items(local_items, recommendations=recommendations)
+                result.by_source[source_key] = local_items
+                result.source_names[source_key] = next(
+                    (
+                        value.source
+                        for value in values
+                        if isinstance(value, AnimeReference) and value.source.strip()
                     ),
-                    -len(item.sources),
-                    item.candidate.title.casefold(),
+                    source_name,
                 )
-            )
+
+        _sort_items(merged, recommendations=recommendations)
         result.items = merged
+
+        # Keep source-local semantics (its own relation type and ordering), but
+        # reuse richer title/poster metadata from the confirmed cross-source peer.
+        for local_items in result.by_source.values():
+            for local_item in local_items:
+                aggregate = next(
+                    (
+                        item
+                        for item in merged
+                        if item.identity.matches(local_item.identity)
+                    ),
+                    None,
+                )
+                if aggregate is not None:
+                    _borrow_display_metadata(local_item, aggregate)
         return result
 
     @staticmethod
