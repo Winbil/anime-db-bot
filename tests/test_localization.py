@@ -55,6 +55,28 @@ class LocalizationCatalogTests(unittest.TestCase):
         self.assertEqual(text("genres", "fantasy", locale="en"), "Fantasy")
         self.assertEqual(text("genres", "fantasy", locale="ja"), "ファンタジー")
 
+    def test_description_collection_labels_are_pluralized(self) -> None:
+        expected = {
+            "en": "Descriptions",
+            "ru": "Описания",
+            "ja": "あらすじ一覧",
+            "de": "Beschreibungen",
+            "es": "Descripciones",
+            "fr": "Descriptions",
+            "it": "Descrizioni",
+        }
+        for locale, label in expected.items():
+            with self.subTest(locale=locale):
+                self.assertEqual(
+                    text("card", "section_description", locale=locale), label
+                )
+                self.assertEqual(
+                    text("card", "description_button", locale=locale), label
+                )
+                self.assertTrue(
+                    text("card", "description_choose", locale=locale).startswith(label)
+                )
+
     def test_every_locale_catalog_is_complete_and_preserves_placeholders(self) -> None:
         locale_dir = resources.files("localization").joinpath("locales")
         catalogs = {
@@ -127,7 +149,9 @@ class LocalizationCatalogTests(unittest.TestCase):
         }
         for locale, expected in expected_action_comedy.items():
             with self.subTest(locale=locale):
-                self.assertEqual(canonical_genre("Action Comedy", locale=locale), expected)
+                self.assertEqual(
+                    canonical_genre("Action Comedy", locale=locale), expected
+                )
 
     def test_kitsu_category_aliases_are_localized(self) -> None:
         expected = {

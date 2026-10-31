@@ -3,6 +3,8 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, time, timezone
 
+from bots.telegram.card.features.episodes import _episode_release_schedule_text
+from bots.telegram.card.ui.constants import SECTION_LABELS
 from bots.telegram.card.views.renderer import anime_sections
 from core.models import AggregatedAnime, AnimeRecord, BroadcastSlot
 from services.aggregation.merge import _consensus_rating
@@ -110,11 +112,15 @@ class ReleaseScheduleTests(unittest.TestCase):
         self.assertIn("Всего серий: 10", ru["main"])
         self.assertIn("Возрастной рейтинг: PG-13", ru["main"])
         self.assertIn("Следующая серия №8", ru["main"])
-        self.assertIn("Серия 8:", ru["release_schedule"])
-        self.assertIn("дата источника", ru["release_schedule"])
-        self.assertIn("Серия 9:", ru["release_schedule"])
-        self.assertIn("предположительно", ru["release_schedule"])
-        self.assertIn("недельному интервалу", ru["release_schedule"])
+        integrated = _episode_release_schedule_text(anime, locale="ru")
+        self.assertIn("График выхода серий", integrated)
+        self.assertIn("Серия 8:", integrated)
+        self.assertIn("дата источника", integrated)
+        self.assertIn("Серия 9:", integrated)
+        self.assertIn("предположительно", integrated)
+        self.assertIn("недельному интервалу", integrated)
+        self.assertNotIn("release_schedule", ru)
+        self.assertNotIn("release_schedule", SECTION_LABELS)
 
 
 class ReleaseMetadataNormalizationTests(unittest.TestCase):

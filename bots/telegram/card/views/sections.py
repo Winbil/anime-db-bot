@@ -7,7 +7,6 @@ from aiogram.types import InputRichMessage
 from bots.telegram.card.ui.constants import RICH_MESSAGE_LIMIT
 from bots.telegram.card.views.main import _main_text, main_rich
 from bots.telegram.card.views.popularity import format_popularity
-from bots.telegram.card.views.release_schedule import format_release_schedule
 from bots.telegram.card.views.rendering import (
     dedupe_strings,
     image_gallery_html,
@@ -141,7 +140,6 @@ def anime_sections(
         "titles": format_titles(anime.titles, anime.synonyms, locale=locale),
         "description": description_text,
         "popularity": popularity_text,
-        "release_schedule": format_release_schedule(anime, locale=locale),
         "links": links_text,
         "staff": format_people(
             text("card", "staff", locale=locale), anime.staff, locale=locale

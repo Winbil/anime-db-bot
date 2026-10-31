@@ -122,6 +122,7 @@ class CardRichLayoutTests(unittest.TestCase):
         self.assertIn(">Статус</th>", html)
         self.assertIn(">выходит</td>", html)
         self.assertNotIn("<h3>Подробнее</h3>", html)
+        self.assertNotIn("av:card-token:release_schedule:0", html)
 
         categories = {
             "Основное": ("titles", "description"),
@@ -154,6 +155,7 @@ class CardRichLayoutTests(unittest.TestCase):
 
         for caption in ("Выход", "Производство", "Оценка", "Источники"):
             self.assertIn(f"<h3>{caption}</h3>", html)
+        self.assertNotIn("av:card-token:release_schedule:0", html)
         for section in (
             "episodes",
             "screenshots",

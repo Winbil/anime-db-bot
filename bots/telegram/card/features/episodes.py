@@ -12,6 +12,7 @@ from aiogram.types import (
 from bots.telegram.callbacks import KeyedPageCallback, resolve_key_or_legacy_index
 from bots.telegram.pagination import card_picker_callback
 from bots.telegram.card.runtime.state import AnimeCardSession
+from bots.telegram.card.views.release_schedule import format_release_schedule
 from bots.telegram.card.views.titles import preferred_title_keys
 from bots.telegram.card.views.renderer import (
     edit_standard_text,
@@ -19,7 +20,7 @@ from bots.telegram.card.views.renderer import (
 )
 from bots.telegram.card.views.rendering import _table_html
 from core.episode_segments import AggregatedEpisodeSegment, EpisodeSegment
-from core.models import EpisodeRecord
+from core.models import AggregatedAnime, EpisodeRecord
 from localization import text
 from services.media.episode_segments import EpisodeSegmentService
 from services.media.episodes import EpisodeService
@@ -136,6 +137,12 @@ def _episode_summary_lines(episode: EpisodeRecord, *, locale: str) -> list[str]:
         elif episode.skip_intro_absent:
             lines.append(text("card", "skipdb_intro_absent", locale=locale))
     return lines
+
+
+def _episode_release_schedule_text(anime: AggregatedAnime, *, locale: str) -> str:
+    if not anime.episode_release_schedule:
+        return ""
+    return format_release_schedule(anime, locale=locale)
 
 
 def _episodes_text(
@@ -464,9 +471,11 @@ async def edit_episodes_view(
     timecode_html = ""
     selected_segment_backend = session.episode_segment_backend
     if episode is None:
-        content = _episodes_text([], locale=locale, source_name=source_name)
+        detail_text = _episodes_text([], locale=locale, source_name=source_name)
     else:
-        content = _episode_detail_text(episode, locale=locale, source_name=source_name)
+        detail_text = _episode_detail_text(
+            episode, locale=locale, source_name=source_name
+        )
         (
             timecode_plain,
             timecode_html,
@@ -478,8 +487,14 @@ async def edit_episodes_view(
             episode_length_seconds=episode.duration_seconds,
             locale=locale,
         )
-        if timecode_plain:
-            content = f"{content}\n\n{timecode_plain}"
+
+    schedule_plain = _episode_release_schedule_text(session.anime, locale=locale)
+    content_blocks = [detail_text]
+    if timecode_plain:
+        content_blocks.append(timecode_plain)
+    if schedule_plain:
+        content_blocks.append(schedule_plain)
+    content = "\n\n".join(content_blocks)
 
     keyboard = _episode_keyboard(
         token,
@@ -497,13 +512,13 @@ async def edit_episodes_view(
     )
 
     try:
-        detail_text = content
-        if timecode_plain:
-            detail_text = content[: -(len(timecode_plain) + 2)]
+        rich_html = plain_text_to_rich_html(detail_text)
+        if timecode_html:
+            rich_html += timecode_html
+        if schedule_plain:
+            rich_html += plain_text_to_rich_html(schedule_plain)
         await message.edit_text(
-            rich_message=InputRichMessage(
-                html=plain_text_to_rich_html(detail_text) + timecode_html
-            ),
+            rich_message=InputRichMessage(html=rich_html),
             reply_markup=keyboard,
         )
     except Exception:
