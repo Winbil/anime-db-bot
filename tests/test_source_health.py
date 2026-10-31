@@ -27,6 +27,14 @@ class _FailingSource:
             transient=True,
         )
 
+    async def load_relations(self, identity: AnimeIdentity):
+        raise SourceUnavailable(
+            "temporary related-anime outage",
+            source="health",
+            operation="relations",
+            transient=True,
+        )
+
 
 class _FailingSearchProvider:
     name = "MyAnimeList"
@@ -110,6 +118,25 @@ class SourceHealthTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(SourceCircuitOpen):
                 await source.get_details(AnimeIdentity({"mal": "1"}))
 
+        snapshot = metrics.source_window("health", 3600)
+        self.assertEqual(snapshot.calls, 2)
+        self.assertEqual(snapshot.errors, 2)
+
+    async def test_related_anime_calls_share_health_and_runtime_metrics(self) -> None:
+        health = SourceHealthRegistry(failure_threshold=1, cooldown_seconds=30)
+        metrics = RuntimeMetricsRegistry(clock=lambda: 100.0)
+        source = resilient_source(_FailingSource(), health)
+
+        with (
+            activate_runtime_metrics(metrics),
+            patch("sources.runtime.resilient.asyncio.sleep", new=AsyncMock()),
+        ):
+            with self.assertRaises(SourceUnavailable):
+                await source.load_relations(AnimeIdentity({"health": "1"}))
+            with self.assertRaises(SourceCircuitOpen):
+                await source.load_relations(AnimeIdentity({"health": "1"}))
+
+        self.assertTrue(health.snapshot("health").circuit_open)
         snapshot = metrics.source_window("health", 3600)
         self.assertEqual(snapshot.calls, 2)
         self.assertEqual(snapshot.errors, 2)

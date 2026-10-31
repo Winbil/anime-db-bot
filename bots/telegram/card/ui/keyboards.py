@@ -327,5 +327,15 @@ def fallback_main_keyboard(token: str, *, locale: str) -> InlineKeyboardMarkup:
                     callback_data=f"av:{token}:links:0",
                 ),
             ],
+            [
+                InlineKeyboardButton(
+                    text=text("card", "related_button", locale=locale),
+                    callback_data=f"av:{token}:related:0",
+                ),
+                InlineKeyboardButton(
+                    text=text("card", "recommendations_button", locale=locale),
+                    callback_data=f"av:{token}:recommendations:0",
+                ),
+            ],
         ]
     )

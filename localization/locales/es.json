@@ -314,7 +314,13 @@
     "episodes_total": "Episodios totales: {value}",
     "next_episode_numbered": "Próximo episodio #{episode}: {value}",
     "next_episode_estimated": "Próximo episodio estimado: ~{value}",
-    "next_episode_estimated_numbered": "Próximo episodio estimado #{episode}: ~{value}"
+    "next_episode_estimated_numbered": "Próximo episodio estimado #{episode}: ~{value}",
+    "section_related": "Relacionados",
+    "section_recommendations": "Recomendaciones",
+    "related_button": "Relacionados",
+    "recommendations_button": "Recomendaciones",
+    "discovery_count": "Encontrados: {count}",
+    "discovery_sources": "Fuentes: {sources}"
   },
   "people": {
     "staff": "Personal y creadores",
@@ -567,6 +573,24 @@
     "main": "Principal",
     "supporting": "Compatible con",
     "background": "Fondo",
+    "other": "Otro"
+  },
+  "relation_type": {
+    "prequel": "Precuela",
+    "sequel": "Secuela",
+    "parent": "Historia principal",
+    "side_story": "Historia paralela",
+    "spin_off": "Spin-off",
+    "alternative": "Alternativa",
+    "alternative_setting": "Ambientación alternativa",
+    "alternative_version": "Versión alternativa",
+    "summary": "Resumen",
+    "full_story": "Historia completa",
+    "compilation": "Recopilación",
+    "contains": "Contiene",
+    "adaptation": "Adaptación",
+    "source": "Obra original",
+    "character": "Personajes",
     "other": "Otro"
   }
 }

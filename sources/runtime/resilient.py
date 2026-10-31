@@ -22,6 +22,7 @@ from core.models import (
 )
 from core.people_loading import PeopleBatch, PeopleManifest, without_portraits
 from core.runtime_metrics import get_runtime_metrics
+from core.related_anime import AnimeReference
 from core.source_errors import SourceError, SourceUnavailable, normalize_source_error
 from services.runtime.source_health import SourceHealthRegistry
 
@@ -260,6 +261,20 @@ class PeopleRetryingSourceProxy(RetryingSourceProxy):
             return DescriptionDetails()
         return await self._people_call("description", lambda: loader(identity))
 
+    async def load_relations(self, identity: AnimeIdentity) -> list[AnimeReference]:
+        loader = getattr(self._source, "load_relations", None)
+        if not callable(loader):
+            return []
+        return await self._people_call("relations", lambda: loader(identity))
+
+    async def load_recommendations(
+        self, identity: AnimeIdentity
+    ) -> list[AnimeReference]:
+        loader = getattr(self._source, "load_recommendations", None)
+        if not callable(loader):
+            return []
+        return await self._people_call("recommendations", lambda: loader(identity))
+
     async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
         loader = getattr(self._source, "load_staff", None)
         if not callable(loader):
@@ -466,6 +481,8 @@ def resilient_source(
         or callable(getattr(source, "load_screenshots", None))
         or callable(getattr(source, "load_popularity", None))
         or callable(getattr(source, "load_description", None))
+        or callable(getattr(source, "load_relations", None))
+        or callable(getattr(source, "load_recommendations", None))
     ):
         return PeopleRetryingSourceProxy(source, health)
     return RetryingSourceProxy(source, health)

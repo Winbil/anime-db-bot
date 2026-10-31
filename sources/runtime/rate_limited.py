@@ -4,6 +4,7 @@ from typing import Any
 
 from core.identity import AnimeIdentity
 from core.people_loading import PeopleManifest, without_portraits
+from core.related_anime import AnimeReference
 from core.models import (
     AnimeRecord,
     CharacterRecord,
@@ -59,6 +60,22 @@ class PeopleRateLimitedSourceProxy(RateLimitedSourceProxy):
         if not callable(loader):
             return DescriptionDetails()
         await wait_for_upstream(self.source_key, "metadata")
+        return await loader(identity)
+
+    async def load_relations(self, identity: AnimeIdentity) -> list[AnimeReference]:
+        loader = getattr(self._source, "load_relations", None)
+        if not callable(loader):
+            return []
+        await wait_for_upstream(self.source_key, "relations")
+        return await loader(identity)
+
+    async def load_recommendations(
+        self, identity: AnimeIdentity
+    ) -> list[AnimeReference]:
+        loader = getattr(self._source, "load_recommendations", None)
+        if not callable(loader):
+            return []
+        await wait_for_upstream(self.source_key, "recommendations")
         return await loader(identity)
 
     async def load_staff(self, identity: AnimeIdentity) -> list[PersonCredit]:
@@ -162,6 +179,8 @@ def rate_limited_source(source: Any, source_key: str) -> RateLimitedSourceProxy:
             "load_screenshots",
             "load_popularity",
             "load_description",
+            "load_relations",
+            "load_recommendations",
         )
     )
     proxy_type = PeopleRateLimitedSourceProxy if has_people else RateLimitedSourceProxy

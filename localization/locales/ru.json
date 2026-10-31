@@ -314,7 +314,13 @@
     "episodes_total": "Всего серий: {value}",
     "next_episode_numbered": "Следующая серия №{episode}: {value}",
     "next_episode_estimated": "Предположительно следующая серия: ~{value}",
-    "next_episode_estimated_numbered": "Предположительно следующая серия №{episode}: ~{value}"
+    "next_episode_estimated_numbered": "Предположительно следующая серия №{episode}: ~{value}",
+    "section_related": "Связанное",
+    "section_recommendations": "Рекомендации",
+    "related_button": "Связанное",
+    "recommendations_button": "Рекомендации",
+    "discovery_count": "Найдено: {count}",
+    "discovery_sources": "Источники: {sources}"
   },
   "people": {
     "staff": "Авторы и команда",
@@ -568,5 +574,23 @@
     "supporting": "Второстепенный",
     "background": "Фоновый",
     "other": "Другая"
+  },
+  "relation_type": {
+    "prequel": "Приквел",
+    "sequel": "Сиквел",
+    "parent": "Основная история",
+    "side_story": "Побочная история",
+    "spin_off": "Спин-офф",
+    "alternative": "Альтернатива",
+    "alternative_setting": "Альтернативный сеттинг",
+    "alternative_version": "Альтернативная версия",
+    "summary": "Краткое содержание",
+    "full_story": "Полная история",
+    "compilation": "Компиляция",
+    "contains": "Содержит",
+    "adaptation": "Адаптация",
+    "source": "Источник",
+    "character": "Персонажи",
+    "other": "Другое"
   }
 }

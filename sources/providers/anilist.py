@@ -24,6 +24,7 @@ from core.models import (
     PopularityStats,
 )
 from core.people_loading import PeopleBatch
+from core.related_anime import AnimeReference, canonical_relation_kind
 from core.settings import SourceSettings, get_settings
 from core.temporal import PartialDate, parse_partial_date
 from core.source_errors import SourceInvalidResponse
@@ -106,6 +107,47 @@ query AnimeDescription($id: Int!) {
   Media(id: $id, type: ANIME) {
     id
     description(asHtml: false)
+  }
+}
+"""
+
+
+RELATIONS_QUERY = """
+query AnimeRelations($id: Int!) {
+  Media(id: $id, type: ANIME) {
+    id
+    relations {
+      edges {
+        relationType
+        node {
+          id
+          idMal
+          type
+          title { romaji english native }
+          coverImage { large medium }
+        }
+      }
+    }
+  }
+}
+"""
+
+RECOMMENDATIONS_QUERY = """
+query AnimeRecommendations($id: Int!) {
+  Media(id: $id, type: ANIME) {
+    id
+    recommendations(page: 1, perPage: 25, sort: RATING_DESC) {
+      nodes {
+        rating
+        mediaRecommendation {
+          id
+          idMal
+          type
+          title { romaji english native }
+          coverImage { large medium }
+        }
+      }
+    }
   }
 }
 """
@@ -381,6 +423,45 @@ async def graphql_request(
             operation=operation,
         )
     return data
+
+
+def _anime_reference(
+    node: dict[str, Any],
+    *,
+    relation: object | None = None,
+    rank: int = 1,
+) -> AnimeReference | None:
+    if _clean_text(node.get("type")).upper() not in {"", "ANIME"}:
+        return None
+    anilist_id = _clean_text(node.get("id"))
+    if not anilist_id.isdigit():
+        return None
+    raw_titles = node.get("title") or {}
+    titles = {
+        key: value
+        for key, value in {
+            "romaji": _clean_text(raw_titles.get("romaji")),
+            "english": _clean_text(raw_titles.get("english")),
+            "japanese": _clean_text(raw_titles.get("native")),
+        }.items()
+        if value
+    }
+    if not titles:
+        return None
+    external_ids = {"anilist": anilist_id}
+    mal_id = _clean_text(node.get("idMal"))
+    if mal_id.isdigit():
+        external_ids["mal"] = mal_id
+    cover = node.get("coverImage") or {}
+    poster = _clean_text(cover.get("large")) or _clean_text(cover.get("medium"))
+    return AnimeReference(
+        source="AniList",
+        titles=titles,
+        external_ids=external_ids,
+        posters=[poster] if poster else [],
+        relation=canonical_relation_kind(relation) if relation else None,
+        rank=max(1, int(rank)),
+    )
 
 
 def _staff_from_connection(connection: dict[str, Any] | None) -> list[PersonCredit]:
@@ -697,6 +778,60 @@ class AniListSource:
         if not raw or str(raw.get("idMal") or "") != mal_id:
             return None
         return _record(raw)
+
+    async def load_relations(self, identity: AnimeIdentity) -> list[AnimeReference]:
+        media_id = str(identity.get(SourceKey.ANILIST) or "").strip()
+        if not media_id.isdigit():
+            return []
+        data = await graphql_request(
+            RELATIONS_QUERY,
+            {"id": int(media_id)},
+            self._settings,
+            operation="relations",
+        )
+        raw = data.get("Media") or {}
+        if str(raw.get("id") or "") != media_id:
+            return []
+        result: list[AnimeReference] = []
+        for index, edge in enumerate(
+            ((raw.get("relations") or {}).get("edges") or []), 1
+        ):
+            if not isinstance(edge, dict) or not isinstance(edge.get("node"), dict):
+                continue
+            reference = _anime_reference(
+                edge["node"],
+                relation=edge.get("relationType"),
+                rank=index,
+            )
+            if reference is not None:
+                result.append(reference)
+        return result
+
+    async def load_recommendations(
+        self, identity: AnimeIdentity
+    ) -> list[AnimeReference]:
+        media_id = str(identity.get(SourceKey.ANILIST) or "").strip()
+        if not media_id.isdigit():
+            return []
+        data = await graphql_request(
+            RECOMMENDATIONS_QUERY,
+            {"id": int(media_id)},
+            self._settings,
+            operation="recommendations",
+        )
+        raw = data.get("Media") or {}
+        if str(raw.get("id") or "") != media_id:
+            return []
+        result: list[AnimeReference] = []
+        nodes = (raw.get("recommendations") or {}).get("nodes") or []
+        for index, item in enumerate(nodes, 1):
+            node = item.get("mediaRecommendation") if isinstance(item, dict) else None
+            if not isinstance(node, dict):
+                continue
+            reference = _anime_reference(node, rank=index)
+            if reference is not None:
+                result.append(reference)
+        return result
 
     async def load_popularity(self, identity: AnimeIdentity) -> PopularityStats:
         media_id = str(identity.get(SourceKey.ANILIST) or "").strip()

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from bots.session_store import ExpiringSessionStore
 from bots.telegram.card.ui.constants import MAX_ANIME_SESSIONS
 from core.models import AggregatedAnime, EpisodePage, EpisodeRecord, TrailerRecord
+from core.related_anime import AggregatedAnimeReference
 from services.media.people import PeopleLoadProgress
 
 MAX_PEOPLE_LOADS = 400
@@ -35,6 +36,12 @@ class AnimeCardSession:
     popularity_errors: dict[str, str] = field(default_factory=dict)
     descriptions_loaded: bool = False
     description_errors: dict[str, str] = field(default_factory=dict)
+    related_loaded: bool = False
+    related_items: list[AggregatedAnimeReference] = field(default_factory=list)
+    related_errors: dict[str, str] = field(default_factory=dict)
+    recommendations_loaded: bool = False
+    recommendation_items: list[AggregatedAnimeReference] = field(default_factory=list)
+    recommendation_errors: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

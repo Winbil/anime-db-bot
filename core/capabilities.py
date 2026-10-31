@@ -16,6 +16,8 @@ class SourceCapability(StrEnum):
     SCREENSHOTS = "screenshots"
     POPULARITY = "popularity"
     DESCRIPTION = "description"
+    RELATIONS = "relations"
+    RECOMMENDATIONS = "recommendations"
 
 
 @dataclass(frozen=True, slots=True)

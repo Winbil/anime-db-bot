@@ -314,7 +314,13 @@
     "episodes_total": "Folgen insgesamt: {value}",
     "next_episode_numbered": "Nächste Folge #{episode}: {value}",
     "next_episode_estimated": "Voraussichtlich nächste Folge: ~{value}",
-    "next_episode_estimated_numbered": "Voraussichtlich nächste Folge #{episode}: ~{value}"
+    "next_episode_estimated_numbered": "Voraussichtlich nächste Folge #{episode}: ~{value}",
+    "section_related": "Verwandte Titel",
+    "section_recommendations": "Empfehlungen",
+    "related_button": "Verwandt",
+    "recommendations_button": "Empfehlungen",
+    "discovery_count": "Gefunden: {count}",
+    "discovery_sources": "Quellen: {sources}"
   },
   "people": {
     "staff": "Mitarbeiter und Ersteller",
@@ -568,5 +574,23 @@
     "supporting": "Unterstützender",
     "background": "Hintergrund",
     "other": "Sonstiges"
+  },
+  "relation_type": {
+    "prequel": "Prequel",
+    "sequel": "Fortsetzung",
+    "parent": "Hauptgeschichte",
+    "side_story": "Nebengeschichte",
+    "spin_off": "Spin-off",
+    "alternative": "Alternative",
+    "alternative_setting": "Alternatives Setting",
+    "alternative_version": "Alternative Version",
+    "summary": "Zusammenfassung",
+    "full_story": "Vollständige Geschichte",
+    "compilation": "Kompilation",
+    "contains": "Enthält",
+    "adaptation": "Adaption",
+    "source": "Vorlage",
+    "character": "Charaktere",
+    "other": "Andere"
   }
 }

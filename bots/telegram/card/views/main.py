@@ -62,6 +62,11 @@ _BLOCK_ACTIONS: tuple[tuple[tuple[str, str], ...], ...] = (
     (("links_button", "links"),),
 )
 
+_DISCOVERY_ACTIONS: tuple[tuple[str, str], ...] = (
+    ("related_button", "related"),
+    ("recommendations_button", "recommendations"),
+)
+
 
 def _block_actions_html(
     token: str, actions: tuple[tuple[str, str], ...], *, locale: str
@@ -315,5 +320,6 @@ def main_rich(
             block_html.append(f"<h3>{html.escape(title_value)}</h3>")
         block_html.append(_block_actions_html(token, actions, locale=locale))
 
+    block_html.append(_block_actions_html(token, _DISCOVERY_ACTIONS, locale=locale))
     title_html = f"<h2>{html.escape(display_anime_title(anime, locale))}</h2>"
     return InputRichMessage(html=poster_html(anime) + title_html + "".join(block_html))

@@ -23,7 +23,7 @@ The project is designed around explicit boundaries between **search**, **identit
 - **Source-independent identity** — `AnimeIdentity` stores peer external IDs; there is no global primary database ID.
 - **Conservative cross-ID mapping** — runtime mapping is direct-only and conflict-aware, with provenance and manual audited overrides.
 - **Aggregated metadata cards** — values from successful metadata sources are normalized and merged while source-specific provenance is preserved.
-- **Manifest + lazy enrichment** — staff/seiyuu IDs, names, and roles are prefetched as a lightweight exact roster; portraits are enriched in global batches (50 by default), while characters, screenshots, detailed popularity, descriptions/backgrounds, trailers, and episodes remain lazy.
+- **Manifest + lazy enrichment** — staff/seiyuu IDs, names, and roles are prefetched as a lightweight exact roster; portraits are enriched in global batches (50 by default), while characters, screenshots, detailed popularity, descriptions/backgrounds, trailers, episodes, related titles, and recommendations remain lazy.
 - **Shared resilience layer** — typed source errors, retries, circuit breakers, half-open recovery, rate limits, and shared HTTP lifecycle.
 - **Persistent platform-scoped settings** — user locale, known users, and moderation state are stored in SQLite.
 - **Seven UI languages** — English is the default/fallback locale; Russian, Japanese, German, Spanish, French, and Italian are fully selectable in `/settings`.
@@ -34,15 +34,17 @@ The project is designed around explicit boundaries between **search**, **identit
 
 ## Source capabilities
 
-| Source | Search | Metadata | People | Characters | Trailers | Episodes | Screenshots | Popularity | Description |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Shikimori | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
-| MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
-| AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
-| Kitsu | ✓ | ✓ | — | — | ✓ | ✓ | — | ✓ | ✓ |
-| AniDB | — | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ |
-| AniSearch | — | ✓ | ✓ | ✓ | — | ✓ | — | ✓ | ✓ |
-| SkipDB (dormant) | — | — | — | — | — | — | — | — | — |
+| Source | Search | Metadata | People | Characters | Trailers | Episodes | Screenshots | Popularity | Description | Relations | Recommendations |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Shikimori | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ | ✓ | ✓ |
+| MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ | ✓ |
+| AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ | ✓ | ✓ |
+| Kitsu | ✓ | ✓ | — | — | ✓ | ✓ | — | ✓ | ✓ | — | — |
+| AniDB | — | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ | — | — |
+| AniSearch | — | ✓ | ✓ | ✓ | — | ✓ | — | ✓ | ✓ | — | — |
+| SkipDB (dormant) | — | — | — | — | — | — | — | — | — | — | — |
+
+Related titles and recommendations are lazy cross-source capabilities. Shikimori, official MAL, and AniList are queried only after the user opens the corresponding card action. References are enriched through direct confirmed `mappings.db` edges and deduplicated only by non-conflicting peer IDs; title-only merges are forbidden. Shikimori references receive MAL peer IDs through one batched GraphQL lookup before aggregation. Recommendation ordering favors titles supported by more independent sources and then source-local rank, rather than mixing incompatible upstream score scales.
 
 AnimeThemes is a read-only episode enrichment capability rather than a peer anime identity/metadata source, so it is intentionally absent from the table above. It is queried lazily only for episode views, uses confirmed AniList or MyAnimeList IDs, and never participates in title search or cross-source identity creation.
 
