@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import re
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -269,12 +270,25 @@ def _episodes(root: ET.Element) -> list[EpisodeRecord]:
     result: list[EpisodeRecord] = []
     for episode in root.findall("./episodes/episode"):
         epno = episode.find("epno")
-        if epno is None or _clean(epno.attrib.get("type")) != "1":
+        if epno is None:
             continue
+        episode_type = _clean(epno.attrib.get("type"))
         number_text = _text(epno)
-        if not number_text.isdigit():
+        if episode_type == "1" and number_text.isdigit():
+            episode_number = int(number_text)
+            selector = episode_number
+            episode_kind = "regular"
+        elif episode_type == "2":
+            match = re.search(r"(\d+)$", number_text)
+            if match is None:
+                continue
+            episode_number = int(match.group(1))
+            # Keep special selectors disjoint from ordinary episode ordinals while
+            # preserving the source-local S1/S2/... number for presentation.
+            selector = 1_000_000 + episode_number
+            episode_kind = "special"
+        else:
             continue
-        number = int(number_text)
         titles: dict[str, str] = {}
         for title in episode.findall("title"):
             value = _text(title)
@@ -293,17 +307,24 @@ def _episodes(root: ET.Element) -> list[EpisodeRecord]:
         )
         result.append(
             EpisodeRecord(
-                number=number,
+                number=selector,
                 source="anidb",
                 backend="anidb",
                 titles=titles,
+                episode_number=episode_number,
+                episode_kind=episode_kind,
                 aired_at=parse_partial_date(_text(episode.find("airdate"))),
                 duration_seconds=length * 60 if length and length > 0 else None,
                 score=score,
                 urls=urls,
             )
         )
-    result.sort(key=lambda item: item.number)
+    result.sort(
+        key=lambda item: (
+            0 if item.episode_kind == "regular" else 1,
+            item.episode_number or item.number,
+        )
+    )
     return result
 
 

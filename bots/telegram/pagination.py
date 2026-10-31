@@ -69,6 +69,16 @@ def card_route_callback(token: str, route: str, index: int) -> str:
         return SectionSourceCallback(token, parts[1], parts[2], index).encode()
     if kind in {"ap", "ac", "at"} and len(parts) == 2:
         return KeyedPageCallback(kind, token, parts[1], index).encode()
+    if kind == "apg" and len(parts) == 3:
+        try:
+            group_start = int(parts[2])
+        except ValueError as exc:
+            raise ValueError("Invalid episode-group page-picker route") from exc
+        if group_start < 0:
+            raise ValueError("Invalid episode-group page-picker route")
+        return KeyedPageCallback(
+            "ap", token, parts[1], group_start + index
+        ).encode()
 
     if kind == "pv" and len(parts) >= 4:
         try:

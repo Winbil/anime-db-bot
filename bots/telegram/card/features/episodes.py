@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import (
@@ -32,6 +33,105 @@ EPISODES_PER_VIEW = 1
 UPSTREAM_PAGE_SIZE = 100
 _SEGMENT_CALLBACK_PREFIX = "segments-"
 _INITIAL_TIMECODE_WAIT_SECONDS = 0.15
+
+
+@dataclass(slots=True)
+class _EpisodeGroup:
+    key: str
+    kind: str
+    start: int
+    end: int
+    season_number: int | None = None
+    cour_number: int | None = None
+
+    @property
+    def count(self) -> int:
+        return self.end - self.start + 1
+
+
+def _positive_number(value: int | None) -> int | None:
+    return value if value is not None and value > 0 else None
+
+
+def _episode_group_signature(
+    episode: EpisodeRecord,
+) -> tuple[str, int | None, int | None]:
+    kind = (episode.episode_kind or "regular").strip().casefold()
+    if kind != "regular":
+        return "specials", None, None
+    season = _positive_number(episode.season_number)
+    cour = _positive_number(episode.cour_number)
+    if season is not None and cour is not None:
+        return "season_cour", season, cour
+    if season is not None:
+        return "season", season, None
+    if cour is not None:
+        return "cour", None, cour
+    return "main", None, None
+
+
+def _episode_groups(items: list[EpisodeRecord]) -> list[_EpisodeGroup]:
+    groups: list[_EpisodeGroup] = []
+    for index, episode in enumerate(items):
+        kind, season, cour = _episode_group_signature(episode)
+        key = (
+            "specials"
+            if kind == "specials"
+            else f"s{season or 0}c{cour or 0}:{kind}"
+        )
+        if groups and groups[-1].key == key:
+            groups[-1].end = index
+            continue
+        groups.append(
+            _EpisodeGroup(
+                key=key,
+                kind=kind,
+                start=index,
+                end=index,
+                season_number=season,
+                cour_number=cour,
+            )
+        )
+    # A single regular season/group would only add UI noise. The hierarchy is
+    # shown when it actually lets the user choose between distinct groups.
+    return groups if len(groups) > 1 else []
+
+
+def _episode_group_for_page(
+    groups: list[_EpisodeGroup], view_page: int
+) -> _EpisodeGroup | None:
+    return next(
+        (group for group in groups if group.start <= view_page <= group.end),
+        None,
+    )
+
+
+def _episode_group_label(group: _EpisodeGroup, *, locale: str) -> str:
+    if group.kind == "specials":
+        return text("card", "episode_group_specials", locale=locale)
+    if group.kind == "season_cour":
+        return text(
+            "card",
+            "episode_group_season_cour",
+            locale=locale,
+            season=group.season_number,
+            cour=group.cour_number,
+        )
+    if group.kind == "season":
+        return text(
+            "card",
+            "episode_group_season",
+            locale=locale,
+            number=group.season_number,
+        )
+    if group.kind == "cour":
+        return text(
+            "card",
+            "episode_group_cour",
+            locale=locale,
+            number=group.cour_number,
+        )
+    return text("card", "episode_group_main", locale=locale)
 
 
 def _view_slice(view_page: int) -> tuple[int, int]:
@@ -214,6 +314,13 @@ def _episode_keyboard(
     total_episodes: int | None,
     has_prev: bool,
     current_episode: int | None = None,
+    displayed_episode: int | None = None,
+    display_total: int | None = None,
+    picker_route: str | None = None,
+    picker_index: int | None = None,
+    episode_groups: list[_EpisodeGroup] | None = None,
+    selected_episode_group: str | None = None,
+    source_switch_page: int | None = None,
     has_next: bool,
     locale: str,
     service: EpisodeService,
@@ -229,13 +336,22 @@ def _episode_keyboard(
                 ).encode(),
             )
         )
-    displayed_episode = (
-        view_page + 1 if current_episode is None else max(0, int(current_episode))
-    )
-    center = f"{displayed_episode}/{total_episodes if total_episodes else '?'}"
+    if current_episode is not None:
+        nav_current = max(0, int(current_episode))
+    elif displayed_episode is not None:
+        nav_current = max(0, int(displayed_episode))
+    else:
+        nav_current = view_page + 1
+    nav_total = display_total if display_total is not None else total_episodes
+    center = f"{nav_current}/{nav_total if nav_total else '?'}"
     center_callback = (
-        card_picker_callback(token, f"ap~{backend}", view_page, total_episodes)
-        if displayed_episode > 0 and total_episodes and total_episodes > 1
+        card_picker_callback(
+            token,
+            picker_route or f"ap~{backend}",
+            picker_index if picker_index is not None else view_page,
+            nav_total,
+        )
+        if nav_current > 0 and nav_total and nav_total > 1
         else "noop"
     )
     nav.append(InlineKeyboardButton(text=center, callback_data=center_callback))
@@ -250,11 +366,32 @@ def _episode_keyboard(
         )
     rows: list[list[InlineKeyboardButton]] = [nav]
 
+    if episode_groups:
+        group_buttons = [
+            InlineKeyboardButton(
+                text=("✓ " if group.key == selected_episode_group else "")
+                + _episode_group_label(group, locale=locale),
+                callback_data=KeyedPageCallback(
+                    "ap", token, backend, group.start
+                ).encode(),
+            )
+            for group in episode_groups
+        ]
+        rows.extend(
+            group_buttons[index : index + 2]
+            for index in range(0, len(group_buttons), 2)
+        )
+
     source_buttons = [
         InlineKeyboardButton(
             text=("✓ " if candidate == backend else "")
             + service.display_name(candidate),
-            callback_data=KeyedPageCallback("ap", token, candidate, view_page).encode(),
+            callback_data=KeyedPageCallback(
+                "ap",
+                token,
+                candidate,
+                view_page if source_switch_page is None else source_switch_page,
+            ).encode(),
         )
         for candidate in backends
     ]
@@ -509,6 +646,34 @@ async def edit_episodes_view(
                 session.anime, requested_episode_number
             )
 
+    catalog = session.episode_catalogs.get(backend)
+    if catalog is None:
+        try:
+            catalog = await service.load_catalog(
+                session.anime.identity,
+                backend=backend,
+                first_page=page if page.page == 1 else None,
+            )
+        except Exception:
+            logging.exception("Could not load %s episode structure", source_name)
+            catalog = []
+        session.episode_catalogs[backend] = catalog
+    if not catalog and page.page > 1 and not page.has_next:
+        cached_pages = [
+            session.episode_pages.get((backend, page_number))
+            for page_number in range(1, page.page + 1)
+        ]
+        if all(cached_page is not None for cached_page in cached_pages):
+            catalog = [
+                item
+                for cached_page in cached_pages
+                if cached_page is not None
+                for item in cached_page.items
+            ]
+            session.episode_catalogs[backend] = catalog
+    episode_groups = _episode_groups(catalog)
+    selected_episode_group = _episode_group_for_page(episode_groups, view_page)
+
     source_has_next = offset + EPISODES_PER_VIEW < len(page.items) or page.has_next
     has_prev = view_page > 0 and not source_is_empty
     has_projected_next = (
@@ -516,6 +681,20 @@ async def edit_episodes_view(
         and _episode_release_projection(session.anime, view_page + 2) is not None
     )
     has_next = source_has_next or has_projected_next
+    nav_displayed_episode: int | None = None
+    nav_display_total: int | None = None
+    nav_picker_route: str | None = None
+    nav_picker_index: int | None = None
+    if selected_episode_group is not None:
+        has_prev = view_page > selected_episode_group.start
+        has_next = view_page < selected_episode_group.end
+        nav_picker_index = view_page - selected_episode_group.start
+        nav_displayed_episode = nav_picker_index + 1
+        nav_display_total = selected_episode_group.count
+        nav_picker_route = (
+            f"apg~{backend}~{selected_episode_group.start}"
+        )
+
     total_episodes = session.anime.episodes_total
     if not page.has_next and not session.anime.episode_release_schedule:
         backend_total = (page.page - 1) * UPSTREAM_PAGE_SIZE + len(page.items)
@@ -544,10 +723,28 @@ async def edit_episodes_view(
     if session.episode_render_generation != generation:
         return
 
-    projection_text = _episode_release_projection_text(
-        session.anime, requested_episode_number, locale=locale
+    if episode is not None:
+        requested_episode_number = episode.episode_number or requested_episode_number
+        projection = (
+            _episode_release_projection(session.anime, requested_episode_number)
+            if episode.episode_kind == "regular"
+            else None
+        )
+    projection_text = (
+        _episode_release_projection_text(
+            session.anime, requested_episode_number, locale=locale
+        )
+        if projection is not None
+        else ""
     )
     selected_segment_backend = session.episode_segment_backend
+    source_switch_page = view_page
+    if episode is not None:
+        source_switch_page = (
+            max(0, (episode.episode_number or requested_episode_number) - 1)
+            if episode.episode_kind == "regular"
+            else 0
+        )
     if episode is None:
         if projection is None:
             detail_text = _episodes_text([], locale=locale, source_name=source_name)
@@ -579,11 +776,14 @@ async def edit_episodes_view(
     timecode_html = ""
     timecodes_ready = False
     timecode_task: asyncio.Task[tuple[str, str, list[str], str]] | None = None
-    if episode is not None and segment_backends:
+    episode_supports_timecodes = (
+        episode is not None and episode.episode_kind == "regular"
+    )
+    if episode_supports_timecodes and segment_backends:
         timecode_task = asyncio.create_task(
             _episode_timecodes(
                 session,
-                episode_number=view_page + 1,
+                episode_number=episode.episode_number or requested_episode_number,
                 episode_length_seconds=episode.duration_seconds,
                 locale=locale,
             )
@@ -605,16 +805,30 @@ async def edit_episodes_view(
             timecode_task.cancel()
         return
 
+    keyboard_segment_backends = (
+        segment_backends
+        if episode is None or episode.episode_kind == "regular"
+        else []
+    )
     keyboard = _episode_keyboard(
         token,
         backends=backends,
         backend=backend,
-        segment_backends=segment_backends,
+        segment_backends=keyboard_segment_backends,
         segment_backend=selected_segment_backend,
         view_page=view_page,
         total_episodes=total_episodes,
         has_prev=has_prev,
         current_episode=0 if source_is_empty else None,
+        displayed_episode=nav_displayed_episode,
+        display_total=nav_display_total,
+        picker_route=nav_picker_route,
+        picker_index=nav_picker_index,
+        episode_groups=episode_groups,
+        selected_episode_group=(
+            selected_episode_group.key if selected_episode_group is not None else None
+        ),
+        source_switch_page=source_switch_page,
         has_next=has_next,
         locale=locale,
         service=service,
@@ -650,16 +864,30 @@ async def edit_episodes_view(
     if session.episode_render_generation != generation:
         return
 
+    keyboard_segment_backends = (
+        segment_backends
+        if episode is None or episode.episode_kind == "regular"
+        else []
+    )
     keyboard = _episode_keyboard(
         token,
         backends=backends,
         backend=backend,
-        segment_backends=segment_backends,
+        segment_backends=keyboard_segment_backends,
         segment_backend=selected_segment_backend,
         view_page=view_page,
         total_episodes=total_episodes,
         has_prev=has_prev,
         current_episode=0 if source_is_empty else None,
+        displayed_episode=nav_displayed_episode,
+        display_total=nav_display_total,
+        picker_route=nav_picker_route,
+        picker_index=nav_picker_index,
+        episode_groups=episode_groups,
+        selected_episode_group=(
+            selected_episode_group.key if selected_episode_group is not None else None
+        ),
+        source_switch_page=source_switch_page,
         has_next=has_next,
         locale=locale,
         service=service,
@@ -765,7 +993,11 @@ def _episode_detail_text(
     lines = [
         text(
             "card",
-            "episode_detail_title",
+            (
+                "episode_detail_title"
+                if episode.episode_kind == "regular"
+                else "episode_special_detail_title"
+            ),
             locale=locale,
             number=_episode_reference(episode),
             source=source_name,

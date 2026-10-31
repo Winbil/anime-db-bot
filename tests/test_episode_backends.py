@@ -12,6 +12,7 @@ from aiogram.types import InlineKeyboardMarkup
 from bots.telegram.card.features.episodes import (
     _episode_detail_html,
     _episode_detail_text,
+    _episode_groups,
     _episode_keyboard,
     _episode_release_projection_text,
     _episode_summary_lines,
@@ -162,6 +163,39 @@ class EpisodeBackendTests(unittest.TestCase):
         self.assertIn("<table", rich)
         self.assertIn("<caption><b>Серия 1 — Kitsu</b></caption>", rich)
         self.assertIn('<th align="left" valign="top">Название</th>', rich)
+
+    def test_grouping_is_hidden_for_one_season_and_supports_cours(self) -> None:
+        one_season = [
+            EpisodeRecord(
+                number=number,
+                source="kitsu",
+                backend="kitsu",
+                season_number=1,
+                episode_number=number,
+            )
+            for number in range(1, 4)
+        ]
+        self.assertEqual(_episode_groups(one_season), [])
+
+        cours = [
+            EpisodeRecord(
+                number=1,
+                source="future",
+                backend="future",
+                cour_number=1,
+                episode_number=1,
+            ),
+            EpisodeRecord(
+                number=2,
+                source="future",
+                backend="future",
+                cour_number=2,
+                episode_number=2,
+            ),
+        ]
+        groups = _episode_groups(cours)
+        self.assertEqual([group.kind for group in groups], ["cour", "cour"])
+        self.assertEqual([group.cour_number for group in groups], [1, 2])
 
     def test_episode_keyboard_separates_episode_and_timestamp_sources(self) -> None:
         service = EpisodeService(
@@ -363,6 +397,156 @@ class EpisodeProjectionUiTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertIn("ap:token:jikan:4", callbacks)
         self.assertIn("ap:token:jikan:6", callbacks)
+
+    async def test_season_groups_add_hierarchy_and_specials_hide_timecodes(self) -> None:
+        source = _EpisodeSource("kitsu", "kitsu", "Kitsu")
+        records = [
+            EpisodeRecord(
+                number=1,
+                source="kitsu",
+                backend="kitsu",
+                season_number=1,
+                episode_number=1,
+                titles={"english": "S1E1"},
+            ),
+            EpisodeRecord(
+                number=2,
+                source="kitsu",
+                backend="kitsu",
+                season_number=1,
+                episode_number=2,
+                titles={"english": "S1E2"},
+            ),
+            EpisodeRecord(
+                number=3,
+                source="kitsu",
+                backend="kitsu",
+                season_number=2,
+                episode_number=3,
+                titles={"english": "S2E1"},
+            ),
+            EpisodeRecord(
+                number=4,
+                source="kitsu",
+                backend="kitsu",
+                season_number=2,
+                episode_number=4,
+                titles={"english": "S2E2"},
+            ),
+            EpisodeRecord(
+                number=1_000_001,
+                source="kitsu",
+                backend="kitsu",
+                episode_number=1,
+                episode_kind="special",
+                titles={"english": "Bonus"},
+            ),
+        ]
+
+        async def load_page(identity, *, page=1):
+            return EpisodePage(
+                items=list(records),
+                page=page,
+                last_visible_page=1,
+                has_next=False,
+            )
+
+        async def load_episode(identity, episode_number):
+            return next(
+                (item for item in records if item.number == int(episode_number)),
+                None,
+            )
+
+        source.load_episode_page = load_page
+        source.load_episode = load_episode
+        fallback_source = _EpisodeSource("jikan", "mal", "MAL / Jikan")
+        episode_service = EpisodeService([source, fallback_source])
+        segment_service = EpisodeSegmentService([_SegmentSource()])
+        anime = AggregatedAnime(
+            title="Structured",
+            external_ids={"kitsu": "1", "mal": "2"},
+            episodes_total=4,
+            episode_release_schedule=[
+                EpisodeReleaseProjection(
+                    episode_number=1,
+                    airs_at=datetime(2026, 11, 6, 14, 0, tzinfo=timezone.utc),
+                    estimated=False,
+                )
+            ],
+        )
+        session = AnimeCardSession(anime=anime, owner_user_id=1)
+        context = SimpleNamespace(
+            episode_service=episode_service,
+            episode_segment_service=segment_service,
+        )
+
+        season_message = _CaptureMessage()
+        with patch(
+            "bots.telegram.card.features.episodes.get_app_context",
+            return_value=context,
+        ):
+            await edit_episodes_view(
+                season_message,
+                "token",
+                session,
+                view_page=2,
+                locale="ru",
+                backend="kitsu",
+            )
+
+        season_call = season_message.calls[-1]
+        season_buttons = [
+            button
+            for row in season_call["reply_markup"].inline_keyboard
+            for button in row
+        ]
+        self.assertTrue(any(button.text == "Сезон 1" for button in season_buttons))
+        self.assertTrue(any(button.text == "✓ Сезон 2" for button in season_buttons))
+        self.assertTrue(any(button.text == "OVA / Спешлы" for button in season_buttons))
+        self.assertTrue(any(button.text == "1/2" for button in season_buttons))
+        self.assertTrue(
+            any(
+                button.callback_data == "cp:token:apg~kitsu~2:0:2:0"
+                for button in season_buttons
+            )
+        )
+        self.assertFalse(any(button.text == "◀️" for button in season_buttons))
+        self.assertTrue(
+            any(button.callback_data == "ap:token:kitsu:3" for button in season_buttons)
+        )
+
+        special_message = _CaptureMessage()
+        with patch(
+            "bots.telegram.card.features.episodes.get_app_context",
+            return_value=context,
+        ):
+            await edit_episodes_view(
+                special_message,
+                "token",
+                session,
+                view_page=4,
+                locale="ru",
+                backend="kitsu",
+            )
+
+        special_call = special_message.calls[-1]
+        special_html = special_call["rich_message"].html or ""
+        special_buttons = [
+            button
+            for row in special_call["reply_markup"].inline_keyboard
+            for button in row
+        ]
+        self.assertIn("Спешл 1 — Kitsu", special_html)
+        self.assertNotIn("График выхода серий", special_html)
+        self.assertTrue(any(button.text == "✓ OVA / Спешлы" for button in special_buttons))
+        self.assertTrue(any(button.text == "1/1" for button in special_buttons))
+        self.assertFalse(any("⏱" in button.text for button in special_buttons))
+        self.assertTrue(
+            any(
+                button.callback_data == "ap:token:jikan:0"
+                for button in special_buttons
+            )
+        )
 
     async def test_empty_backend_with_known_total_shows_zero_of_total(self) -> None:
         source = _EpisodeSource("jikan", "mal", "MAL / Jikan")

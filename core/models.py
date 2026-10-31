@@ -135,12 +135,16 @@ class EpisodeRecord:
     urls: dict[str, str] = field(default_factory=dict)
     season_number: int | None = None
     episode_number: int | None = None
+    cour_number: int | None = None
+    episode_kind: str = "regular"
     skip_types: tuple[str, ...] = ()
     skip_segments: dict[str, EpisodeSkipSegment] = field(default_factory=dict)
     skip_intro_absent: bool = False
 
     def __post_init__(self) -> None:
         self.aired_at = parse_partial_date(self.aired_at)
+        kind = str(self.episode_kind or "regular").strip().casefold()
+        self.episode_kind = kind.replace("-", "_").replace(" ", "_") or "regular"
 
 
 @dataclass(slots=True)
