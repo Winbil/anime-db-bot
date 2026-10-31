@@ -49,7 +49,6 @@ _BLOCK_ACTIONS: tuple[tuple[tuple[str, str], ...], ...] = (
     (("titles_button", "titles"), ("description_button", "description")),
     (
         ("episodes_button", "episodes"),
-        ("release_schedule_button", "release_schedule"),
         ("screenshots_button", "screenshots"),
         ("trailers_button", "trailers"),
     ),
