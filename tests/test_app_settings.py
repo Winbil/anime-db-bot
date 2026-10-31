@@ -65,10 +65,8 @@ class AppSettingsTests(unittest.TestCase):
                 "UPSTREAM_RATE_LIMIT_ANIME_SKIP_PER_MINUTE": "41",
                 "BAHAMUT_API_URL": "https://bahamut.example/api/",
                 "BAHAMUT_REQUEST_TIMEOUT_SECONDS": "9.5",
-                "BAHAMUT_FALLBACK_CACHE_TTL_SECONDS": "3456",
                 "BAHA_ANIME_SKIP_DATA_URL": "https://baha.example/data.json",
-                "BAHA_ANIME_SKIP_CACHE_TTL_SECONDS": "4567",
-                "UPSTREAM_RATE_LIMIT_BAHAMUT_PER_MINUTE": "17",
+                "BAHA_ANIME_SKIP_DB_PATH": "data/test-baha.sqlite3",
                 "SOURCE_HEALTH_FAILURE_THRESHOLD": "5",
                 "SOURCE_HEALTH_COOLDOWN_SECONDS": "42.5",
             }
@@ -130,12 +128,13 @@ class AppSettingsTests(unittest.TestCase):
             settings.sources.bahamut_api_url, "https://bahamut.example/api"
         )
         self.assertEqual(settings.sources.bahamut_request_timeout_seconds, 9.5)
-        self.assertEqual(settings.sources.bahamut_fallback_cache_ttl_seconds, 3456.0)
         self.assertEqual(
             settings.sources.baha_anime_skip_data_url, "https://baha.example/data.json"
         )
-        self.assertEqual(settings.sources.baha_anime_skip_cache_ttl_seconds, 4567.0)
-        self.assertEqual(settings.rate_limits.source_limit("bahamut"), 17)
+        self.assertEqual(
+            settings.sources.baha_anime_skip_db_path,
+            ROOT_DIR / Path("data/test-baha.sqlite3"),
+        )
         self.assertEqual(settings.source_health.failure_threshold, 5)
         self.assertEqual(settings.source_health.cooldown_seconds, 42.5)
 
@@ -231,7 +230,7 @@ class AppSettingsTests(unittest.TestCase):
                     encoding="utf-8",
                 )
             values = project_env_values(root)
-        self.assertEqual(len(values), 129)
+        self.assertEqual(len(values), 123)
         self.assertIn("BOT_TOKEN", values)
         self.assertIn("TELEGRAM_BOT_API_LOCAL_FILE_ROOT", values)
         self.assertIn("KITSU_API_URL", values)
@@ -239,6 +238,7 @@ class AppSettingsTests(unittest.TestCase):
         self.assertIn("WHATANIMEISTHIS_API_KEY", values)
         self.assertIn("IMAGE_SEARCH_DB_PATH", values)
         self.assertIn("ANIME_SKIP_CLIENT_ID", values)
+        self.assertIn("BAHA_ANIME_SKIP_DB_PATH", values)
 
     def test_relative_paths_are_rooted_at_project(self) -> None:
         settings = AppSettings.from_env(

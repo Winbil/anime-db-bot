@@ -205,8 +205,19 @@ Runtime environment parsing は `core/settings.py` に集約されています�
 | `USER_SETTINGS_DB_PATH` | いいえ | User settings / known-user registry 用 SQLite path。 |
 | `BANS_DB_PATH` | いいえ | Moderation ban 用 SQLite path。 |
 | `MAPPINGS_DB_PATH` | いいえ | Runtime cross-ID mapping database。 |
+| `BAHA_ANIME_SKIP_DB_PATH` | いいえ | Baha Anime Skip のタイムコード用ローカル SQLite index。runtime ではこの source のために Bahamut/Baha へ通信しません。 |
 
 `.env`、`.env.d/`、`.proxies.d/`、bot token、access token、password、proxy credentials、private credentials は commit しないでください。
+
+### Baha Anime Skip のローカル index
+
+Baha Anime Skip は runtime HTTP ではなくローカル SQLite snapshot から読み取ります。`mappings.db` の用意後、index は明示的に作成・更新します。
+
+```bash
+python scripts/project.py baha-index
+```
+
+Builder はアーカイブ済み dataset を一度取得し、`mappings.db` の確認済み `bahamut` ID を使って episode と `videoSn` を対応付け、`data/baha_anime_skip.sqlite3` を atomic に書き込みます。通常 runtime はこの SQLite のみを読み、確認済み mapping または index row がなければ network fallback を行わず空結果を返します。
 
 ### Source ごとの proxy pool
 
@@ -230,7 +241,7 @@ url = "http://127.0.0.1:8080"
 
 Profile は独立しています。`mal.toml` は MAL のみ、`anilist.toml` は AniList のみに作用します。複数の有効 entry は round-robin で選ばれ、network/proxy failure の場合は残りの有効 proxy を順に試します。同じ URL を異なる `name` で複数登録できるため、同一 endpoint を繰り返して rotation の weight を増やすこともできます。Profile または個別 entry を `enabled = false` で無効化できます。有効 proxy が1つ以上ある profile は、すべて失敗しても **direct connection へ暗黙 fallback しません**。Active proxy がない場合のみ direct access になります。変更は bot restart 後に反映されます。`telegram.toml` に active proxy がある場合、この bot は設定済みの local/shared `telegram-bot-api` を意図的に bypass し、独自 proxy pool 経由で official `api.telegram.org` に接続します。これにより同じ local server を使う他の bot には影響しません。`jikan.toml` も特別扱いで、Python → local Jikan の loopback hop は direct のまま、選択された proxy を Jikan に渡して outbound MyAnimeList scrape に適用します。
 
-固定 profile は `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `bahamut`, `baha_anime_skip`, `skipdb`, `trace_moe`, `whatanimeisthis` です。その他の TOML file は無視されます。`.proxies.d/` は credential を含み得るため gitignored で、`start.sh` は directory を mode `700`、既知 file を `600` に保ちます。
+固定 profile は `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `skipdb`, `trace_moe`, `whatanimeisthis` です。その他の TOML file は無視されます。`.proxies.d/` は credential を含み得るため gitignored で、`start.sh` は directory を mode `700`、既知 file を `600` に保ちます。
 
 ### AniDB
 
