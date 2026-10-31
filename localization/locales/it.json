@@ -247,6 +247,7 @@
     "episodes_load_failed": "Impossibile caricare gli episodi dalle fonti disponibili.",
     "episodes_page": "Pagina {value}",
     "episode_untitled": "Senza titolo",
+    "episode_title": "Titolo: {value}",
     "episode_date": "Trasmesso: {value}",
     "episode_score": "Punteggio episodio: {value}",
     "episode_filler": "Riempitivo",

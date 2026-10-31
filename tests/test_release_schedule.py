@@ -4,6 +4,7 @@ import unittest
 from datetime import datetime, time, timezone
 
 from bots.telegram.card.features.episodes import _episode_release_projection_text
+from bots.telegram.card.views.release_schedule import format_release_datetime
 from bots.telegram.card.ui.constants import SECTION_LABELS
 from bots.telegram.card.views.renderer import anime_sections
 from core.models import AggregatedAnime, AnimeRecord, BroadcastSlot
@@ -55,6 +56,21 @@ class ReleaseScheduleTests(unittest.TestCase):
         self.assertEqual(
             schedule[1].airs_at.isoformat(),
             "2026-11-09T20:00:00+09:00",
+        )
+
+    def test_release_datetime_is_human_readable_and_keeps_offset(self) -> None:
+        value = datetime.fromisoformat("2026-11-04T16:00:00+03:00")
+        self.assertEqual(
+            format_release_datetime(value, locale="ru"),
+            "4 ноября 2026, 16:00 (UTC+3)",
+        )
+        self.assertEqual(
+            format_release_datetime(value, locale="en"),
+            "November 4, 2026, 16:00 (UTC+3)",
+        )
+        self.assertEqual(
+            format_release_datetime(value, locale="ja"),
+            "2026年11月4日 16:00 (UTC+3)",
         )
 
     def test_finished_title_never_gets_projected_future_dates(self) -> None:
@@ -112,10 +128,14 @@ class ReleaseScheduleTests(unittest.TestCase):
         self.assertIn("Всего серий: 10", ru["main"])
         self.assertIn("Возрастной рейтинг: PG-13", ru["main"])
         self.assertIn("Следующая серия №8", ru["main"])
+        self.assertIn("1 ноября 2026, 18:00 (UTC)", ru["main"])
+        self.assertNotIn("2026-11-01T18:00:00+00:00", ru["main"])
         episode_8 = _episode_release_projection_text(anime, 8, locale="ru")
         self.assertIn("График выхода серий", episode_8)
         self.assertIn("Серия 8:", episode_8)
         self.assertIn("дата источника", episode_8)
+        self.assertIn("1 ноября 2026, 18:00 (UTC)", episode_8)
+        self.assertNotIn("T18:00:00", episode_8)
         self.assertNotIn("Серия 9:", episode_8)
 
         episode_9 = _episode_release_projection_text(anime, 9, locale="ru")

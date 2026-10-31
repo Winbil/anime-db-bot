@@ -247,6 +247,7 @@
     "episodes_load_failed": "Could not load episodes from the available sources.",
     "episodes_page": "Page {value}",
     "episode_untitled": "Untitled",
+    "episode_title": "Title: {value}",
     "episode_date": "Aired: {value}",
     "episode_score": "Episode score: {value}",
     "episode_filler": "Filler",
