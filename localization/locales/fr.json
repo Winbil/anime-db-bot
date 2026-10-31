@@ -249,6 +249,7 @@
     "episode_filler": "Filler",
     "episode_recap": "Récapitulatif",
     "episode_duration": "Durée : {value} min.",
+    "episode_theme_episodes": "Épisodes {value}",
     "episode_detail_title": "Épisode {number} — {source}",
     "episode_group_main": "Épisodes principaux",
     "episode_group_season": "Saison {number}",

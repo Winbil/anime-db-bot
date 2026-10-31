@@ -249,6 +249,7 @@
     "episode_filler": "Relleno",
     "episode_recap": "Resumen",
     "episode_duration": "Duración: {value} min.",
+    "episode_theme_episodes": "Episodios {value}",
     "episode_detail_title": "Episodio {number} — {source}",
     "episode_group_main": "Episodios principales",
     "episode_group_season": "Temporada {number}",

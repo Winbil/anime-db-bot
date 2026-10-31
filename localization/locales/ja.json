@@ -253,6 +253,7 @@
     "episode_filler": "フィラー",
     "episode_recap": "総集編",
     "episode_duration": "長さ: {value}分",
+    "episode_theme_episodes": "エピソード {value}",
     "episode_detail_title": "第{number}話 — {source}",
     "episode_group_main": "本編",
     "episode_group_season": "シーズン {number}",

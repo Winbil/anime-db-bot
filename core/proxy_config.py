@@ -18,6 +18,7 @@ PROXY_CONFIG_PROFILES = (
     "jikan",
     "aniskip",
     "anime_skip",
+    "animethemes",
     "skipdb",
     "trace_moe",
     "whatanimeisthis",

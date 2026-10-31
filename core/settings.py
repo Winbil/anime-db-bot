@@ -238,6 +238,9 @@ class SourceSettings:
     anime_skip_client_id: str
     anime_skip_request_timeout_seconds: float
     anime_skip_cache_ttl_seconds: float
+    animethemes_api_url: str
+    animethemes_request_timeout_seconds: float
+    animethemes_cache_ttl_seconds: float
     bahamut_api_url: str
     bahamut_request_timeout_seconds: float
     baha_anime_skip_data_url: str
@@ -325,6 +328,7 @@ class AppSettings:
             "anisearch": 12,
             "skipdb": 30,
             "anime_skip": 60,
+            "animethemes": 30,
             "trace_moe": 30,
             "whatanimeisthis": 10,
         }
@@ -357,6 +361,7 @@ class AppSettings:
             ("skipdb", "episodes"): 30,
             ("skipdb", "episode"): 120,
             ("anime_skip", "episode_segments"): 60,
+            ("animethemes", "themes"): 30,
             ("trace_moe", "quota"): 30,
             ("trace_moe", "image_search"): 20,
             ("whatanimeisthis", "image_search"): 10,
@@ -562,6 +567,22 @@ class AppSettings:
                 anime_skip_cache_ttl_seconds=_float(
                     values,
                     "ANIME_SKIP_CACHE_TTL_SECONDS",
+                    21600.0,
+                ),
+                animethemes_api_url=_raw(
+                    values,
+                    "ANIMETHEMES_API_URL",
+                    "https://api.animethemes.moe",
+                ).rstrip("/"),
+                animethemes_request_timeout_seconds=_float(
+                    values,
+                    "ANIMETHEMES_REQUEST_TIMEOUT_SECONDS",
+                    15.0,
+                    3.0,
+                ),
+                animethemes_cache_ttl_seconds=_float(
+                    values,
+                    "ANIMETHEMES_CACHE_TTL_SECONDS",
                     21600.0,
                 ),
                 bahamut_api_url=_raw(

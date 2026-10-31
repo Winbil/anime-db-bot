@@ -253,6 +253,7 @@
     "episode_filler": "Филлер",
     "episode_recap": "Рекап",
     "episode_duration": "Длительность: {value} мин.",
+    "episode_theme_episodes": "Серии {value}",
     "episode_detail_title": "Серия {number} — {source}",
     "episode_group_main": "Основные серии",
     "episode_group_season": "Сезон {number}",
