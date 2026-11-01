@@ -10,7 +10,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
-[![CI](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml)
+[![CI](https://github.com/anime-db-project/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/anime-db-project/anime-db-bot/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](../LICENSE)
 
 `anime-db-bot` durchsucht mehrere Anime-Datenbanken, löst bestätigte datenbankübergreifende Identitäten auf und erstellt eine quellenunabhängige Karte, ohne eine externe Datenbank als kanonische Quelle der Wahrheit zu behandeln.
@@ -130,7 +130,7 @@ Die japanischen Sprachnachweise bleiben die unbeschriftete Basisversion der Orig
 
 ## Anforderungen und Plattformunterstützung
 
-Die Python-Laufzeit ist für **Linux, macOS und native Windows** mit Python **3.11, 3.12, 3.13 oder 3.14** konzipiert. GitHub Actions führt die vollständige Einheitensuite auf allen drei Betriebssystemfamilien für jede unterstützte Python Version aus.
+Die Python-Laufzeit unterstützt **Linux, macOS und native Windows** mit Python **3.11, 3.12, 3.13 oder 3.14**. GitHub Actions testet alle Python-Versionen auf Ubuntu sowie zusätzliche Portabilitätsläufe auf macOS und Windows mit Python 3.12.
 
 - **Linux** – primäre Produktionsplattform; Der plattformübergreifende Launcher funktioniert auf Mainstream-Distributionen, solange ein unterstützter CPython-Build verfügbar ist. Der gebündelte `start.sh` bleibt ein Linux-orientierter `tmux`-Produktionshelfer.
 - **macOS** – unterstützt durch den Python Launcher; `start.command` wird als praktischer Wrapper bereitgestellt. `systemd` Wartungseinheiten gelten nicht für macOS.
@@ -145,7 +145,7 @@ Führen Sie `python scripts/project.py doctor` (oder denselben Befehl mit Ihrem 
 Klonen Sie zuerst das Repository:
 
 ```text
-git clone git@github.com:Winbil/anime-db-bot.git
+git clone git@github.com:anime-db-project/anime-db-bot.git
 cd anime-db-bot
 ```
 
@@ -205,8 +205,9 @@ Die gesamte Analyse der Laufzeitumgebung ist in `core/settings.py` zentralisiert
 | `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | Nein | Das Hostverzeichnis ist `/var/lib/telegram-bot-api` zugeordnet, wenn sich die Dateipfade des lokalen Bot API in einem Container befinden. |
 | `USER_SETTINGS_DB_PATH` | Nein | SQLite Pfad für benutzerspezifische Einstellungen und Registrierung bekannter Benutzer. |
 | `BANS_DB_PATH` | Nein | SQLite Pfad für Moderationsverbote. |
-| `MAPPINGS_DB_PATH` | Nein | Kompakte Laufzeit-Cross-ID-Mapping-Datenbank. |
-| `MAPPINGS_EVIDENCE_DB_PATH` | Nein | Provenienz-/Evidenzdatenbank für Build und Updates; der normale Runtime-Resolver liest sie nicht. |
+| `MAPPINGS_DB_PATH` | Nein | Kompakte Runtime-Cross-ID-Datenbank aus Anime-Mapping-DB-Releases. |
+| `MAPPINGS_MANIFEST_PATH` | Nein | Lokales Manifest des installierten Mapping-Releases und Source-Fingerprints. |
+| `MAPPINGS_RELEASE_REPOSITORY` | Nein | GitHub-Repository für Mapping-Releases; Standard: `anime-db-project/anime-mapping-db`. |
 | `BAHA_ANIME_SKIP_DB_PATH` | Nein | Lokaler SQLite-Index für Baha-Anime-Skip-Zeitmarken; zur Laufzeit erfolgen dafür keine Bahamut/Baha-Netzwerkanfragen. |
 
 Übertragen Sie keine `.env`, `.env.d/`, `.proxies.d/`, Bot-Tokens, Zugriffstoken, Passwörter, Proxy-Anmeldeinformationen oder privaten API-Anmeldeinformationen.
@@ -359,7 +360,7 @@ Die Laufzeit trennt verschiedene Arten von Zuständen:
 - Benutzereinstellungen und bekannte Benutzer – SQLite, begrenzt durch `(platform, user_id)`;
 - Verbote – separater persistenter SQLite-Speicher;
 - `mappings.db` – kompakte Laufzeit-Cross-ID-Resolver-Datenbank;
-- `mappings-evidence.db` – separater Provenienz-/Evidenzspeicher für Updater und Rebuilds;
+- `data/mappings/manifest.json` – Metadaten des installierten Mapping-Releases und Source-Fingerprint;
 - AniDB XML – Festplatten-Cache;
 - Telegram Such-/Kartenrückrufsitzungen – begrenzter TTL/LRU-Status im Arbeitsspeicher.
 
@@ -394,7 +395,7 @@ anime-db-bot/
 │   └── transports/      # official and self-hosted Bot API transports
 ├── core/                # contracts, models, identity, settings, HTTP, errors
 ├── localization/        # locale catalogs and canonical localization data
-├── mappings/            # cross-ID database, importers, resolver, updater
+├── mappings/            # runtime cross-ID resolver and release downloader/updater
 ├── search/              # provider-facing search adapters and registry
 ├── services/
 │   ├── aggregation/     # metadata aggregation and merge policy
@@ -418,21 +419,18 @@ Weitere Einzelheiten: [`docs/app-context.md`](app-context.md).
 
 ## Cross-ID-Zuordnungen
 
-Der Mapping-Updater streamt mehrere externe Datensätze in SQLite, zeichnet Herkunft/Beweise/Konflikte auf, validiert die neu erstellten Datenbanken und tauscht sie atomar aus. Der vollständige Graph wird nicht in den RAM geladen.
+Der Aufbau der Cross-ID-Datenbank lebt vollständig im eigenständigen Projekt [`anime-db-project/anime-mapping-db`](https://github.com/anime-db-project/anime-mapping-db). Dort liegen Upstream-Importer, Evidence/Provenienz, Confidence, Konflikterkennung, Schema-Builds, Validierung und GitHub Releases.
 
-Schema v3 normalisiert wiederholte `(provider, external_id)`-Paare zu Integer-Knoten und trennt Laufzeit-Lookups von der Build-Provenienz. `mappings.db` enthält den kompakten Knoten-/Kanten-/Konfliktgraphen und geprüfte Overrides für den Bot; `mappings-evidence.db` bewahrt Datasets, Quelldatensätze, Evidenzgruppen und Kanten-Provenienz für Rebuilds und Updates auf.
+`anime-db-bot` ist nur noch Runtime-Consumer. Der Bot prüft `manifest.json`, vergleicht den Source-Fingerprint, lädt bei Bedarf das an den Release-Tag gebundene `mappings.db.zst`, prüft SHA-256 und Größe, validiert SQLite, übernimmt lokale auditierte Admin-Overrides und ersetzt `data/mappings/mappings.db` atomar.
 
-Manuelle Richtungsüberschreibungen unterstützen `accept` und `reject`, übertragen Autor/Ursache/Zeitstempel-Metadaten und bewahren den Nur-Anhänge-Verlauf über Neuerstellungen hinweg.
-
-Wartungsbefehle sind über den plattformübergreifenden Launcher verfügbar:
+Schema v3 bleibt direct-only und conflict-aware. Die Evidence-Datenbank gehört ausschließlich zum Mapping-Projekt.
 
 ```text
 python scripts/project.py mappings --status
+python scripts/project.py mappings --force
 python scripts/project.py mappings --override-list
 python scripts/project.py mappings --override-history
 ```
-
-Der Unix `./scripts/update-mappings.sh`-Wrapper bleibt für bestehende Bereitstellungen verfügbar.
 
 ## Entwicklung
 
@@ -446,7 +444,7 @@ python scripts/project.py doctor
 
 Bei Windows kann `py -3 scripts\project.py ...` anstelle von `python` verwendet werden. Die Unix-Dateien `./scripts/setup.sh` und `./scripts/check.sh` sind praktische Wrapper für dieselbe Implementierung. Direkte Befehle für die virtuelle Umgebung sind weiterhin unter `.venv/bin/python` unter Unix und `.venv\Scripts\python.exe` unter Windows verfügbar.
 
-Für GitHub Aktionen ist die vollständige Einheitensuite erforderlich, um **Ubuntu, macOS und Windows** für Python 3.11, 3.12, 3.13 und 3.14 weiterzugeben. Jeder Matrixjob führt auch den plattformübergreifenden Launcher Doctor aus. Der Linux-Qualitätsjob führt zusätzlich Ruff-Korrektheitsprüfungen, Formatterprüfungen für die typisierte Grundlage, Mypy für die typisierte Grundlage, vollständige Tests mit einem Coverage Gate von mindestens 70 % und ShellCheck für Unix-Shell-Wrapper durch.
+GitHub Actions führt die vollständige Unit-Suite auf Ubuntu für Python 3.11–3.14 sowie zusätzliche Portabilitätsläufe auf macOS und Windows mit Python 3.12 aus. Der Linux-Quality-Job prüft zusätzlich Ruff, Formatierung, mypy, Coverage `>=70%` und ShellCheck.
 
 ## Mitwirkende
 

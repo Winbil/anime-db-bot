@@ -32,7 +32,7 @@ class AppSettingsTests(unittest.TestCase):
                 "ADMIN_TELEGRAM_USER_IDS": "1, 2;3\n2",
                 "MAPPINGS_AUTO_UPDATE": "0",
                 "MAPPINGS_CHECK_INTERVAL_SECONDS": "600",
-                "MAPPINGS_WIKIDATA_CHECK_INTERVAL_HOURS": "72",
+                "MAPPINGS_RELEASE_REPOSITORY": "example/mappings",
                 "MAL_CLIENT_ID": "mal-client",
                 "UPSTREAM_RATE_LIMIT_ANILIST_PER_MINUTE": "77",
                 "UPSTREAM_RATE_LIMIT_ANILIST_PEOPLE_PER_MINUTE": "13",
@@ -92,7 +92,7 @@ class AppSettingsTests(unittest.TestCase):
         self.assertEqual(settings.telegram.admin_user_ids, (1, 2, 3))
         self.assertFalse(settings.mappings.auto_update)
         self.assertEqual(settings.mappings.check_interval_seconds, 600.0)
-        self.assertEqual(settings.mappings.wikidata_check_interval_hours, 72.0)
+        self.assertEqual(settings.mappings.release_repository, "example/mappings")
         self.assertEqual(settings.sources.mal_client_id, "mal-client")
         self.assertEqual(settings.rate_limits.source_limit("anilist"), 77)
         self.assertEqual(settings.rate_limits.operation_limit("anilist", "people"), 13)
@@ -244,7 +244,7 @@ class AppSettingsTests(unittest.TestCase):
                     encoding="utf-8",
                 )
             values = project_env_values(root)
-        self.assertEqual(len(values), 143)
+        self.assertEqual(len(values), 141)
         self.assertIn("BOT_TOKEN", values)
         self.assertIn("TELEGRAM_BOT_API_LOCAL_FILE_ROOT", values)
         self.assertIn("KITSU_API_URL", values)
@@ -256,7 +256,8 @@ class AppSettingsTests(unittest.TestCase):
         self.assertIn("IMDB_RATINGS_BACKEND", values)
         self.assertIn("IMDB_RATINGS_DB_PATH", values)
         self.assertIn("IMDB_API_ENDPOINT", values)
-        self.assertIn("MAPPINGS_EVIDENCE_DB_PATH", values)
+        self.assertIn("MAPPINGS_MANIFEST_PATH", values)
+        self.assertIn("MAPPINGS_RELEASE_REPOSITORY", values)
         self.assertIn("BAHA_ANIME_SKIP_DB_PATH", values)
 
     def test_relative_paths_are_rooted_at_project(self) -> None:
@@ -265,7 +266,7 @@ class AppSettingsTests(unittest.TestCase):
                 "USER_SETTINGS_DB_PATH": "data/test-users.sqlite3",
                 "BANS_DB_PATH": "data/test-bans.sqlite3",
                 "MAPPINGS_DB_PATH": "data/test-mappings.sqlite3",
-                "MAPPINGS_EVIDENCE_DB_PATH": "data/test-mappings-evidence.sqlite3",
+                "MAPPINGS_MANIFEST_PATH": "data/test-mappings-manifest.json",
             }
         )
         self.assertEqual(
@@ -281,8 +282,8 @@ class AppSettingsTests(unittest.TestCase):
             ROOT_DIR / Path("data/test-mappings.sqlite3"),
         )
         self.assertEqual(
-            settings.mappings.evidence_db_path,
-            ROOT_DIR / Path("data/test-mappings-evidence.sqlite3"),
+            settings.mappings.manifest_path,
+            ROOT_DIR / Path("data/test-mappings-manifest.json"),
         )
 
     def test_log_secret_redaction_defaults_to_enabled(self) -> None:

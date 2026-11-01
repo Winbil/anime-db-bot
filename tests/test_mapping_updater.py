@@ -1,161 +1,175 @@
 from __future__ import annotations
 
-import sqlite3
+import hashlib
+import json
+import shutil
 import tempfile
-import time
 import unittest
-from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from core.sqlite import managed_sqlite_connection
-from mappings.config import MappingSourceSpec
-from mappings.database import MappingDatabaseBuilder, MappingRecord
-from mappings.updater import _source_due, update_mapping_database
+import zstandard as zstd
+
+from core.identity import AnimeIdentity
+from mappings.resolver import MappingResolver, set_mapping_override
+from mappings.updater import update_mapping_database
+from tests.mapping_fixtures import create_runtime_mapping_db
 
 
-class MappingUpdaterTests(unittest.TestCase):
+class MappingReleaseUpdaterTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        self.path = self.root / "mappings.db"
-        self.evidence_path = self.root / "mappings-evidence.db"
+        self.active = self.root / "active" / "mappings.db"
+        self.manifest_path = self.root / "active" / "manifest.json"
+        self.canonical = self.root / "release" / "mappings.db"
+        self.compressed = self.root / "release" / "mappings.db.zst"
+        self.repository = "anime-db-project/anime-mapping-db"
+        self.fingerprint = "a" * 64
 
     def tearDown(self) -> None:
         self.temp.cleanup()
 
     @staticmethod
-    def _spec(*, interval: str = "default") -> MappingSourceSpec:
-        return MappingSourceSpec(
-            name="test-source",
-            url="https://example.invalid/data.json",
-            importer="test",
-            required=True,
-            license_note="test",
-            check_interval=interval,
+    def _sha256(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def _prepare_release(self) -> dict[str, object]:
+        create_runtime_mapping_db(
+            self.canonical,
+            [("mal", "100", "anidb", "200")],
         )
+        compressor = zstd.ZstdCompressor(level=3)
+        self.compressed.parent.mkdir(parents=True, exist_ok=True)
+        with self.canonical.open("rb") as source, self.compressed.open("wb") as target:
+            compressor.copy_stream(source, target)
+        return {
+            "repository": self.repository,
+            "release_tag": "v2026.11.01-test",
+            "schema_version": 3,
+            "source_fingerprint": self.fingerprint,
+            "counts": {
+                "datasets": 1,
+                "records": 1,
+                "edges": 1,
+                "accepted_edges": 1,
+                "conflicts": 0,
+            },
+            "assets": {
+                "runtime": {
+                    "name": "mappings.db",
+                    "size": self.canonical.stat().st_size,
+                    "sha256": self._sha256(self.canonical),
+                },
+                "runtime_zstd": {
+                    "name": "mappings.db.zst",
+                    "size": self.compressed.stat().st_size,
+                    "sha256": self._sha256(self.compressed),
+                },
+            },
+        }
 
-    def _build_existing(self, spec: MappingSourceSpec, checked_at: str) -> None:
-        with MappingDatabaseBuilder(self.path, evidence_path=self.evidence_path) as builder:
-            builder.ingest_dataset(
-                spec,
-                [MappingRecord("1", {"mal": ("1",), "anidb": ("2",)}, "test", 90)],
-                sha256="same-sha",
-                downloaded_at=checked_at,
-            )
-            builder.finalize(built_at=checked_at)
-
-    def test_unchanged_source_is_checked_without_replacing_database(self) -> None:
-        old = "2020-01-01T00:00:00+00:00"
-        spec = self._spec()
-        self._build_existing(spec, old)
-        inode_before = self.path.stat().st_ino
-
-        def fake_download(_spec: MappingSourceSpec, target: Path) -> str:
-            target.write_text("same", encoding="utf-8")
-            return "same-sha"
-
-        with (
-            patch("mappings.updater.SOURCE_SPECS", (spec,)),
-            patch("mappings.updater.mappings_db_path", return_value=self.path),
+    def _patch_settings(self):
+        return (
+            patch("mappings.updater.mappings_db_path", return_value=self.active),
             patch(
-                "mappings.updater.mappings_evidence_db_path",
-                return_value=self.evidence_path,
+                "mappings.updater.mappings_manifest_path",
+                return_value=self.manifest_path,
             ),
-            patch("mappings.updater.mappings_update_max_age_hours", return_value=1.0),
-            patch("mappings.updater._download", side_effect=fake_download),
-        ):
-            self.assertIsNone(update_mapping_database(force=False))
-
-        self.assertEqual(self.path.stat().st_ino, inode_before)
-        with managed_sqlite_connection(sqlite3.connect(self.evidence_path)) as conn:
-            checked = conn.execute(
-                "SELECT downloaded_at FROM datasets WHERE name=?", (spec.name,)
-            ).fetchone()[0]
-        self.assertNotEqual(checked, old)
-
-    def test_force_rebuild_separates_runtime_from_evidence_storage(self) -> None:
-        spec = self._spec()
-
-        def fake_download(_spec: MappingSourceSpec, target: Path) -> str:
-            target.write_text("fixture", encoding="utf-8")
-            return "fixture-sha"
-
-        def fake_importer(_path: Path):
-            yield MappingRecord(
-                "1",
-                {"mal": ("1",), "anidb": ("2",), "imdb": ("tt3",)},
-                "test",
-                95,
-            )
-
-        with (
-            patch("mappings.updater.SOURCE_SPECS", (spec,)),
-            patch("mappings.updater.mappings_db_path", return_value=self.path),
             patch(
-                "mappings.updater.mappings_evidence_db_path",
-                return_value=self.evidence_path,
+                "mappings.updater.mappings_release_repository",
+                return_value=self.repository,
             ),
             patch("mappings.updater.mappings_keep_previous", return_value=False),
-            patch("mappings.updater.mappings_keep_downloads", return_value=False),
-            patch("mappings.updater._download", side_effect=fake_download),
-            patch.dict("mappings.updater.IMPORTERS", {"test": fake_importer}),
-        ):
-            stats = update_mapping_database(force=True)
+        )
 
-        self.assertIsNotNone(stats)
-        assert stats is not None
-        self.assertEqual(stats.edges, 3)
-        self.assertEqual(stats.accepted_edges, 3)
-        self.assertTrue(self.path.is_file())
-        self.assertTrue(self.evidence_path.is_file())
+    def test_download_validates_and_preserves_local_admin_overrides(self) -> None:
+        manifest = self._prepare_release()
+        create_runtime_mapping_db(
+            self.active,
+            [("mal", "100", "anidb", "200")],
+        )
+        set_mapping_override(
+            "mal",
+            "100",
+            "anidb",
+            "201",
+            action="accept",
+            reason="local production correction",
+            path=self.active,
+        )
 
-        with managed_sqlite_connection(sqlite3.connect(self.path)) as conn:
-            runtime_tables = {
-                str(row[0])
-                for row in conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                )
-            }
-            self.assertIn("nodes", runtime_tables)
-            self.assertIn("edges", runtime_tables)
-            self.assertNotIn("datasets", runtime_tables)
-            self.assertNotIn("edge_evidence", runtime_tables)
-            role = conn.execute(
-                "SELECT value FROM metadata WHERE key='database_role'"
-            ).fetchone()[0]
-            self.assertEqual(role, "runtime")
+        def fake_download(_url: str, target: Path) -> str:
+            shutil.copy2(self.compressed, target)
+            return self._sha256(target)
 
-        with managed_sqlite_connection(sqlite3.connect(self.evidence_path)) as conn:
-            evidence_tables = {
-                str(row[0])
-                for row in conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                )
-            }
-            self.assertIn("datasets", evidence_tables)
-            self.assertIn("records", evidence_tables)
-            self.assertIn("edge_evidence", evidence_tables)
-            self.assertNotIn("edges", evidence_tables)
-            role = conn.execute(
-                "SELECT value FROM metadata WHERE key='database_role'"
-            ).fetchone()[0]
-            self.assertEqual(role, "evidence")
-
-    def test_wikidata_uses_its_own_hour_interval(self) -> None:
-        checked = datetime.fromtimestamp(
-            time.time() - 2 * 3600, timezone.utc
-        ).isoformat()
-        state = {"test-source": ("sha", checked)}
+        patches = self._patch_settings()
         with (
-            patch("mappings.updater.mappings_update_max_age_hours", return_value=1.0),
-            patch(
-                "mappings.updater.mappings_wikidata_check_interval_hours",
-                return_value=168.0,
-            ),
+            patches[0],
+            patches[1],
+            patches[2],
+            patches[3],
+            patch("mappings.updater._fetch_manifest", return_value=manifest),
+            patch("mappings.updater._download", side_effect=fake_download),
         ):
-            self.assertTrue(_source_due(self._spec(), state))
-            self.assertFalse(_source_due(self._spec(interval="wikidata"), state))
+            result = update_mapping_database(force=False)
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.release_tag, "v2026.11.01-test")
+        self.assertEqual(result.overrides_preserved, 1)
+        self.assertEqual(
+            MappingResolver(self.active).resolve(AnimeIdentity({"mal": "100"})),
+            {"anidb": "201"},
+        )
+        installed = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(installed["source_fingerprint"], self.fingerprint)
+
+    def test_same_source_fingerprint_skips_database_download(self) -> None:
+        manifest = self._prepare_release()
+        create_runtime_mapping_db(
+            self.active,
+            [("mal", "100", "anidb", "200")],
+        )
+        self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        self.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        patches = self._patch_settings()
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patches[3],
+            patch("mappings.updater._fetch_manifest", return_value=manifest),
+            patch("mappings.updater._download") as download,
+        ):
+            self.assertIsNone(update_mapping_database(force=False))
+        download.assert_not_called()
+
+    def test_failed_hash_never_replaces_active_database(self) -> None:
+        manifest = self._prepare_release()
+        create_runtime_mapping_db(
+            self.active,
+            [("mal", "100", "anidb", "999")],
+        )
+        before = self._sha256(self.active)
+
+        def fake_download(_url: str, target: Path) -> str:
+            shutil.copy2(self.compressed, target)
+            return "0" * 64
+
+        patches = self._patch_settings()
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patches[3],
+            patch("mappings.updater._fetch_manifest", return_value=manifest),
+            patch("mappings.updater._download", side_effect=fake_download),
+        ):
+            with self.assertRaises(RuntimeError):
+                update_mapping_database(force=True)
+        self.assertEqual(self._sha256(self.active), before)
+        self.assertFalse(self.manifest_path.exists())
 
 
 if __name__ == "__main__":
