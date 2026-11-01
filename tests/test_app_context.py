@@ -6,7 +6,6 @@ from bots.telegram.card.runtime import service as card_service
 from core.identity import AnimeIdentity
 from core.runtime_metrics import get_runtime_metrics
 from core.settings import AppSettings
-from mappings import database as mapping_database_module
 from mappings import resolver as mapping_resolver_module
 from services.runtime import rate_limits as rate_limits_service
 from services.runtime.app_context import (
@@ -140,7 +139,6 @@ class AppContextTests(unittest.IsolatedAsyncioTestCase):
 
     def test_mapping_modules_export_no_runtime_singletons(self) -> None:
         self.assertFalse(hasattr(mapping_resolver_module, "MAPPING_RESOLVER"))
-        self.assertFalse(hasattr(mapping_database_module, "MAPPING_DATABASE"))
 
 
 if __name__ == "__main__":
