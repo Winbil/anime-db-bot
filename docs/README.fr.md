@@ -10,7 +10,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
-[![CI](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml)
+[![CI](https://github.com/anime-db-project/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/anime-db-project/anime-db-bot/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](../LICENSE)
 
 `anime-db-bot` recherche plusieurs bases de données d'anime, résout les identités croisées confirmées et crée une carte indépendante de la source sans traiter aucune base de données externe comme source canonique de vérité.
@@ -130,7 +130,7 @@ Les crédits vocaux japonais restent la base de référence en langue originale 
 
 ## Exigences et prise en charge de la plateforme
 
-Le runtime Python est conçu pour **Linux, macOS et natif Windows** avec Python **3.11, 3.12, 3.13 ou 3.14**. GitHub Actions exécute la suite complète d'unités sur les trois familles de systèmes d'exploitation pour chaque version Python prise en charge.
+Le runtime Python prend en charge **Linux, macOS et Windows natif** avec Python **3.11, 3.12, 3.13 ou 3.14**. GitHub Actions teste toutes les versions Python sur Ubuntu et ajoute des exécutions de portabilité sur macOS et Windows avec Python 3.12.
 
 - **Linux** — plateforme de production primaire ; le lanceur multiplateforme fonctionne sur les distributions grand public tant qu'une version CPython prise en charge est disponible. Le `start.sh` fourni reste un assistant de production `tmux` orienté Linux.
 - **macOS** — pris en charge via le lanceur Python ; `start.command` est fourni comme emballage pratique. Les unités de maintenance `systemd` ne s'appliquent pas sur macOS.
@@ -145,7 +145,7 @@ Exécutez `python scripts/project.py doctor` (ou la même commande avec votre in
 Clonez d'abord le dépôt :
 
 ```text
-git clone git@github.com:Winbil/anime-db-bot.git
+git clone git@github.com:anime-db-project/anime-db-bot.git
 cd anime-db-bot
 ```
 
@@ -205,8 +205,9 @@ Toute l'analyse de l'environnement d'exécution est centralisée dans `core/sett
 | `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | Non | Répertoire hôte mappé sur `/var/lib/telegram-bot-api` lorsque les chemins de fichiers locaux du Bot API se trouvent à l'intérieur d'un conteneur. |
 | `USER_SETTINGS_DB_PATH` | Non | SQLite chemin pour les paramètres par utilisateur et le registre des utilisateurs connus. |
 | `BANS_DB_PATH` | Non | SQLite chemin pour les interdictions de modération. |
-| `MAPPINGS_DB_PATH` | Non | Base compacte de mappage cross-ID d'exécution. |
-| `MAPPINGS_EVIDENCE_DB_PATH` | Non | Base de provenance/preuves pour les builds et mises à jour ; le resolver runtime normal ne la lit pas. |
+| `MAPPINGS_DB_PATH` | Non | Base cross-ID runtime compacte téléchargée depuis les releases Anime Mapping DB. |
+| `MAPPINGS_MANIFEST_PATH` | Non | Manifest local de la release de mappings installée et son source fingerprint. |
+| `MAPPINGS_RELEASE_REPOSITORY` | Non | Dépôt GitHub publiant les mappings ; défaut `anime-db-project/anime-mapping-db`. |
 | `BAHA_ANIME_SKIP_DB_PATH` | Non | Index SQLite local pour les timecodes Baha Anime Skip ; le runtime ne contacte pas Bahamut/Baha pour cette source. |
 
 Ne validez pas `.env`, `.env.d/`, `.proxies.d/`, les jetons de bot, les jetons d'accès, les mots de passe, les informations d'identification de proxy ou les informations d'identification privées API.
@@ -359,7 +360,7 @@ Le runtime sépare les différents types d’état :
 - paramètres utilisateur et utilisateurs connus — SQLite, limité à `(platform, user_id)` ;
 - interdictions — magasin SQLite persistant séparé ;
 - `mappings.db` — base compacte de résolution cross-ID pour le runtime ;
-- `mappings-evidence.db` — stockage séparé de provenance/preuves pour les mises à jour et reconstructions ;
+- `data/mappings/manifest.json` — métadonnées de la release de mappings installée et source fingerprint ;
 - AniDB XML — cache disque ;
 - Telegram sessions de recherche/rappel de carte — état TTL/LRU en mémoire limité.
 
@@ -394,7 +395,7 @@ anime-db-bot/
 │   └── transports/      # official and self-hosted Bot API transports
 ├── core/                # contracts, models, identity, settings, HTTP, errors
 ├── localization/        # locale catalogs and canonical localization data
-├── mappings/            # cross-ID database, importers, resolver, updater
+├── mappings/            # runtime cross-ID resolver and release downloader/updater
 ├── search/              # provider-facing search adapters and registry
 ├── services/
 │   ├── aggregation/     # metadata aggregation and merge policy
@@ -418,21 +419,18 @@ Plus de détails : [`docs/app-context.md`](app-context.md).
 
 ## Mappages d’ID croisés
 
-Le programme de mise à jour de cartographie diffuse plusieurs ensembles de données externes dans SQLite, enregistre la provenance/les preuves/les conflits, valide les bases reconstruites et les met en place de manière atomique. Le graphique complet n'est pas chargé dans la RAM.
+La construction de la base cross-ID est entièrement gérée par [`anime-db-project/anime-mapping-db`](https://github.com/anime-db-project/anime-mapping-db), qui contient les importers upstream, evidence/provenance, confidence, détection des conflits, builds du schéma, validation et GitHub Releases.
 
-Le schéma v3 normalise les paires répétées `(provider, external_id)` en nœuds entiers et sépare les recherches runtime de la provenance de build. `mappings.db` contient le graphe compact nœuds/arêtes/conflits et les overrides audités ; `mappings-evidence.db` conserve les datasets, enregistrements source, groupes de preuves et la provenance des arêtes pour les reconstructions et mises à jour.
+`anime-db-bot` n’est plus qu’un consumer runtime : il vérifie `manifest.json`, compare le source fingerprint, télécharge si nécessaire le `mappings.db.zst` lié au release tag, vérifie SHA-256/taille, valide SQLite, conserve les overrides admin locaux audités puis remplace `data/mappings/mappings.db` atomiquement.
 
-Les remplacements directionnels manuels prennent en charge `accept` et `reject`, transportent les métadonnées d'auteur/raison/horodatage et préservent l'historique des ajouts uniquement lors des reconstructions.
-
-Les commandes de maintenance sont disponibles via le lanceur multiplateforme :
+Le schéma v3 reste direct-only et conflict-aware ; la base evidence appartient au projet de mappings et n’est plus stockée en production par le bot.
 
 ```text
 python scripts/project.py mappings --status
+python scripts/project.py mappings --force
 python scripts/project.py mappings --override-list
 python scripts/project.py mappings --override-history
 ```
-
-Le wrapper Unix `./scripts/update-mappings.sh` reste disponible pour les déploiements existants.
 
 ## Développement
 
@@ -446,7 +444,7 @@ python scripts/project.py doctor
 
 Le Windows, `py -3 scripts\project.py ...` peut être utilisé à la place de `python`. Les fichiers Unix `./scripts/setup.sh` et `./scripts/check.sh` sont des wrappers pratiques autour de la même implémentation. Les commandes directes d'environnement virtuel restent disponibles en `.venv/bin/python` sous Unix et en `.venv\Scripts\python.exe` en Windows.
 
-GitHub Actions nécessite que la suite d'unités complète transmette **Ubuntu, macOS et Windows** pour Python 3.11, 3.12, 3.13 et 3.14. Chaque tâche matricielle exécute également le lanceur multiplateforme Doctor. Le travail de qualité Linux exécute en outre Ruff vérifications d'exactitude, des vérifications du formateur pour la fondation typée, mypy pour la fondation typée, des tests complets avec une porte de couverture d'au moins 70 % et ShellCheck pour les wrappers de shell Unix.
+GitHub Actions exécute la suite complète sur Ubuntu pour Python 3.11–3.14 et ajoute des exécutions de portabilité sur macOS et Windows avec Python 3.12. Le job qualité Linux lance aussi Ruff, le formatage, mypy, la couverture `>=70%` et ShellCheck.
 
 ## Contributeurs
 

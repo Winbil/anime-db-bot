@@ -10,7 +10,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
-[![CI](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml)
+[![CI](https://github.com/anime-db-project/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/anime-db-project/anime-db-bot/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](../LICENSE)
 
 `anime-db-bot` ricerca più database di anime, risolve identità confermate tra database e crea una scheda indipendente dalla fonte senza trattare alcun database esterno come fonte canonica della verità.
@@ -130,7 +130,7 @@ I crediti vocali giapponesi rimangono la base di riferimento nella lingua origin
 
 ## Requisiti e supporto della piattaforma
 
-Il runtime Python è progettato per **Linux, macOS e nativo Windows** con Python **3.11, 3.12, 3.13 o 3.14**. GitHub Actions esegue la suite di unità completa su tutte e tre le famiglie di sistemi operativi per ogni versione Python supportata.
+Il runtime Python supporta **Linux, macOS e Windows nativo** con Python **3.11, 3.12, 3.13 o 3.14**. GitHub Actions testa tutte le versioni Python su Ubuntu e aggiunge run di portabilità su macOS e Windows con Python 3.12.
 
 - **Linux** — piattaforma di produzione primaria; il launcher multipiattaforma funziona sulle distribuzioni tradizionali purché sia ​​disponibile una build CPython supportata. Il `start.sh` in bundle rimane un assistente di produzione `tmux` orientato a Linux.
 - **macOS** — supportato tramite il launcher Python; `start.command` viene fornito come involucro conveniente. `systemd` le unità di manutenzione non si applicano su macOS.
@@ -145,7 +145,7 @@ Esegui `python scripts/project.py doctor` (o lo stesso comando con il tuo interp
 Clonare prima il repository:
 
 ```text
-git clone git@github.com:Winbil/anime-db-bot.git
+git clone git@github.com:anime-db-project/anime-db-bot.git
 cd anime-db-bot
 ```
 
@@ -205,8 +205,9 @@ Tutta l'analisi dell'ambiente di runtime è centralizzata in `core/settings.py`.
 | `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | No | Directory host mappata su `/var/lib/telegram-bot-api` quando i percorsi dei file locali del Bot API si trovano all'interno di un contenitore. |
 | `USER_SETTINGS_DB_PATH` | No | SQLite percorso per le impostazioni per utente e il registro degli utenti conosciuti. |
 | `BANS_DB_PATH` | No | SQLite percorso per divieti di moderazione. |
-| `MAPPINGS_DB_PATH` | No | Database compatto di mappatura cross-ID per il runtime. |
-| `MAPPINGS_EVIDENCE_DB_PATH` | No | Database di provenienza/evidenza per build e aggiornamenti; il resolver runtime normale non lo legge. |
+| `MAPPINGS_DB_PATH` | No | Database cross-ID runtime compatto scaricato dalle release Anime Mapping DB. |
+| `MAPPINGS_MANIFEST_PATH` | No | Manifest locale della release mapping installata e relativo source fingerprint. |
+| `MAPPINGS_RELEASE_REPOSITORY` | No | Repository GitHub che pubblica le mapping release; default `anime-db-project/anime-mapping-db`. |
 | `BAHA_ANIME_SKIP_DB_PATH` | No | Indice SQLite locale per i timestamp di Baha Anime Skip; il runtime non interroga Bahamut/Baha per questa fonte. |
 
 Non impegnare `.env`, `.env.d/`, `.proxies.d/`, token bot, token di accesso, password, credenziali proxy o credenziali private API.
@@ -359,7 +360,7 @@ Il runtime mantiene separati i diversi tipi di stato:
 - impostazioni utente e utenti conosciuti - SQLite, ambito da `(platform, user_id)`;
 - divieti: archivio persistente separato SQLite;
 - `mappings.db`: database compatto del resolver cross-ID runtime;
-- `mappings-evidence.db`: archivio separato di provenienza/evidenza per updater e rebuild;
+- `data/mappings/manifest.json` — metadata della mapping release installata e source fingerprint;
 - AniDB XML: cache del disco;
 - Telegram Sessioni di callback di ricerca/scheda: stato TTL/LRU in memoria limitato.
 
@@ -394,7 +395,7 @@ anime-db-bot/
 │   └── transports/      # official and self-hosted Bot API transports
 ├── core/                # contracts, models, identity, settings, HTTP, errors
 ├── localization/        # locale catalogs and canonical localization data
-├── mappings/            # cross-ID database, importers, resolver, updater
+├── mappings/            # runtime cross-ID resolver and release downloader/updater
 ├── search/              # provider-facing search adapters and registry
 ├── services/
 │   ├── aggregation/     # metadata aggregation and merge policy
@@ -418,21 +419,18 @@ Maggiori dettagli: [`docs/app-context.md`](app-context.md).
 
 ## Mappature ID incrociati
 
-Il programma di aggiornamento della mappatura trasmette diversi set di dati esterni in SQLite, registra provenienza/prove/conflitti, convalida i database ricostruiti e li scambia atomicamente. Il grafico completo non viene caricato nella RAM.
+La costruzione del database cross-ID è interamente nel progetto [`anime-db-project/anime-mapping-db`](https://github.com/anime-db-project/anime-mapping-db), che gestisce importer upstream, evidence/provenance, confidence, conflitti, build dello schema, validazione e GitHub Releases.
 
-Lo schema v3 normalizza le coppie ripetute `(provider, external_id)` in nodi interi e separa i lookup runtime dalla provenienza di build. `mappings.db` contiene il grafo compatto di nodi/archi/conflitti e gli override verificati; `mappings-evidence.db` conserva dataset, record di origine, gruppi di evidenza e provenienza degli archi per rebuild e aggiornamenti.
+`anime-db-bot` è solo un runtime consumer: controlla `manifest.json`, confronta il source fingerprint, scarica quando serve il `mappings.db.zst` fissato al release tag, verifica SHA-256/dimensione, valida SQLite, conserva gli override admin locali e sostituisce atomicamente `data/mappings/mappings.db`.
 
-Le sostituzioni direzionali manuali supportano `accept` e `reject`, trasportano metadati di autore/motivo/marca temporale e preservano la cronologia di sola aggiunta tra le ricostruzioni.
-
-I comandi di manutenzione sono disponibili tramite il launcher multipiattaforma:
+Schema v3 resta direct-only e conflict-aware; l’evidence database appartiene al progetto mapping e non allo storage production del bot.
 
 ```text
 python scripts/project.py mappings --status
+python scripts/project.py mappings --force
 python scripts/project.py mappings --override-list
 python scripts/project.py mappings --override-history
 ```
-
-Il wrapper Unix `./scripts/update-mappings.sh` rimane disponibile per le distribuzioni esistenti.
 
 ## Sviluppo
 
@@ -446,7 +444,7 @@ python scripts/project.py doctor
 
 Su Windows, `py -3 scripts\project.py ...` può essere utilizzato al posto di `python`. I file Unix `./scripts/setup.sh` e `./scripts/check.sh` sono comodi wrapper attorno alla stessa implementazione. I comandi diretti dell'ambiente virtuale rimangono disponibili a `.venv/bin/python` su Unix e `.venv\Scripts\python.exe` su Windows.
 
-GitHub Le azioni richiedono che l'intera suite di unità venga trasmessa a **Ubuntu, macOS e Windows** per Python 3.11, 3.12, 3.13 e 3.14. Ogni lavoro della matrice esegue anche il medico di avvio multipiattaforma. Il lavoro di qualità Linux esegue inoltre Ruff controlli di correttezza, controlli di formattazione per la base tipizzata, mypy per la base tipizzata, test completi con un gate di copertura di almeno il 70% e ShellCheck per i wrapper di shell Unix.
+GitHub Actions esegue la suite completa su Ubuntu per Python 3.11–3.14 e aggiunge run di portabilità su macOS e Windows con Python 3.12. Il job quality Linux esegue anche Ruff, formatting, mypy, coverage `>=70%` e ShellCheck.
 
 ## Collaboratori
 

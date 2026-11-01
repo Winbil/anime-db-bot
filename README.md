@@ -10,7 +10,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
-[![CI](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml)
+[![CI](https://github.com/anime-db-project/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/anime-db-project/anime-db-bot/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](LICENSE)
 
 `anime-db-bot` searches multiple anime databases, resolves confirmed cross-database identities, and builds one source-independent card without treating any external database as the canonical source of truth.
@@ -139,7 +139,7 @@ Japanese voice credits remain the untagged original-language baseline. AniSearch
 
 ## Requirements and platform support
 
-The Python runtime is designed for **Linux, macOS, and native Windows** with Python **3.11, 3.12, 3.13, or 3.14**. GitHub Actions runs the full unit suite on all three operating-system families for every supported Python version.
+The Python runtime is designed for **Linux, macOS, and native Windows** with Python **3.11, 3.12, 3.13, or 3.14**. GitHub Actions runs the full suite on Ubuntu for every supported Python version and additional portability runs on macOS and Windows with Python 3.12.
 
 - **Linux** — primary production platform; the cross-platform launcher works on mainstream distributions as long as a supported CPython build is available. The bundled `start.sh` remains a Linux-oriented `tmux` production helper.
 - **macOS** — supported through the Python launcher; `start.command` is provided as a convenience wrapper. `systemd` maintenance units do not apply on macOS.
@@ -154,7 +154,7 @@ Run `python scripts/project.py doctor` (or the same command with your active Pyt
 Clone the repository first:
 
 ```text
-git clone git@github.com:Winbil/anime-db-bot.git
+git clone git@github.com:anime-db-project/anime-db-bot.git
 cd anime-db-bot
 ```
 
@@ -214,8 +214,9 @@ All runtime environment parsing is centralized in `core/settings.py`. New deploy
 | `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | No | Host directory mapped to `/var/lib/telegram-bot-api` when local Bot API file paths are inside a container. |
 | `USER_SETTINGS_DB_PATH` | No | SQLite path for per-user settings and known-user registry. |
 | `BANS_DB_PATH` | No | SQLite path for moderation bans. |
-| `MAPPINGS_DB_PATH` | No | Compact runtime cross-ID mapping database. |
-| `MAPPINGS_EVIDENCE_DB_PATH` | No | Build/update provenance and evidence database; normal runtime resolution does not read it. |
+| `MAPPINGS_DB_PATH` | No | Compact runtime cross-ID mapping database downloaded from Anime Mapping DB releases. |
+| `MAPPINGS_MANIFEST_PATH` | No | Local manifest for the installed mapping release and source fingerprint. |
+| `MAPPINGS_RELEASE_REPOSITORY` | No | GitHub repository that publishes mapping releases; defaults to `anime-db-project/anime-mapping-db`. |
 | `ANIMETHEMES_API_URL` | No | AnimeThemes API endpoint used lazily to enrich episode OP/ED metadata and video links. |
 | `IMDB_RATINGS_BACKEND` | No | IMDb score backend: `auto`, `local`, `api`, or `off`; default `auto`. |
 | `IMDB_RATINGS_DB_PATH` | No | Local filtered IMDb ratings SQLite; default `data/imdb_ratings.sqlite3`. |
@@ -384,8 +385,8 @@ The runtime keeps different kinds of state separate:
 
 - user settings and known users — SQLite, scoped by `(platform, user_id)`;
 - bans — separate persistent SQLite store;
-- `mappings.db` — compact disk-backed runtime cross-ID resolver database;
-- `mappings-evidence.db` — updater/build provenance and evidence store;
+- `mappings.db` — compact disk-backed runtime cross-ID resolver downloaded from `anime-db-project/anime-mapping-db` releases;
+- `data/mappings/manifest.json` — installed mapping release metadata and source fingerprint;
 - AniDB XML — disk cache;
 - Telegram search/card callback sessions — bounded in-memory TTL/LRU state.
 
@@ -420,7 +421,7 @@ anime-db-bot/
 │   └── transports/      # official and self-hosted Bot API transports
 ├── core/                # contracts, models, identity, settings, HTTP, errors
 ├── localization/        # locale catalogs and canonical localization data
-├── mappings/            # cross-ID database, importers, resolver, updater
+├── mappings/            # runtime cross-ID resolver and release downloader/updater
 ├── search/              # provider-facing search adapters and registry
 ├── services/
 │   ├── aggregation/     # metadata aggregation and merge policy
@@ -444,21 +445,24 @@ More detail: [`docs/app-context.md`](docs/app-context.md).
 
 ## Cross-ID mappings
 
-The mapping updater streams several external datasets into SQLite, records provenance/evidence/conflicts, validates the rebuilt databases, and atomically swaps them into place. The complete graph is not loaded into RAM.
+Cross-ID dataset construction now lives in the standalone [`anime-db-project/anime-mapping-db`](https://github.com/anime-db-project/anime-mapping-db) project. That repository owns upstream importers, evidence/provenance, confidence, conflict detection, schema builds, validation and GitHub Releases.
 
-Schema v3 normalizes repeated `(provider, external_id)` pairs into integer nodes and separates runtime lookup data from build provenance. `mappings.db` contains the compact node/edge/conflict graph and audited overrides used by the bot, while `mappings-evidence.db` retains datasets, source records, evidence groups, and edge provenance for rebuilds and updates. This reduces runtime storage and lookup cost without discarding evidence.
+`anime-db-bot` is only a runtime consumer. It checks the latest `manifest.json`, compares the source fingerprint, downloads the pinned `mappings.db.zst` asset only when needed, verifies SHA-256 and size, decompresses and validates SQLite, preserves local audited admin overrides, and atomically replaces `data/mappings/mappings.db`. The bot never rebuilds mappings from upstream datasets.
 
-Manual directional overrides support `accept` and `reject`, carry author/reason/timestamp metadata, and preserve append-only history across rebuilds.
+Schema v3 remains direct-only and conflict-aware. Runtime resolution reads only the compact `mappings.db`; the separate evidence database belongs to the mapping project and is not part of bot production storage.
+
+Manual directional overrides support `accept` and `reject`, carry author/reason/timestamp metadata, and preserve append-only history across downloaded releases.
 
 Maintenance commands are available through the cross-platform launcher:
 
 ```text
 python scripts/project.py mappings --status
+python scripts/project.py mappings --force
 python scripts/project.py mappings --override-list
 python scripts/project.py mappings --override-history
 ```
 
-The Unix `./scripts/update-mappings.sh` wrapper remains available for existing deployments.
+The Unix `./scripts/update-mappings.sh` wrapper remains available for existing deployments and now performs the same release-consumer update.
 
 ## Development
 
@@ -472,7 +476,7 @@ python scripts/project.py doctor
 
 On Windows, `py -3 scripts\project.py ...` may be used instead of `python`. The Unix `./scripts/setup.sh` and `./scripts/check.sh` files are convenience wrappers around the same implementation. Direct virtual-environment commands remain available at `.venv/bin/python` on Unix and `.venv\Scripts\python.exe` on Windows.
 
-GitHub Actions requires the full unit suite to pass on **Ubuntu, macOS, and Windows** for Python 3.11, 3.12, 3.13, and 3.14. Each matrix job also runs the cross-platform launcher doctor. The Linux quality job additionally runs Ruff correctness checks, formatter checks for the typed foundation, mypy for the typed foundation, full tests with a coverage gate of at least 70%, and ShellCheck for Unix shell wrappers.
+GitHub Actions runs the full unit suite on Ubuntu for Python 3.11–3.14 plus portability runs on macOS and Windows with Python 3.12. This keeps cross-platform coverage while avoiding a redundant 12-job OS/Python Cartesian matrix. The Linux quality job additionally runs Ruff correctness checks, formatter checks for the typed foundation, mypy for the typed foundation, full tests with a coverage gate of at least 70%, and ShellCheck for Unix shell wrappers.
 
 ## Contributors
 
@@ -514,7 +518,7 @@ Licensed under the [Apache License 2.0](LICENSE). You may use, modify, and distr
 - [IMDb](https://www.imdb.com/) — rating/vote supplement via the official datasets or licensed IMDb API; IMDb data remains subject to IMDb terms
 - [SkipDB](https://skipdb.tv/) — skip-segment data under ODbL 1.0 + reciprocity
 
-Cross-ID mapping data is assembled from multiple community datasets. Each upstream service and dataset remains subject to its own terms, rate limits, and attribution requirements.
+Cross-ID mapping data is built and released by `anime-db-project/anime-mapping-db` from multiple community datasets. Upstream terms, rate limits, attribution and database-license obligations are documented and enforced by that standalone project.
 
 Kitsu public read-only GET requests are used without OAuth credentials. The runtime applies its own conservative request limits because no stable server-side rate-limit contract is assumed.
 
