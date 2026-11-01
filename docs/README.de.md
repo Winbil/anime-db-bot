@@ -205,7 +205,8 @@ Die gesamte Analyse der Laufzeitumgebung ist in `core/settings.py` zentralisiert
 | `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | Nein | Das Hostverzeichnis ist `/var/lib/telegram-bot-api` zugeordnet, wenn sich die Dateipfade des lokalen Bot API in einem Container befinden. |
 | `USER_SETTINGS_DB_PATH` | Nein | SQLite Pfad für benutzerspezifische Einstellungen und Registrierung bekannter Benutzer. |
 | `BANS_DB_PATH` | Nein | SQLite Pfad für Moderationsverbote. |
-| `MAPPINGS_DB_PATH` | Nein | Laufzeit-Cross-ID-Mapping-Datenbank. |
+| `MAPPINGS_DB_PATH` | Nein | Kompakte Laufzeit-Cross-ID-Mapping-Datenbank. |
+| `MAPPINGS_EVIDENCE_DB_PATH` | Nein | Provenienz-/Evidenzdatenbank für Build und Updates; der normale Runtime-Resolver liest sie nicht. |
 | `BAHA_ANIME_SKIP_DB_PATH` | Nein | Lokaler SQLite-Index für Baha-Anime-Skip-Zeitmarken; zur Laufzeit erfolgen dafür keine Bahamut/Baha-Netzwerkanfragen. |
 
 Übertragen Sie keine `.env`, `.env.d/`, `.proxies.d/`, Bot-Tokens, Zugriffstoken, Passwörter, Proxy-Anmeldeinformationen oder privaten API-Anmeldeinformationen.
@@ -357,7 +358,8 @@ Die Laufzeit trennt verschiedene Arten von Zuständen:
 
 - Benutzereinstellungen und bekannte Benutzer – SQLite, begrenzt durch `(platform, user_id)`;
 - Verbote – separater persistenter SQLite-Speicher;
-- `mappings.db` – festplattengestützte Cross-ID-Resolver-Datenbank;
+- `mappings.db` – kompakte Laufzeit-Cross-ID-Resolver-Datenbank;
+- `mappings-evidence.db` – separater Provenienz-/Evidenzspeicher für Updater und Rebuilds;
 - AniDB XML – Festplatten-Cache;
 - Telegram Such-/Kartenrückrufsitzungen – begrenzter TTL/LRU-Status im Arbeitsspeicher.
 
@@ -416,7 +418,9 @@ Weitere Einzelheiten: [`docs/app-context.md`](app-context.md).
 
 ## Cross-ID-Zuordnungen
 
-Der Mapping-Updater streamt mehrere externe Datensätze in SQLite, zeichnet Herkunft/Beweise/Konflikte auf, validiert die neu erstellte Datenbank und tauscht sie atomar aus. Der vollständige Graph wird nicht in den RAM geladen.
+Der Mapping-Updater streamt mehrere externe Datensätze in SQLite, zeichnet Herkunft/Beweise/Konflikte auf, validiert die neu erstellten Datenbanken und tauscht sie atomar aus. Der vollständige Graph wird nicht in den RAM geladen.
+
+Schema v3 normalisiert wiederholte `(provider, external_id)`-Paare zu Integer-Knoten und trennt Laufzeit-Lookups von der Build-Provenienz. `mappings.db` enthält den kompakten Knoten-/Kanten-/Konfliktgraphen und geprüfte Overrides für den Bot; `mappings-evidence.db` bewahrt Datasets, Quelldatensätze, Evidenzgruppen und Kanten-Provenienz für Rebuilds und Updates auf.
 
 Manuelle Richtungsüberschreibungen unterstützen `accept` und `reject`, übertragen Autor/Ursache/Zeitstempel-Metadaten und bewahren den Nur-Anhänge-Verlauf über Neuerstellungen hinweg.
 

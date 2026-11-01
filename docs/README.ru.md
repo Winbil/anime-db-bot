@@ -206,7 +206,8 @@ Runtime-логи разделены по назначению в `logs/YYYY.MM.D
 | `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | Нет | Host-каталог, соответствующий `/var/lib/telegram-bot-api` внутри контейнера local Bot API; нужен для чтения локальных `file_path`. |
 | `USER_SETTINGS_DB_PATH` | Нет | SQLite для user settings и known-user registry. |
 | `BANS_DB_PATH` | Нет | SQLite для moderation bans. |
-| `MAPPINGS_DB_PATH` | Нет | Runtime cross-ID mapping database. |
+| `MAPPINGS_DB_PATH` | Нет | Компактная runtime cross-ID mapping database. |
+| `MAPPINGS_EVIDENCE_DB_PATH` | Нет | База provenance/evidence для сборки и обновлений; обычный runtime resolver её не читает. |
 | `IMDB_RATINGS_BACKEND` | Нет | Backend рейтинга IMDb: `auto`, `local`, `api` или `off`; default `auto`. |
 | `IMDB_RATINGS_DB_PATH` | Нет | Путь к локальному отфильтрованному IMDb ratings SQLite; default `data/imdb_ratings.sqlite3`. |
 | `IMDB_API_KEY` + Data Exchange/AWS IDs | Нет | Credentials опционального лицензированного IMDb GraphQL backend. |
@@ -341,7 +342,8 @@ Domain model locale-neutral. Source adapters приводят upstream status/ty
 
 - user settings и known users — SQLite, scoped по `(platform, user_id)`;
 - bans — отдельный persistent SQLite store;
-- `mappings.db` — disk-backed cross-ID resolver;
+- `mappings.db` — компактный disk-backed runtime cross-ID resolver;
+- `mappings-evidence.db` — отдельное хранилище provenance/evidence для updater и rebuild;
 - AniDB XML — disk cache;
 - Telegram search/card callback sessions — bounded in-memory TTL/LRU state.
 
@@ -394,7 +396,9 @@ anime-db-bot/
 
 ## Cross-ID mappings
 
-Updater потоково загружает несколько внешних datasets в SQLite, хранит provenance/evidence/conflicts, валидирует новую БД и атомарно заменяет старую. Полный граф не загружается в RAM.
+Updater потоково загружает несколько внешних datasets в SQLite, хранит provenance/evidence/conflicts, валидирует новые базы и атомарно заменяет старые. Полный граф не загружается в RAM.
+
+Schema v3 нормализует повторяющиеся пары `(provider, external_id)` в integer nodes и разделяет runtime lookup и build provenance. `mappings.db` содержит компактный граф nodes/edges/conflicts и аудируемые overrides, которые читает бот, а `mappings-evidence.db` хранит datasets, source records, evidence groups и provenance рёбер для rebuild/update. Evidence при этом не теряется, а runtime-база становится существенно меньше.
 
 Manual directional overrides поддерживают `accept`/`reject`, author/reason/timestamp и append-only history.
 

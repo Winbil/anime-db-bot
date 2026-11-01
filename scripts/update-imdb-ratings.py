@@ -35,15 +35,38 @@ def _imdb_ids(mapping_db: Path) -> set[str]:
     connection = sqlite3.connect(mapping_db)
     try:
         safe = ", ".join("?" for _ in SAFE_IDENTITY_PROVIDERS)
+        edge_columns = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(edges)")
+        }
+        if {"a_node", "b_node"}.issubset(edge_columns):
+            edge_sql = f"""
+                SELECT a.external_id
+                FROM edges AS e
+                JOIN nodes AS a ON a.id=e.a_node
+                JOIN nodes AS b ON b.id=e.b_node
+                WHERE e.status = 'accepted' AND a.provider = 'imdb'
+                  AND b.provider IN ({safe})
+                UNION
+                SELECT b.external_id
+                FROM edges AS e
+                JOIN nodes AS a ON a.id=e.a_node
+                JOIN nodes AS b ON b.id=e.b_node
+                WHERE e.status = 'accepted' AND b.provider = 'imdb'
+                  AND a.provider IN ({safe})
+            """
+        else:
+            edge_sql = f"""
+                SELECT a_id FROM edges
+                  WHERE status = 'accepted' AND a_provider = 'imdb'
+                    AND b_provider IN ({safe})
+                UNION
+                SELECT b_id FROM edges
+                  WHERE status = 'accepted' AND b_provider = 'imdb'
+                    AND a_provider IN ({safe})
+            """
         rows = connection.execute(
-            f"""
-            SELECT a_id FROM edges
-              WHERE status = 'accepted' AND a_provider = 'imdb'
-                AND b_provider IN ({safe})
-            UNION
-            SELECT b_id FROM edges
-              WHERE status = 'accepted' AND b_provider = 'imdb'
-                AND a_provider IN ({safe})
+            edge_sql
+            + f"""
             UNION
             SELECT source_id FROM mapping_overrides
               WHERE action = 'accept' AND source_provider = 'imdb'

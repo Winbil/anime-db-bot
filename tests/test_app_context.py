@@ -32,6 +32,7 @@ class AppContextTests(unittest.IsolatedAsyncioTestCase):
                 "MAL_CLIENT_ID": "",
                 "ANIDB_CLIENT": "",
                 "MAPPINGS_AUTO_UPDATE": "0",
+                "BAHA_ANIME_SKIP_DB_PATH": "data/test-app-context-baha-missing.sqlite3",
                 "SOURCE_HEALTH_FAILURE_THRESHOLD": "7",
                 "SOURCE_HEALTH_COOLDOWN_SECONDS": "45",
             }
