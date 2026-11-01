@@ -14,7 +14,7 @@ Thanks for contributing. The project favors small, reviewable changes that prese
 The canonical development launcher is cross-platform:
 
 ```text
-git clone https://github.com/Winbil/anime-db-bot.git
+git clone https://github.com/anime-db-project/anime-db-bot.git
 cd anime-db-bot
 ```
 

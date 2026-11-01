@@ -200,13 +200,11 @@ class SearchSettings:
 @dataclass(frozen=True, slots=True)
 class MappingSettings:
     db_path: Path
-    evidence_db_path: Path
+    manifest_path: Path
+    release_repository: str
     auto_update: bool
-    update_max_age_hours: float
-    wikidata_check_interval_hours: float
     check_interval_seconds: float
     request_timeout_seconds: float
-    keep_downloads: bool
     keep_previous: bool
 
 
@@ -446,24 +444,17 @@ class AppSettings:
             ),
             mappings=MappingSettings(
                 db_path=_path(values, "MAPPINGS_DB_PATH", "data/mappings/mappings.db"),
-                evidence_db_path=_path(
+                manifest_path=_path(
                     values,
-                    "MAPPINGS_EVIDENCE_DB_PATH",
-                    "data/mappings/mappings-evidence.db",
+                    "MAPPINGS_MANIFEST_PATH",
+                    "data/mappings/manifest.json",
                 ),
+                release_repository=_raw(
+                    values,
+                    "MAPPINGS_RELEASE_REPOSITORY",
+                    "anime-db-project/anime-mapping-db",
+                ).strip("/"),
                 auto_update=_bool(values, "MAPPINGS_AUTO_UPDATE", True),
-                update_max_age_hours=_float(
-                    values,
-                    "MAPPINGS_UPDATE_MAX_AGE_HOURS",
-                    24.0,
-                    0.25,
-                ),
-                wikidata_check_interval_hours=_float(
-                    values,
-                    "MAPPINGS_WIKIDATA_CHECK_INTERVAL_HOURS",
-                    168.0,
-                    1.0,
-                ),
                 check_interval_seconds=_float(
                     values,
                     "MAPPINGS_CHECK_INTERVAL_SECONDS",
@@ -476,7 +467,6 @@ class AppSettings:
                     300.0,
                     30.0,
                 ),
-                keep_downloads=_bool(values, "MAPPINGS_KEEP_DOWNLOADS", False),
                 keep_previous=_bool(values, "MAPPINGS_KEEP_PREVIOUS", True),
             ),
             sources=SourceSettings(

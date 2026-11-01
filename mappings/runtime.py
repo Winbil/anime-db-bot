@@ -8,7 +8,7 @@ from mappings.updater import update_if_stale
 
 
 async def periodic_mapping_updates() -> None:
-    """Refresh mappings.db in a worker thread without loading datasets into RAM."""
+    """Check the standalone Anime Mapping DB release without blocking the event loop."""
     if not mappings_auto_update():
         return
 
@@ -18,5 +18,5 @@ async def periodic_mapping_updates() -> None:
         except asyncio.CancelledError:
             raise
         except Exception:
-            logging.exception("Background mapping database update failed")
+            logging.exception("Background mapping release update failed")
         await asyncio.sleep(mappings_check_interval_seconds())

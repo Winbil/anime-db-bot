@@ -13,9 +13,8 @@ from unittest.mock import AsyncMock, patch
 from core.identity import AnimeIdentity
 from core.models import AggregatedAnime
 from core.settings import AppSettings
-from mappings.config import MappingSourceSpec
-from mappings.database import MappingDatabaseBuilder, MappingRecord
 from mappings.resolver import MappingResolver
+from tests.mapping_fixtures import create_runtime_mapping_db
 from services.media.imdb import IMDbRatingService
 from sources.providers.imdb import IMDbRatingsSource, _sigv4_headers
 
@@ -63,28 +62,10 @@ class IMDbRatingsTests(unittest.IsolatedAsyncioTestCase):
         imdb_id: str = "tt1234567",
     ) -> MappingResolver:
         path = self.root / f"mapping-{source_provider}.db"
-        spec = MappingSourceSpec(
-            name="test",
-            url="https://example.invalid/mappings",
-            importer="test",
-            required=True,
-            license_note="test",
+        create_runtime_mapping_db(
+            path,
+            [(source_provider, source_id, "imdb", imdb_id)],
         )
-        with MappingDatabaseBuilder(path) as builder:
-            builder.ingest_dataset(
-                spec,
-                [
-                    MappingRecord(
-                        "1",
-                        {source_provider: (source_id,), "imdb": (imdb_id,)},
-                        "test",
-                        95,
-                    )
-                ],
-                sha256="test",
-                downloaded_at="2026-11-01T00:00:00+00:00",
-            )
-            builder.finalize(built_at="2026-11-01T00:00:00+00:00")
         return MappingResolver(path)
 
     async def test_local_backend_reads_only_confirmed_imdb_identity(self) -> None:

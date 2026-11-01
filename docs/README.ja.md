@@ -10,7 +10,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
-[![CI](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Winbil/anime-db-bot/actions/workflows/ci.yml)
+[![CI](https://github.com/anime-db-project/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/anime-db-project/anime-db-bot/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](../LICENSE)
 
 `anime-db-bot` は複数のアニメデータベースを検索し、確認済みの cross-database identity を解決して、特定の外部データベースを唯一の正解とせずに 1 つの統合カードを生成します。
@@ -132,7 +132,7 @@ Hard cap によって upstream quota を保護します。最終件数を保証�
 
 ## 必要環境 / OS サポート
 
-Python runtime は **Linux、macOS、native Windows** を対象とし、Python **3.11 / 3.12 / 3.13 / 3.14** をサポートします。GitHub Actions では、対応する全 Python version について 3 OS family すべてで full unit suite を実行します。
+Python runtime は **Linux、macOS、native Windows** で Python **3.11 / 3.12 / 3.13 / 3.14** をサポートします。GitHub Actions は全対応 Python version を Ubuntu で検証し、macOS / Windows は Python 3.12 の portability run を追加します。
 
 - **Linux** — primary production platform。対応 CPython があれば主要 distribution で cross-platform launcher を利用できます。既存の `start.sh` は Linux 向け `tmux` production helper として残します。
 - **macOS** — Python launcher をサポートし、便利な wrapper として `start.command` を用意します。`systemd` unit は macOS では使用しません。
@@ -147,7 +147,7 @@ Python runtime は **Linux、macOS、native Windows** を対象とし、Python *
 まず repository を clone します。
 
 ```text
-git clone git@github.com:Winbil/anime-db-bot.git
+git clone git@github.com:anime-db-project/anime-db-bot.git
 cd anime-db-bot
 ```
 
@@ -204,8 +204,9 @@ Runtime environment parsing は `core/settings.py` に集約されています�
 | `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | いいえ | Local Bot API コンテナ内の `/var/lib/telegram-bot-api` に対応する host directory。local `file_path` を読む場合に使用します。 |
 | `USER_SETTINGS_DB_PATH` | いいえ | User settings / known-user registry 用 SQLite path。 |
 | `BANS_DB_PATH` | いいえ | Moderation ban 用 SQLite path。 |
-| `MAPPINGS_DB_PATH` | いいえ | コンパクトな runtime cross-ID mapping database。 |
-| `MAPPINGS_EVIDENCE_DB_PATH` | いいえ | build/update 用 provenance・evidence database。通常の runtime resolver は読みません。 |
+| `MAPPINGS_DB_PATH` | いいえ | Anime Mapping DB release から取得する compact runtime cross-ID database。 |
+| `MAPPINGS_MANIFEST_PATH` | いいえ | インストール済み mapping release と source fingerprint の local manifest。 |
+| `MAPPINGS_RELEASE_REPOSITORY` | いいえ | mapping release を公開する GitHub repository。既定は `anime-db-project/anime-mapping-db`。 |
 | `BAHA_ANIME_SKIP_DB_PATH` | いいえ | Baha Anime Skip のタイムコード用ローカル SQLite index。runtime ではこの source のために Bahamut/Baha へ通信しません。 |
 
 `.env`、`.env.d/`、`.proxies.d/`、bot token、access token、password、proxy credentials、private credentials は commit しないでください。
@@ -328,7 +329,7 @@ State は用途ごとに分離されています。
 - user settings / known users — `(platform, user_id)` scoped SQLite;
 - bans — 独立した persistent SQLite store;
 - `mappings.db` — コンパクトな disk-backed runtime cross-ID resolver;
-- `mappings-evidence.db` — updater/rebuild 用の独立した provenance・evidence store;
+- `data/mappings/manifest.json` — installed mapping release metadata と source fingerprint;
 - AniDB XML — disk cache;
 - Telegram search/card callback sessions — bounded in-memory TTL/LRU state。
 
@@ -357,7 +358,7 @@ anime-db-bot/
 │   └── transports/      # official / self-hosted Bot API transports
 ├── core/                # contracts, models, identity, settings, HTTP, errors
 ├── localization/        # locale catalogs and canonical localization data
-├── mappings/            # cross-ID database, importers, resolver, updater
+├── mappings/            # runtime cross-ID resolver and release downloader/updater
 ├── search/              # provider-facing search adapters and registry
 ├── services/
 │   ├── aggregation/     # metadata aggregation and merge policy
@@ -381,21 +382,18 @@ anime-db-bot/
 
 ## Cross-ID mappings
 
-Mapping updater は複数の外部 dataset を SQLite にストリームし、provenance/evidence/conflict を保存して rebuilt database を検証し、atomic swap します。完全な graph を RAM にロードしません。
+Cross-ID database の build は独立した [`anime-db-project/anime-mapping-db`](https://github.com/anime-db-project/anime-mapping-db) に完全移行しました。upstream importer、evidence/provenance、confidence、conflict detection、schema build、validation、GitHub Releases はそちらが管理します。
 
-Schema v3 では重複する `(provider, external_id)` ペアを integer node に正規化し、runtime lookup と build provenance を分離します。`mappings.db` は bot が読むコンパクトな node/edge/conflict graph と監査済み override を保持し、`mappings-evidence.db` は rebuild/update 用の dataset、source record、evidence group、edge provenance を保持します。
+`anime-db-bot` は runtime consumer のみです。`manifest.json` の source fingerprint を比較し、必要な場合だけ release tag に固定された `mappings.db.zst` を取得し、SHA-256/size と SQLite を検証して local admin override を保持したまま `data/mappings/mappings.db` を atomic replace します。
 
-Manual directional override は `accept` / `reject`、author/reason/timestamp、append-only history をサポートします。
-
-Cross-platform mapping maintenance commands:
+Schema v3 は引き続き direct-only / conflict-aware です。evidence database は mapping project 側にあり、bot production storage には置きません。
 
 ```text
 python scripts/project.py mappings --status
+python scripts/project.py mappings --force
 python scripts/project.py mappings --override-list
 python scripts/project.py mappings --override-history
 ```
-
-既存 deployment 向けの Unix wrapper `./scripts/update-mappings.sh` も残します。
 
 ## 開発
 
@@ -409,7 +407,7 @@ python scripts/project.py doctor
 
 Windows では `python` の代わりに `py -3` も利用できます。Unix の `./scripts/setup.sh` と `./scripts/check.sh` は同じ Python implementation を呼ぶ convenience wrapper です。venv の Python は Unix では `.venv/bin/python`、Windows では `.venv\Scripts\python.exe` です。
 
-GitHub Actions では **Ubuntu、macOS、Windows** の各 OS で Python 3.11 / 3.12 / 3.13 / 3.14 の full unit suite 成功を必須とします。各 matrix job は cross-platform launcher doctor も実行します。Linux quality job では Ruff、typed foundation formatter check、mypy、full test suite + coverage gate `>=70%`、Unix wrapper 向け ShellCheck も実行します。
+GitHub Actions は Ubuntu 上で Python 3.11–3.14 の full suite を実行し、macOS / Windows では Python 3.12 の portability run を追加します。Linux quality job は Ruff、formatter、mypy、coverage `>=70%`、ShellCheck も実行します。
 
 ## コントリビューター
 

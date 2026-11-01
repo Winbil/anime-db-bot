@@ -11,7 +11,7 @@ from mappings.resolver import (
     list_mapping_overrides,
     set_mapping_override,
 )
-from mappings.updater import mapping_status, update_mapping_database, update_if_stale
+from mappings.updater import mapping_status, update_if_stale, update_mapping_database
 
 
 def _override_dict(override: object) -> dict[str, str]:
@@ -42,13 +42,17 @@ def _history_dict(item: object) -> dict[str, str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build and inspect mappings.db")
+    parser = argparse.ArgumentParser(
+        description="Download and inspect the standalone Anime Mapping DB runtime"
+    )
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
-        "--force", action="store_true", help="rebuild even when the DB is fresh"
+        "--force",
+        action="store_true",
+        help="redownload the latest mapping release even when already installed",
     )
     group.add_argument(
-        "--status", action="store_true", help="print DB status without updating"
+        "--status", action="store_true", help="print local DB/release status"
     )
     group.add_argument(
         "--override-history",
@@ -105,6 +109,8 @@ def main() -> None:
         return
 
     if args.override_set:
+        if not args.reason.strip():
+            parser.error("--override-set requires --reason")
         action, source, source_id, target, target_id = args.override_set
         override = set_mapping_override(
             source,
@@ -145,32 +151,21 @@ def main() -> None:
         return
 
     if args.force:
-        stats = update_mapping_database(force=True)
+        result = update_mapping_database(force=True)
     elif mappings_auto_update():
-        stats = update_if_stale()
+        result = update_if_stale()
     else:
-        stats = None
+        result = None
 
-    if stats is None:
-        print(
-            json.dumps(mapping_status(), ensure_ascii=False, indent=2, sort_keys=True)
-        )
-        return
-    print(
-        json.dumps(
-            {
-                "datasets": stats.datasets,
-                "records": stats.records,
-                "evidence": stats.evidence,
-                "edges": stats.edges,
-                "accepted_edges": stats.accepted_edges,
-                "conflicts": stats.conflicts,
-            },
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-        )
-    )
+    payload = mapping_status()
+    if result is not None:
+        payload["update"] = {
+            "release_tag": result.release_tag,
+            "source_fingerprint": result.source_fingerprint,
+            "runtime_bytes": result.runtime_bytes,
+            "overrides_preserved": result.overrides_preserved,
+        }
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":
