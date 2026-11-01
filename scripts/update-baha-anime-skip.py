@@ -52,25 +52,48 @@ def _bahamut_ids(path: Path) -> list[str]:
         raise FileNotFoundError(f"mappings database does not exist: {path}")
     uri = f"file:{path.resolve().as_posix()}?mode=ro"
     with closing(sqlite3.connect(uri, uri=True, timeout=5.0)) as conn:
-        rows = conn.execute(
+        edge_columns = {
+            str(row[1]) for row in conn.execute("PRAGMA table_info(edges)")
+        }
+        if {"a_node", "b_node"}.issubset(edge_columns):
+            query = """
+                SELECT DISTINCT anime_sn FROM (
+                    SELECT CASE
+                        WHEN a.provider='bahamut' THEN a.external_id ELSE b.external_id
+                    END AS anime_sn
+                    FROM edges AS e
+                    JOIN nodes AS a ON a.id=e.a_node
+                    JOIN nodes AS b ON b.id=e.b_node
+                    WHERE e.status='accepted'
+                      AND (a.provider='bahamut' OR b.provider='bahamut')
+                    UNION
+                    SELECT CASE
+                        WHEN source_provider='bahamut' THEN source_id ELSE target_id
+                    END AS anime_sn
+                    FROM mapping_overrides
+                    WHERE action='accept'
+                      AND (source_provider='bahamut' OR target_provider='bahamut')
+                )
             """
-            SELECT DISTINCT anime_sn FROM (
-                SELECT CASE
-                    WHEN a_provider='bahamut' THEN a_id ELSE b_id
-                END AS anime_sn
-                FROM edges
-                WHERE status='accepted'
-                  AND (a_provider='bahamut' OR b_provider='bahamut')
-                UNION
-                SELECT CASE
-                    WHEN source_provider='bahamut' THEN source_id ELSE target_id
-                END AS anime_sn
-                FROM mapping_overrides
-                WHERE action='accept'
-                  AND (source_provider='bahamut' OR target_provider='bahamut')
-            )
+        else:
+            query = """
+                SELECT DISTINCT anime_sn FROM (
+                    SELECT CASE
+                        WHEN a_provider='bahamut' THEN a_id ELSE b_id
+                    END AS anime_sn
+                    FROM edges
+                    WHERE status='accepted'
+                      AND (a_provider='bahamut' OR b_provider='bahamut')
+                    UNION
+                    SELECT CASE
+                        WHEN source_provider='bahamut' THEN source_id ELSE target_id
+                    END AS anime_sn
+                    FROM mapping_overrides
+                    WHERE action='accept'
+                      AND (source_provider='bahamut' OR target_provider='bahamut')
+                )
             """
-        ).fetchall()
+        rows = conn.execute(query).fetchall()
     return sorted(
         {str(value) for (value,) in rows if _positive_integer(value) is not None},
         key=int,

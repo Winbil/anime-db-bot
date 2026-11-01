@@ -205,7 +205,8 @@ Todo el análisis del entorno de ejecución está centralizado en `core/settings
 | `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | No | Directorio de host asignado a `/var/lib/telegram-bot-api` cuando las rutas de archivo del Bot local API están dentro de un contenedor. |
 | `USER_SETTINGS_DB_PATH` | No | SQLite ruta para la configuración por usuario y el registro de usuarios conocidos. |
 | `BANS_DB_PATH` | No | SQLite ruta para prohibiciones de moderación. |
-| `MAPPINGS_DB_PATH` | No | Base de datos de mapeo de ID cruzado en tiempo de ejecución. |
+| `MAPPINGS_DB_PATH` | No | Base de datos compacta de mapeo cross-ID en tiempo de ejecución. |
+| `MAPPINGS_EVIDENCE_DB_PATH` | No | Base de procedencia/evidencia para compilaciones y actualizaciones; el resolver normal no la lee. |
 | `BAHA_ANIME_SKIP_DB_PATH` | No | Índice SQLite local para los timestamps de Baha Anime Skip; el runtime no consulta Bahamut/Baha para esta fuente. |
 
 No confirme `.env`, `.env.d/`, `.proxies.d/`, tokens de bot, tokens de acceso, contraseñas, credenciales de proxy o credenciales privadas API.
@@ -357,7 +358,8 @@ El tiempo de ejecución mantiene separados los diferentes tipos de estados:
 
 - configuración de usuario y usuarios conocidos: SQLite, con alcance de `(platform, user_id)`;
 - prohibiciones: tienda SQLite persistente separada;
-- `mappings.db` — base de datos de resolución de ID cruzada respaldada en disco;
+- `mappings.db` — base compacta de resolución cross-ID para runtime;
+- `mappings-evidence.db` — almacén separado de procedencia/evidencia para actualizaciones y reconstrucciones;
 - AniDB XML: caché de disco;
 - Telegram sesiones de devolución de llamada de tarjeta/búsqueda: estado TTL/LRU en memoria limitado.
 
@@ -416,7 +418,9 @@ Más detalle: [`docs/app-context.md`](app-context.md).
 
 ## Mapeos de ID cruzada
 
-El actualizador de mapas transmite varios conjuntos de datos externos a SQLite, registra la procedencia/evidencia/conflictos, valida la base de datos reconstruida y la intercambia atómicamente en su lugar. El gráfico completo no se carga en la RAM.
+El actualizador de mapas transmite varios conjuntos de datos externos a SQLite, registra la procedencia/evidencia/conflictos, valida las bases reconstruidas y las intercambia atómicamente. El gráfico completo no se carga en la RAM.
+
+El esquema v3 normaliza los pares repetidos `(provider, external_id)` como nodos enteros y separa las búsquedas de runtime de la procedencia de compilación. `mappings.db` contiene el grafo compacto de nodos/aristas/conflictos y los overrides auditados; `mappings-evidence.db` conserva datasets, registros de origen, grupos de evidencia y procedencia de aristas para reconstrucciones y actualizaciones.
 
 Las anulaciones direccionales manuales admiten `accept` y `reject`, transportan metadatos de autor/motivo/marca de tiempo y preservan el historial de solo agregar en las reconstrucciones.
 

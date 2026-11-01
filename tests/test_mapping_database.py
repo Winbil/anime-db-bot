@@ -257,6 +257,47 @@ class MappingDatabaseTests(unittest.TestCase):
         self.assertEqual(current.action, "reject")
         self.assertEqual(len(list_mapping_override_history(self.path)), 1)
 
+    def test_normalized_evidence_dataset_can_be_carried_forward(self) -> None:
+        source_runtime = self.root / "source.db"
+        source_evidence = self.root / "source-evidence.db"
+        with MappingDatabaseBuilder(
+            source_runtime, evidence_path=source_evidence
+        ) as builder:
+            builder.ingest_dataset(
+                self._spec("direct"),
+                [
+                    MappingRecord(
+                        "1",
+                        {"mal": ("100",), "anidb": ("200",), "imdb": ("tt300",)},
+                        "direct",
+                        95,
+                    )
+                ],
+                sha256="sha-source",
+                downloaded_at="2026-10-27T00:00:00+00:00",
+            )
+            builder.finalize(built_at="2026-10-27T00:00:00+00:00")
+
+        destination_runtime = self.root / "destination.db"
+        destination_evidence = self.root / "destination-evidence.db"
+        with MappingDatabaseBuilder(
+            destination_runtime, evidence_path=destination_evidence
+        ) as builder:
+            self.assertEqual(
+                builder.copy_dataset_from(source_evidence, "direct"),
+                1,
+            )
+            stats = builder.finalize(built_at="2026-10-28T00:00:00+00:00")
+
+        self.assertEqual(stats.records, 1)
+        self.assertEqual(stats.evidence, 3)
+        self.assertEqual(stats.edges, 3)
+        resolver = MappingResolver(destination_runtime)
+        self.assertEqual(
+            resolver.resolve(AnimeIdentity({"mal": "100"})),
+            {"anidb": "200", "imdb": "tt300"},
+        )
+
     def test_overrides_can_be_copied_into_atomic_rebuild(self) -> None:
         self._build([("direct", [
             MappingRecord("1", {"mal": ("100",), "anidb": ("200",)}, "direct", 95),

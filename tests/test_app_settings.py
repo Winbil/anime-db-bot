@@ -244,7 +244,7 @@ class AppSettingsTests(unittest.TestCase):
                     encoding="utf-8",
                 )
             values = project_env_values(root)
-        self.assertEqual(len(values), 142)
+        self.assertEqual(len(values), 143)
         self.assertIn("BOT_TOKEN", values)
         self.assertIn("TELEGRAM_BOT_API_LOCAL_FILE_ROOT", values)
         self.assertIn("KITSU_API_URL", values)
@@ -256,6 +256,7 @@ class AppSettingsTests(unittest.TestCase):
         self.assertIn("IMDB_RATINGS_BACKEND", values)
         self.assertIn("IMDB_RATINGS_DB_PATH", values)
         self.assertIn("IMDB_API_ENDPOINT", values)
+        self.assertIn("MAPPINGS_EVIDENCE_DB_PATH", values)
         self.assertIn("BAHA_ANIME_SKIP_DB_PATH", values)
 
     def test_relative_paths_are_rooted_at_project(self) -> None:
@@ -264,6 +265,7 @@ class AppSettingsTests(unittest.TestCase):
                 "USER_SETTINGS_DB_PATH": "data/test-users.sqlite3",
                 "BANS_DB_PATH": "data/test-bans.sqlite3",
                 "MAPPINGS_DB_PATH": "data/test-mappings.sqlite3",
+                "MAPPINGS_EVIDENCE_DB_PATH": "data/test-mappings-evidence.sqlite3",
             }
         )
         self.assertEqual(
@@ -277,6 +279,10 @@ class AppSettingsTests(unittest.TestCase):
         self.assertEqual(
             settings.mappings.db_path,
             ROOT_DIR / Path("data/test-mappings.sqlite3"),
+        )
+        self.assertEqual(
+            settings.mappings.evidence_db_path,
+            ROOT_DIR / Path("data/test-mappings-evidence.sqlite3"),
         )
 
     def test_log_secret_redaction_defaults_to_enabled(self) -> None:

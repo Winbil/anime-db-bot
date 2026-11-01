@@ -13,6 +13,8 @@ from unittest.mock import AsyncMock, patch
 from core.identity import AnimeIdentity
 from core.models import AggregatedAnime
 from core.settings import AppSettings
+from mappings.config import MappingSourceSpec
+from mappings.database import MappingDatabaseBuilder, MappingRecord
 from mappings.resolver import MappingResolver
 from services.media.imdb import IMDbRatingService
 from sources.providers.imdb import IMDbRatingsSource, _sigv4_headers
@@ -61,36 +63,28 @@ class IMDbRatingsTests(unittest.IsolatedAsyncioTestCase):
         imdb_id: str = "tt1234567",
     ) -> MappingResolver:
         path = self.root / f"mapping-{source_provider}.db"
-        with closing(sqlite3.connect(path)) as connection:
-            connection.executescript(
-                """
-                CREATE TABLE edges(
-                    a_provider TEXT NOT NULL,
-                    a_id TEXT NOT NULL,
-                    b_provider TEXT NOT NULL,
-                    b_id TEXT NOT NULL,
-                    status TEXT NOT NULL
-                );
-                CREATE TABLE conflicts(
-                    source_provider TEXT NOT NULL,
-                    source_id TEXT NOT NULL,
-                    target_provider TEXT NOT NULL
-                );
-                CREATE TABLE mapping_overrides(
-                    source_provider TEXT NOT NULL,
-                    source_id TEXT NOT NULL,
-                    target_provider TEXT NOT NULL,
-                    target_id TEXT NOT NULL,
-                    action TEXT NOT NULL,
-                    reason TEXT NOT NULL DEFAULT ''
-                );
-                """
+        spec = MappingSourceSpec(
+            name="test",
+            url="https://example.invalid/mappings",
+            importer="test",
+            required=True,
+            license_note="test",
+        )
+        with MappingDatabaseBuilder(path) as builder:
+            builder.ingest_dataset(
+                spec,
+                [
+                    MappingRecord(
+                        "1",
+                        {source_provider: (source_id,), "imdb": (imdb_id,)},
+                        "test",
+                        95,
+                    )
+                ],
+                sha256="test",
+                downloaded_at="2026-11-01T00:00:00+00:00",
             )
-            connection.execute(
-                "INSERT INTO edges VALUES (?, ?, 'imdb', ?, 'accepted')",
-                (source_provider, source_id, imdb_id),
-            )
-            connection.commit()
+            builder.finalize(built_at="2026-11-01T00:00:00+00:00")
         return MappingResolver(path)
 
     async def test_local_backend_reads_only_confirmed_imdb_identity(self) -> None:
