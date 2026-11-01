@@ -239,11 +239,22 @@ def update_mapping_database(*, force: bool = False) -> MappingUpdateResult | Non
 
     remote = _clean_manifest(_fetch_manifest(repository), repository)
     local = _read_local_manifest(manifest_path)
+    local_assets = local.get("assets")
+    local_runtime = (
+        local_assets.get("runtime") if isinstance(local_assets, dict) else {}
+    )
+    remote_runtime = remote["assets"]["runtime"]
+    same_release = str(local.get("release_tag") or "") == remote["release_tag"]
+    same_runtime = (
+        isinstance(local_runtime, dict)
+        and str(local_runtime.get("sha256") or "").casefold()
+        == remote_runtime["sha256"]
+    )
     if (
         not force
         and db_path.is_file()
-        and str(local.get("source_fingerprint") or "").casefold()
-        == remote["source_fingerprint"]
+        and same_release
+        and same_runtime
         and int(local.get("schema_version") or 0) == SUPPORTED_SCHEMA_VERSION
     ):
         return None
