@@ -125,7 +125,7 @@ class MappingReleaseUpdaterTests(unittest.TestCase):
         installed = json.loads(self.manifest_path.read_text(encoding="utf-8"))
         self.assertEqual(installed["source_fingerprint"], self.fingerprint)
 
-    def test_same_source_fingerprint_skips_database_download(self) -> None:
+    def test_same_release_identity_skips_database_download(self) -> None:
         manifest = self._prepare_release()
         create_runtime_mapping_db(
             self.active,
@@ -144,6 +144,38 @@ class MappingReleaseUpdaterTests(unittest.TestCase):
         ):
             self.assertIsNone(update_mapping_database(force=False))
         download.assert_not_called()
+
+    def test_new_release_with_same_source_fingerprint_is_downloaded(self) -> None:
+        manifest = self._prepare_release()
+        create_runtime_mapping_db(
+            self.active,
+            [("mal", "100", "anidb", "200")],
+        )
+        installed = dict(manifest)
+        installed["release_tag"] = "v2026.11.01-older-engine"
+        self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        self.manifest_path.write_text(json.dumps(installed), encoding="utf-8")
+
+        def fake_download(_url: str, target: Path) -> str:
+            shutil.copy2(self.compressed, target)
+            return self._sha256(target)
+
+        patches = self._patch_settings()
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patches[3],
+            patch("mappings.updater._fetch_manifest", return_value=manifest),
+            patch("mappings.updater._download", side_effect=fake_download) as download,
+        ):
+            result = update_mapping_database(force=False)
+
+        self.assertIsNotNone(result)
+        download.assert_called_once()
+        updated = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(updated["release_tag"], manifest["release_tag"])
+        self.assertEqual(updated["source_fingerprint"], self.fingerprint)
 
     def test_failed_hash_never_replaces_active_database(self) -> None:
         manifest = self._prepare_release()
