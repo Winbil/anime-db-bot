@@ -204,7 +204,8 @@ Runtime environment parsing は `core/settings.py` に集約されています�
 | `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | いいえ | Local Bot API コンテナ内の `/var/lib/telegram-bot-api` に対応する host directory。local `file_path` を読む場合に使用します。 |
 | `USER_SETTINGS_DB_PATH` | いいえ | User settings / known-user registry 用 SQLite path。 |
 | `BANS_DB_PATH` | いいえ | Moderation ban 用 SQLite path。 |
-| `MAPPINGS_DB_PATH` | いいえ | Runtime cross-ID mapping database。 |
+| `MAPPINGS_DB_PATH` | いいえ | コンパクトな runtime cross-ID mapping database。 |
+| `MAPPINGS_EVIDENCE_DB_PATH` | いいえ | build/update 用 provenance・evidence database。通常の runtime resolver は読みません。 |
 | `BAHA_ANIME_SKIP_DB_PATH` | いいえ | Baha Anime Skip のタイムコード用ローカル SQLite index。runtime ではこの source のために Bahamut/Baha へ通信しません。 |
 
 `.env`、`.env.d/`、`.proxies.d/`、bot token、access token、password、proxy credentials、private credentials は commit しないでください。
@@ -326,7 +327,8 @@ State は用途ごとに分離されています。
 
 - user settings / known users — `(platform, user_id)` scoped SQLite;
 - bans — 独立した persistent SQLite store;
-- `mappings.db` — disk-backed cross-ID resolver;
+- `mappings.db` — コンパクトな disk-backed runtime cross-ID resolver;
+- `mappings-evidence.db` — updater/rebuild 用の独立した provenance・evidence store;
 - AniDB XML — disk cache;
 - Telegram search/card callback sessions — bounded in-memory TTL/LRU state。
 
@@ -380,6 +382,8 @@ anime-db-bot/
 ## Cross-ID mappings
 
 Mapping updater は複数の外部 dataset を SQLite にストリームし、provenance/evidence/conflict を保存して rebuilt database を検証し、atomic swap します。完全な graph を RAM にロードしません。
+
+Schema v3 では重複する `(provider, external_id)` ペアを integer node に正規化し、runtime lookup と build provenance を分離します。`mappings.db` は bot が読むコンパクトな node/edge/conflict graph と監査済み override を保持し、`mappings-evidence.db` は rebuild/update 用の dataset、source record、evidence group、edge provenance を保持します。
 
 Manual directional override は `accept` / `reject`、author/reason/timestamp、append-only history をサポートします。
 

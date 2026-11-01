@@ -19,6 +19,7 @@ from mappings.config import (
     MappingSourceSpec,
     mappings_auto_update,
     mappings_db_path,
+    mappings_evidence_db_path,
     mappings_keep_downloads,
     mappings_keep_previous,
     mappings_request_timeout_seconds,
@@ -157,6 +158,20 @@ def _touch_checked_sources(path: Path, names: set[str], checked_at: str) -> None
         conn.commit()
 
 
+def _touch_runtime_check(path: Path, checked_at: str) -> None:
+    if not path.is_file():
+        return
+    try:
+        with managed_sqlite_connection(sqlite3.connect(path, timeout=5.0)) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO metadata(key, value) VALUES('last_source_check_at', ?)",
+                (checked_at,),
+            )
+            conn.commit()
+    except sqlite3.DatabaseError:
+        logging.exception("Could not update mappings runtime check timestamp")
+
+
 def _download_path(work_dir: Path, index: int, spec: MappingSourceSpec) -> Path:
     suffix = Path(spec.url.split("?", 1)[0]).suffix or ".data"
     return work_dir / f"{index:02d}-{spec.importer}{suffix}"
@@ -164,16 +179,19 @@ def _download_path(work_dir: Path, index: int, spec: MappingSourceSpec) -> Path:
 
 def update_mapping_database(*, force: bool = False) -> MappingBuildStats | None:
     db_path = mappings_db_path()
-    state = _dataset_state(db_path)
+    evidence_path = mappings_evidence_db_path()
+    state = _dataset_state(evidence_path)
     due_specs = (
         list(SOURCE_SPECS)
         if force or not state
         else [spec for spec in SOURCE_SPECS if _source_due(spec, state)]
     )
-    if not due_specs:
+    runtime_rebuild_only = not db_path.is_file() and bool(state)
+    if not due_specs and not runtime_rebuild_only:
         return None
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = db_path.with_suffix(db_path.suffix + ".lock")
     lock_fd = _acquire_lock(lock_path)
     if lock_fd is None:
@@ -182,7 +200,11 @@ def update_mapping_database(*, force: bool = False) -> MappingBuildStats | None:
     os.close(lock_fd)
 
     new_path = db_path.with_suffix(db_path.suffix + ".new")
+    evidence_new_path = evidence_path.with_suffix(evidence_path.suffix + ".new")
     previous_path = db_path.with_suffix(db_path.suffix + ".previous")
+    evidence_previous_path = evidence_path.with_suffix(
+        evidence_path.suffix + ".previous"
+    )
     downloads_dir = db_path.parent / "downloads"
     work_dir = db_path.parent / ".update"
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -217,17 +239,26 @@ def update_mapping_database(*, force: bool = False) -> MappingBuildStats | None:
                 )
 
         successful_checks = set(staged)
-        if db_path.is_file() and not force and not changed_sources:
-            _touch_checked_sources(db_path, successful_checks, checked_at)
+        if (
+            db_path.is_file()
+            and evidence_path.is_file()
+            and not force
+            and not changed_sources
+        ):
+            _touch_checked_sources(evidence_path, successful_checks, checked_at)
+            _touch_runtime_check(db_path, checked_at)
             logging.info(
-                "Mapping sources unchanged; mappings.db kept in place (%d checked)",
+                "Mapping sources unchanged; runtime/evidence databases kept in place (%d checked)",
                 len(successful_checks),
             )
             return None
 
         new_path.unlink(missing_ok=True)
+        evidence_new_path.unlink(missing_ok=True)
         required_loaded: set[str] = set()
-        with MappingDatabaseBuilder(new_path) as builder:
+        with MappingDatabaseBuilder(
+            new_path, evidence_path=evidence_new_path
+        ) as builder:
             for index, spec in enumerate(SOURCE_SPECS):
                 record_count = 0
                 staged_item = staged.get(spec.name)
@@ -252,8 +283,8 @@ def update_mapping_database(*, force: bool = False) -> MappingBuildStats | None:
                     elif mappings_keep_downloads():
                         downloads_dir.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(download_path, downloads_dir / download_path.name)
-                elif db_path.is_file() and spec.name in state:
-                    record_count = builder.copy_dataset_from(db_path, spec.name)
+                elif evidence_path.is_file() and spec.name in state:
+                    record_count = builder.copy_dataset_from(evidence_path, spec.name)
                     if record_count:
                         logging.info(
                             "Mapping source carried forward without network check: %s — %d records",
@@ -301,19 +332,20 @@ def update_mapping_database(*, force: bool = False) -> MappingBuildStats | None:
                 )
 
             stats = builder.finalize(built_at=checked_at)
-            builder.conn.execute(
-                "INSERT OR REPLACE INTO metadata(key, value) VALUES('optional_failures', ?)",
-                (json.dumps(failed_optional, ensure_ascii=False, sort_keys=True),),
-            )
-            builder.conn.execute(
-                "INSERT OR REPLACE INTO metadata(key, value) VALUES('overrides', ?)",
-                (str(override_count),),
-            )
-            builder.conn.execute(
-                "INSERT OR REPLACE INTO metadata(key, value) VALUES('last_source_check_at', ?)",
-                (checked_at,),
-            )
-            builder.conn.commit()
+            for conn in (builder.conn, builder.evidence_conn):
+                conn.execute(
+                    "INSERT OR REPLACE INTO metadata(key, value) VALUES('optional_failures', ?)",
+                    (json.dumps(failed_optional, ensure_ascii=False, sort_keys=True),),
+                )
+                conn.execute(
+                    "INSERT OR REPLACE INTO metadata(key, value) VALUES('overrides', ?)",
+                    (str(override_count),),
+                )
+                conn.execute(
+                    "INSERT OR REPLACE INTO metadata(key, value) VALUES('last_source_check_at', ?)",
+                    (checked_at,),
+                )
+                conn.commit()
 
         if stats.datasets < len(required_loaded):
             raise RuntimeError(
@@ -324,12 +356,20 @@ def update_mapping_database(*, force: bool = False) -> MappingBuildStats | None:
                 "mappings.db validation failed: no accepted mapping edges"
             )
 
-        if db_path.exists() and mappings_keep_previous():
-            shutil.copy2(db_path, previous_path)
+        if mappings_keep_previous():
+            if db_path.exists():
+                shutil.copy2(db_path, previous_path)
+            if evidence_path.exists():
+                shutil.copy2(evidence_path, evidence_previous_path)
+
+        # Runtime first: if the second replace ever fails, the bot still has the
+        # newly built self-contained lookup database. The next updater can recover
+        # provenance from the older evidence DB without breaking lookups.
         os.replace(new_path, db_path)
+        os.replace(evidence_new_path, evidence_path)
         logging.info(
-            "Mapping database updated: changed=%s datasets=%d records=%d evidence=%d edges=%d accepted=%d conflicts=%d overrides=%d",
-            ",".join(sorted(changed_sources)) or "forced",
+            "Mapping databases updated: changed=%s datasets=%d records=%d evidence=%d edges=%d accepted=%d conflicts=%d overrides=%d runtime_bytes=%d evidence_bytes=%d",
+            ",".join(sorted(changed_sources)) or ("runtime-only" if runtime_rebuild_only else "forced"),
             stats.datasets,
             stats.records,
             stats.evidence,
@@ -337,10 +377,13 @@ def update_mapping_database(*, force: bool = False) -> MappingBuildStats | None:
             stats.accepted_edges,
             stats.conflicts,
             override_count,
+            db_path.stat().st_size,
+            evidence_path.stat().st_size,
         )
         return stats
     finally:
         new_path.unlink(missing_ok=True)
+        evidence_new_path.unlink(missing_ok=True)
         for path, _sha in staged.values():
             path.unlink(missing_ok=True)
         try:
@@ -359,10 +402,13 @@ def update_if_stale() -> MappingBuildStats | None:
 
 def mapping_status() -> dict[str, object]:
     database = MappingDatabase()
+    evidence_path = mappings_evidence_db_path()
     metadata = database.metadata()
     return {
         "path": str(database.path),
         "available": database.available,
-        "stale": _is_stale(database.path) if database.available else True,
+        "evidence_path": str(evidence_path),
+        "evidence_available": evidence_path.is_file(),
+        "stale": _is_stale(evidence_path),
         "metadata": metadata,
     }

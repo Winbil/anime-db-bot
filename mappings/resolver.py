@@ -420,41 +420,17 @@ class MappingResolver:
         for provider, external_id in seeds:
             params.extend([provider, external_id])
 
-        edge_query = f"""
-            WITH seeds(provider, external_id) AS (
-                {seed_sql}
-            )
-            SELECT
-                s.provider,
-                s.external_id,
-                CASE
-                    WHEN e.a_provider=s.provider AND e.a_id=s.external_id
-                    THEN e.b_provider ELSE e.a_provider
-                END AS target_provider,
-                CASE
-                    WHEN e.a_provider=s.provider AND e.a_id=s.external_id
-                    THEN e.b_id ELSE e.a_id
-                END AS target_id
-            FROM seeds AS s
-            JOIN edges AS e
-              ON e.status='accepted'
-             AND (
-                (e.a_provider=s.provider AND e.a_id=s.external_id)
-                OR
-                (e.b_provider=s.provider AND e.b_id=s.external_id)
-             )
-            WHERE NOT EXISTS (
-                SELECT 1 FROM conflicts AS c
-                WHERE c.source_provider=s.provider
-                  AND c.source_id=s.external_id
-                  AND c.target_provider=(
-                    CASE
-                        WHEN e.a_provider=s.provider AND e.a_id=s.external_id
-                        THEN e.b_provider ELSE e.a_provider
-                    END
-                  )
-            )
-            ORDER BY s.provider, s.external_id, target_provider, target_id
+        edge_query = """
+            SELECT target.provider, target.external_id
+            FROM edges AS e
+            JOIN nodes AS target
+              ON target.id=CASE WHEN e.a_node=? THEN e.b_node ELSE e.a_node END
+            LEFT JOIN conflicts AS c
+              ON c.source_node=? AND c.target_provider=target.provider
+            WHERE e.status='accepted'
+              AND (e.a_node=? OR e.b_node=?)
+              AND c.source_node IS NULL
+            ORDER BY target.provider, target.external_id
         """
         override_query = f"""
             WITH seeds(provider, external_id) AS (
@@ -481,13 +457,21 @@ class MappingResolver:
         rejects: dict[tuple[str, str, str], set[str]] = defaultdict(set)
         try:
             with managed_sqlite_connection(self._connect()) as conn:
-                for seed_provider, seed_id, target_provider, target_id in conn.execute(
-                    edge_query,
-                    params,
-                ):
-                    per_seed[(str(seed_provider), str(seed_id))][
-                        str(target_provider)
-                    ].add(str(target_id))
+                for seed_provider, seed_id in seeds:
+                    node_row = conn.execute(
+                        "SELECT id FROM nodes WHERE provider=? AND external_id=?",
+                        (seed_provider, seed_id),
+                    ).fetchone()
+                    if node_row is None:
+                        continue
+                    node_id = int(node_row[0])
+                    for target_provider, target_id in conn.execute(
+                        edge_query,
+                        (node_id, node_id, node_id, node_id),
+                    ):
+                        per_seed[(seed_provider, seed_id)][str(target_provider)].add(
+                            str(target_id)
+                        )
                 try:
                     override_rows = conn.execute(override_query, params).fetchall()
                 except sqlite3.OperationalError:

@@ -205,7 +205,8 @@ Toute l'analyse de l'environnement d'exécution est centralisée dans `core/sett
 | `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | Non | Répertoire hôte mappé sur `/var/lib/telegram-bot-api` lorsque les chemins de fichiers locaux du Bot API se trouvent à l'intérieur d'un conteneur. |
 | `USER_SETTINGS_DB_PATH` | Non | SQLite chemin pour les paramètres par utilisateur et le registre des utilisateurs connus. |
 | `BANS_DB_PATH` | Non | SQLite chemin pour les interdictions de modération. |
-| `MAPPINGS_DB_PATH` | Non | Base de données de mappage d'ID croisés d'exécution. |
+| `MAPPINGS_DB_PATH` | Non | Base compacte de mappage cross-ID d'exécution. |
+| `MAPPINGS_EVIDENCE_DB_PATH` | Non | Base de provenance/preuves pour les builds et mises à jour ; le resolver runtime normal ne la lit pas. |
 | `BAHA_ANIME_SKIP_DB_PATH` | Non | Index SQLite local pour les timecodes Baha Anime Skip ; le runtime ne contacte pas Bahamut/Baha pour cette source. |
 
 Ne validez pas `.env`, `.env.d/`, `.proxies.d/`, les jetons de bot, les jetons d'accès, les mots de passe, les informations d'identification de proxy ou les informations d'identification privées API.
@@ -357,7 +358,8 @@ Le runtime sépare les différents types d’état :
 
 - paramètres utilisateur et utilisateurs connus — SQLite, limité à `(platform, user_id)` ;
 - interdictions — magasin SQLite persistant séparé ;
-- `mappings.db` — base de données de résolution d'ID croisés sauvegardée sur disque ;
+- `mappings.db` — base compacte de résolution cross-ID pour le runtime ;
+- `mappings-evidence.db` — stockage séparé de provenance/preuves pour les mises à jour et reconstructions ;
 - AniDB XML — cache disque ;
 - Telegram sessions de recherche/rappel de carte — état TTL/LRU en mémoire limité.
 
@@ -416,7 +418,9 @@ Plus de détails : [`docs/app-context.md`](app-context.md).
 
 ## Mappages d’ID croisés
 
-Le programme de mise à jour de cartographie diffuse plusieurs ensembles de données externes dans SQLite, enregistre la provenance/les preuves/les conflits, valide la base de données reconstruite et la met en place de manière atomique. Le graphique complet n'est pas chargé dans la RAM.
+Le programme de mise à jour de cartographie diffuse plusieurs ensembles de données externes dans SQLite, enregistre la provenance/les preuves/les conflits, valide les bases reconstruites et les met en place de manière atomique. Le graphique complet n'est pas chargé dans la RAM.
+
+Le schéma v3 normalise les paires répétées `(provider, external_id)` en nœuds entiers et sépare les recherches runtime de la provenance de build. `mappings.db` contient le graphe compact nœuds/arêtes/conflits et les overrides audités ; `mappings-evidence.db` conserve les datasets, enregistrements source, groupes de preuves et la provenance des arêtes pour les reconstructions et mises à jour.
 
 Les remplacements directionnels manuels prennent en charge `accept` et `reject`, transportent les métadonnées d'auteur/raison/horodatage et préservent l'historique des ajouts uniquement lors des reconstructions.
 

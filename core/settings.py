@@ -200,6 +200,7 @@ class SearchSettings:
 @dataclass(frozen=True, slots=True)
 class MappingSettings:
     db_path: Path
+    evidence_db_path: Path
     auto_update: bool
     update_max_age_hours: float
     wikidata_check_interval_hours: float
@@ -445,6 +446,11 @@ class AppSettings:
             ),
             mappings=MappingSettings(
                 db_path=_path(values, "MAPPINGS_DB_PATH", "data/mappings/mappings.db"),
+                evidence_db_path=_path(
+                    values,
+                    "MAPPINGS_EVIDENCE_DB_PATH",
+                    "data/mappings/mappings-evidence.db",
+                ),
                 auto_update=_bool(values, "MAPPINGS_AUTO_UPDATE", True),
                 update_max_age_hours=_float(
                     values,
