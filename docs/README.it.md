@@ -205,7 +205,8 @@ Tutta l'analisi dell'ambiente di runtime è centralizzata in `core/settings.py`.
 | `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | No | Directory host mappata su `/var/lib/telegram-bot-api` quando i percorsi dei file locali del Bot API si trovano all'interno di un contenitore. |
 | `USER_SETTINGS_DB_PATH` | No | SQLite percorso per le impostazioni per utente e il registro degli utenti conosciuti. |
 | `BANS_DB_PATH` | No | SQLite percorso per divieti di moderazione. |
-| `MAPPINGS_DB_PATH` | No | Database di mappatura cross-ID runtime. |
+| `MAPPINGS_DB_PATH` | No | Database compatto di mappatura cross-ID per il runtime. |
+| `MAPPINGS_EVIDENCE_DB_PATH` | No | Database di provenienza/evidenza per build e aggiornamenti; il resolver runtime normale non lo legge. |
 | `BAHA_ANIME_SKIP_DB_PATH` | No | Indice SQLite locale per i timestamp di Baha Anime Skip; il runtime non interroga Bahamut/Baha per questa fonte. |
 
 Non impegnare `.env`, `.env.d/`, `.proxies.d/`, token bot, token di accesso, password, credenziali proxy o credenziali private API.
@@ -357,7 +358,8 @@ Il runtime mantiene separati i diversi tipi di stato:
 
 - impostazioni utente e utenti conosciuti - SQLite, ambito da `(platform, user_id)`;
 - divieti: archivio persistente separato SQLite;
-- `mappings.db`: database del risolutore cross-ID supportato da disco;
+- `mappings.db`: database compatto del resolver cross-ID runtime;
+- `mappings-evidence.db`: archivio separato di provenienza/evidenza per updater e rebuild;
 - AniDB XML: cache del disco;
 - Telegram Sessioni di callback di ricerca/scheda: stato TTL/LRU in memoria limitato.
 
@@ -416,7 +418,9 @@ Maggiori dettagli: [`docs/app-context.md`](app-context.md).
 
 ## Mappature ID incrociati
 
-Il programma di aggiornamento della mappatura trasmette diversi set di dati esterni in SQLite, registra provenienza/prove/conflitti, convalida il database ricostruito e lo scambia atomicamente nella sua posizione. Il grafico completo non viene caricato nella RAM.
+Il programma di aggiornamento della mappatura trasmette diversi set di dati esterni in SQLite, registra provenienza/prove/conflitti, convalida i database ricostruiti e li scambia atomicamente. Il grafico completo non viene caricato nella RAM.
+
+Lo schema v3 normalizza le coppie ripetute `(provider, external_id)` in nodi interi e separa i lookup runtime dalla provenienza di build. `mappings.db` contiene il grafo compatto di nodi/archi/conflitti e gli override verificati; `mappings-evidence.db` conserva dataset, record di origine, gruppi di evidenza e provenienza degli archi per rebuild e aggiornamenti.
 
 Le sostituzioni direzionali manuali supportano `accept` e `reject`, trasportano metadati di autore/motivo/marca temporale e preservano la cronologia di sola aggiunta tra le ricostruzioni.
 

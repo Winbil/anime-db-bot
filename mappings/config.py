@@ -92,6 +92,10 @@ def mappings_db_path() -> Path:
     return get_settings().mappings.db_path
 
 
+def mappings_evidence_db_path() -> Path:
+    return get_settings().mappings.evidence_db_path
+
+
 def mappings_auto_update() -> bool:
     return get_settings().mappings.auto_update
 

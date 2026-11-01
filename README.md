@@ -214,7 +214,8 @@ All runtime environment parsing is centralized in `core/settings.py`. New deploy
 | `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | No | Host directory mapped to `/var/lib/telegram-bot-api` when local Bot API file paths are inside a container. |
 | `USER_SETTINGS_DB_PATH` | No | SQLite path for per-user settings and known-user registry. |
 | `BANS_DB_PATH` | No | SQLite path for moderation bans. |
-| `MAPPINGS_DB_PATH` | No | Runtime cross-ID mapping database. |
+| `MAPPINGS_DB_PATH` | No | Compact runtime cross-ID mapping database. |
+| `MAPPINGS_EVIDENCE_DB_PATH` | No | Build/update provenance and evidence database; normal runtime resolution does not read it. |
 | `ANIMETHEMES_API_URL` | No | AnimeThemes API endpoint used lazily to enrich episode OP/ED metadata and video links. |
 | `IMDB_RATINGS_BACKEND` | No | IMDb score backend: `auto`, `local`, `api`, or `off`; default `auto`. |
 | `IMDB_RATINGS_DB_PATH` | No | Local filtered IMDb ratings SQLite; default `data/imdb_ratings.sqlite3`. |
@@ -383,7 +384,8 @@ The runtime keeps different kinds of state separate:
 
 - user settings and known users — SQLite, scoped by `(platform, user_id)`;
 - bans — separate persistent SQLite store;
-- `mappings.db` — disk-backed cross-ID resolver database;
+- `mappings.db` — compact disk-backed runtime cross-ID resolver database;
+- `mappings-evidence.db` — updater/build provenance and evidence store;
 - AniDB XML — disk cache;
 - Telegram search/card callback sessions — bounded in-memory TTL/LRU state.
 
@@ -442,7 +444,9 @@ More detail: [`docs/app-context.md`](docs/app-context.md).
 
 ## Cross-ID mappings
 
-The mapping updater streams several external datasets into SQLite, records provenance/evidence/conflicts, validates the rebuilt database, and atomically swaps it into place. The complete graph is not loaded into RAM.
+The mapping updater streams several external datasets into SQLite, records provenance/evidence/conflicts, validates the rebuilt databases, and atomically swaps them into place. The complete graph is not loaded into RAM.
+
+Schema v3 normalizes repeated `(provider, external_id)` pairs into integer nodes and separates runtime lookup data from build provenance. `mappings.db` contains the compact node/edge/conflict graph and audited overrides used by the bot, while `mappings-evidence.db` retains datasets, source records, evidence groups, and edge provenance for rebuilds and updates. This reduces runtime storage and lookup cost without discarding evidence.
 
 Manual directional overrides support `accept` and `reject`, carry author/reason/timestamp metadata, and preserve append-only history across rebuilds.
 
