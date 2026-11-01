@@ -228,7 +228,9 @@ class MappingDatabaseBuilder:
             key,
         ).fetchone()
         if row is None:
-            raise RuntimeError(f"Could not allocate mapping node {provider}:{external_id}")
+            raise RuntimeError(
+                f"Could not allocate mapping node {provider}:{external_id}"
+            )
         node_id = int(row[0])
         self._node_cache[key] = node_id
         return node_id

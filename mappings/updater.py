@@ -369,7 +369,8 @@ def update_mapping_database(*, force: bool = False) -> MappingBuildStats | None:
         os.replace(evidence_new_path, evidence_path)
         logging.info(
             "Mapping databases updated: changed=%s datasets=%d records=%d evidence=%d edges=%d accepted=%d conflicts=%d overrides=%d runtime_bytes=%d evidence_bytes=%d",
-            ",".join(sorted(changed_sources)) or ("runtime-only" if runtime_rebuild_only else "forced"),
+            ",".join(sorted(changed_sources))
+            or ("runtime-only" if runtime_rebuild_only else "forced"),
             stats.datasets,
             stats.records,
             stats.evidence,
