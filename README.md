@@ -1,4 +1,4 @@
-> **AI-assisted project:** This project was developed with the help of AI.
+> **AI-assisted project:** Developed with the assistance of AI.
 
 <p align="center">
   <strong>English</strong> · <a href="docs/README.ru.md">Русский</a> · <a href="docs/README.ja.md">日本語</a> · <a href="docs/README.de.md">Deutsch</a> · <a href="docs/README.es.md">Español</a> · <a href="docs/README.fr.md">Français</a> · <a href="docs/README.it.md">Italiano</a>
@@ -6,520 +6,84 @@
 
 # anime-db-bot
 
-> Identity-native Telegram anime search and metadata aggregation across MyAnimeList/Jikan, AniList, Shikimori, Kitsu, AniDB, and AniSearch.
-
 [![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
 [![CI](https://github.com/anime-db-project/anime-db-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/anime-db-project/anime-db-bot/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](LICENSE)
 
-`anime-db-bot` searches multiple anime databases, resolves confirmed cross-database identities, and builds one source-independent card without treating any external database as the canonical source of truth.
+A Telegram bot for searching anime, combining metadata from independent databases, and exploring titles, episodes, characters, staff, and related works in one interface.
 
-The project is designed around explicit boundaries between **search**, **identity**, **mappings**, **metadata sources**, **aggregation**, **localization**, and **platform UI**. People use a prefetched lightweight ID/name/role manifest for exact totals, while portraits are enriched in bounded global batches; other expensive data such as characters, trailers, and episodes stays lazy.
+## Features
 
-## Highlights
+- Search anime by title, external ID, or image, with interactive result pagination.
+- Combine ratings, descriptions, release information, cast, staff, relations and recommendations from multiple providers.
+- Browse episodes, OP/ED information and available skip timestamps; expensive sections load only when opened.
+- Keep cross-database identity conservative: only verified ID relationships may merge titles.
+- Use persistent user preferences, moderation tools, per-source rate limits, proxies, and User-Agent profiles.
+- Choose among seven interface languages; source text is displayed in the languages upstream provides.
 
-- **Multi-provider search** — Shikimori, MyAnimeList, AniList, and Kitsu are queried through one `/anime` flow.
-- **Source-independent identity** — `AnimeIdentity` stores peer external IDs; there is no global primary database ID.
-- **Conservative cross-ID mapping** — runtime mapping is direct-only and conflict-aware, with provenance and manual audited overrides.
-- **Aggregated metadata cards** — values from successful metadata sources are normalized and merged while source-specific provenance is preserved.
-- **Manifest + lazy enrichment** — staff/seiyuu IDs, names, and roles are prefetched as a lightweight exact roster; portraits are enriched in global batches (50 by default), while characters, screenshots, detailed popularity, descriptions/backgrounds, trailers, episodes, related titles, and recommendations remain lazy.
-- **Shared resilience layer** — typed source errors, retries, circuit breakers, half-open recovery, rate limits, and shared HTTP lifecycle.
-- **Persistent platform-scoped settings** — user locale, known users, and moderation state are stored in SQLite.
-- **Seven UI languages** — English is the default/fallback locale; Russian, Japanese, German, Spanish, French, and Italian are fully selectable in `/settings`.
-- **Release metadata and projections** — age rating, airing status, aired/total episode counts, and source-backed next-episode timestamps are aggregated; airing TV titles with known totals get clearly marked weekly estimates for all remaining episodes.
-- **Structured episode navigation** — when an episode source explicitly provides season, cour, or special-episode structure, the episode view adds source-backed Season/Cour/OVA-Specials groups with local pagination; ordinary flat episode lists stay unchanged and no season boundaries are guessed from episode numbers.
-- **Episode-integrated OP/ED metadata** — AnimeThemes is resolved conservatively through confirmed AniList/MAL IDs and enriches the existing episode/timestamp UI with OP/ED sequence, song, artist, episode scope, and direct theme-video links; it is not exposed as a separate card section and title-only matching is never used.
-- **IMDb rating supplement** — IMDb contributes only its rating, vote count, and title link. Runtime can use a tiny local SQLite index filtered from the official daily `title.ratings.tsv.gz` dataset or the licensed IMDb GraphQL API through AWS Data Exchange; IMDb is not treated as a peer metadata authority.
-- **Production-oriented checks** — Python 3.11–3.14 CI, Ruff, formatter checks, mypy scope, coverage gate, and ShellCheck.
+## Data sources
 
-## Source capabilities
+The bot uses MyAnimeList (with Jikan as an optional supplement), AniList, Shikimori, Kitsu, AniDB (optional client registration), and AniSearch for anime metadata. Additional services serve narrowly scoped features rather than acting as interchangeable metadata databases.
 
-| Source | Search | Metadata | People | Characters | Trailers | Episodes | Screenshots | Popularity | Description | Relations | Recommendations |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Shikimori | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ | ✓ | ✓ |
-| MAL / Jikan | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ | ✓ |
-| AniList | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ | ✓ | ✓ |
-| Kitsu | ✓ | ✓ | — | — | ✓ | ✓ | — | ✓ | ✓ | ✓ | — |
-| AniDB | — | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ | ✓ | ✓ |
-| AniSearch | — | ✓ | ✓ | ✓ | — | ✓ | — | ✓ | ✓ | ✓ | — |
-| SkipDB (dormant) | — | — | — | — | — | — | — | — | — | — | — |
+| Features | Data sources |
+| --- | --- |
+| Anime metadata and search | [MyAnimeList](https://myanimelist.net/) / [Jikan](https://jikan.moe/), [AniList](https://anilist.co/), [Shikimori](https://shikimori.one/), [Kitsu](https://kitsu.app/), [AniDB](https://anidb.net/), [AniSearch](https://www.anisearch.com/) |
+| Additional ratings | [IMDb](https://www.imdb.com/) |
+| Image recognition | [trace.moe](https://trace.moe/), [What Anime Is This](https://whatanimeisthis.com/) |
+| Episodes, themes and skip intervals | [AnimeThemes](https://animethemes.moe/), [AniSkip](https://aniskip.com/), [Anime Skip](https://anime-skip.com/), [Baha Anime Skip](https://github.com/JacobLinCool/baha-anime-skip), [SkipDB](https://github.com/SkipDB-TV/skipdb) |
 
-Related titles and recommendations are lazy cross-source capabilities. Relations currently use Shikimori, official MAL, AniList, Kitsu media relationships, AniDB `relatedanime`, and aniSearch `related.anime`; recommendations use Shikimori similar titles, official MAL, AniList, and AniDB `similaranime`. AniDB's XML `recommendations` block is intentionally not used here because it contains user-written recommendation text about the current anime, not references to other titles. Each Telegram section keeps both an aggregated `All sources` view and source-local views with one anime per page. References are enriched through direct confirmed `mappings.db` edges and deduplicated only by non-conflicting peer IDs; title-only merges are forbidden. Recommendation ordering favors titles supported by more independent sources and then source-local rank, rather than mixing incompatible upstream score scales.
-
-AnimeThemes is a read-only episode enrichment capability rather than a peer anime identity/metadata source, so it is intentionally absent from the table above. It is queried lazily only for episode views, uses confirmed AniList or MyAnimeList IDs, and never participates in title search or cross-source identity creation.
-
-IMDb is likewise intentionally absent from the metadata capability table. It is a score-only supplement: an IMDb title is accepted only through a direct, unambiguous mapping from an anime-native peer (`mal`, `anilist`, `shikimori`, `kitsu`, `anidb`, or `anisearch`). TVDB/TMDB/Simkl-style bridge IDs are not allowed to select the IMDb rating because those mappings may represent an adjacent movie, season, or franchise record. The supplement adds `IMDb: rating · votes`, an IMDb link, and one normalized 0–10 score to the aggregate consensus without adding IMDb to the card's metadata-source list.
-
-Kitsu is an identity-native public JSON:API source. Public read-only GET requests do not require OAuth credentials; confirmed Kitsu IDs already participate in `mappings.db`, and Kitsu can also return direct MAL/AniList/AniDB mappings with search results and metadata. Kitsu currently contributes search, metadata, popularity, descriptions, episodes, media relationships, and a YouTube trailer when available. People/characters are intentionally not advertised because those relationships are often sparse.
-
-AniDB is optional and is enabled only when `ANIDB_CLIENT` is configured. Jikan is **not** a separate identity database: it is a local MAL backend used for data that is not available through the official MAL API. Its main-card licensors and lazy popularity statistics use separate local endpoints, so score-distribution scraping is not on the initial card path. AniSearch is an identity-native Database API source resolved through confirmed `anisearch` mapping edges. Its public API does not expose normal title-query search, so it does not join the fast `/anime <title>` search path. Because AniSearch puts ID and `/full` in the same strict throttle group, the source performs one cached `/full` fetch per title and keeps heavy fields out of initial aggregation; people, characters, and episodes later reuse that same payload without another network wait. English, Japanese, German, Spanish, French, and Italian AniSearch localizations are consumed for localized titles/synonyms, synopses, episode titles, regional licensors, and voice credits. Public no-token requests are paced to the documented 10-second ID-family interval (5 seconds with a valid token), and AniSearch-sourced synopsis text keeps the required direct AniSearch attribution link. SkipDB support remains in the codebase as a dormant IMDb-backed provider, but it is intentionally not registered in the runtime because current anime skip-segment coverage is too small to justify exposing it in the UI. Its parser/settings/tests are kept so it can be re-enabled later if coverage improves. SkipDB data is served under ODbL 1.0 + reciprocity.
-
-## How it works
-
-```text
-Telegram /anime
-      │
-      ▼
-SearchService
-      │
-      ▼
-SearchCandidate
-      │
-      ▼
-AnimeIdentity  ◄──── disk-backed mappings.db
-      │                + live MAL → Shikimori fallback
-      ▼
-AnimeAggregator
-      │
-      ├── Shikimori
-      ├── AniList
-      ├── Kitsu
-      ├── MAL / Jikan
-      └── AniDB (optional)
-      │
-      ▼
-AggregatedAnime
-      │
-      ▼
-Telegram card + lazy sections
-```
-
-### Identity rules
-
-`AnimeIdentity` has no primary ID. A numeric ID from one database is never assumed to identify the same title in another database simply because the number matches.
-
-Cross-source merging follows conservative rules:
-
-1. explicit shared external IDs are strong identity evidence;
-2. conflicting IDs from the same provider prevent a merge;
-3. text search may use a constrained exact normalized romaji fallback only when no same-provider conflict exists;
-4. direct-ID lookup does **not** use title-only merging;
-5. runtime mappings are direct-only and do not recursively traverse arbitrary TVDB/TMDB-style chains.
-
-The full enriched identity remains available internally for routing and lazy capabilities. The card's visible ID block shows only IDs belonging to metadata sources that actually contributed to that card.
-
-## Search
-
-The only user-facing search command is `/anime`.
-
-```text
-/anime Frieren
-/anime 37430
-/anime mal:37430
-/anime anilist:<id>
-/anime shikimori:<id>
-/anime kitsu:<id>
-```
-
-`/anime <title>` queries all registered search providers in parallel and collects a bounded query-scoped result set before Telegram pagination. Relevance considers titles, aliases, native/romaji variants, token/prefix matches, transliteration, and a conservative similarity fallback.
-
-Hard page/item caps protect upstream quotas. When the bot cannot prove that the collected count is final, the UI reports an incomplete count instead of presenting it as exact.
-
-Running `/anime` without arguments opens an interactive source selector. Pending input is scoped to the user/chat pair, expires automatically, and can be cancelled with `/cancel`.
-
-`/anime` also supports reverse image search. Attach an image to the command or pass a public image URL and the bot offers only image-search backends whose quota is currently available: trace.moe, What Anime Is This, or both. Results are resolved through confirmed AniList IDs and shown as the normal paginated candidate preview; the full metadata card is opened only after the user chooses **Details**. Matching evidence (provider, similarity, episode, timestamp) is kept on the preview. The **Not the title you need?** action allows another source attempt or cancellation without bypassing provider quotas. Uploaded raster images are normalized to JPEG before outbound search.
-
-Image-search credentials are optional. trace.moe runs anonymously when `TRACE_MOE_API_KEY` is empty and reads the real current quota from `/me`; configured keys are sent as `x-trace-key`, so partner/donor quotas are discovered rather than hard-coded. What Anime Is This runs as a guest when `WHATANIMEISTHIS_API_KEY` is empty and uses `Authorization: Bearer ...` when a key is present. Because its public API does not expose API-key credit state, the bot maintains a conservative persistent local daily counter: defaults are 5 guest searches and 10 API-key searches, and both ceilings are configurable for accounts with different credit policies. Set `WHATANIMEISTHIS_API_DAILY_LIMIT=0` to disable the local API-key ceiling and rely on the service's own credit/quota errors. A server-side quota response immediately marks that backend unavailable for the current local quota period.
-
-## Lazy card sections
-
-The main card stays metadata-first. The following sections are loaded only when requested:
-
-- staff and creators;
-- voice actors, including language-tagged AniSearch dub credits;
-- characters and portraits;
-- screenshots;
-- detailed popularity/ranking distributions;
-- descriptions and source background text;
-- trailers/promos;
-- episodes.
-
-Japanese voice credits remain the untagged original-language baseline. AniSearch dub credits are retained with explicit `[EN]`, `[DE]`, `[ES]`, `[FR]`, or `[IT]` role suffixes so they never masquerade as original Japanese credits. Localization/ADR staff is excluded from the primary production staff list.
-
-## Requirements and platform support
-
-The Python runtime is designed for **Linux, macOS, and native Windows** with Python **3.11, 3.12, 3.13, or 3.14**. GitHub Actions runs the full suite on Ubuntu for every supported Python version and additional portability runs on macOS and Windows with Python 3.12.
-
-- **Linux** — primary production platform; the cross-platform launcher works on mainstream distributions as long as a supported CPython build is available. The bundled `start.sh` remains a Linux-oriented `tmux` production helper.
-- **macOS** — supported through the Python launcher; `start.command` is provided as a convenience wrapper. `systemd` maintenance units do not apply on macOS.
-- **Windows (native)** — supported through the Python launcher, `start.ps1`, or `start.cmd`; WSL is not required.
-- **Docker + Docker Compose** — optional on every platform and used only for the local Jikan supplement. The bot still works without Docker; official MAL remains available while Jikan-only supplemental features are disabled.
-- **systemd** — optional Linux-only deployment/maintenance integration under `deploy/systemd/`.
-
-Run `python scripts/project.py doctor` (or the same command with your active Python interpreter) to check the basic runtime/dependency compatibility of a machine.
+[Anime Mapping DB](https://github.com/anime-db-project/anime-mapping-db) provides cross-database ID mappings. SkipDB's timestamp provider is present but currently dormant; a source listed here does not imply that all titles or episodes have data.
 
 ## Quick start
 
-Clone the repository first:
+Python 3.11–3.14 on Linux, macOS or Windows. Clone the project and use its cross-platform launcher:
 
-```text
-git clone git@github.com:anime-db-project/anime-db-bot.git
+```bash
+git clone https://github.com/anime-db-project/anime-db-bot.git
 cd anime-db-bot
-```
-
-The canonical launcher is `scripts/project.py`. It creates `.venv`, installs locked dependencies, creates missing config directories from the committed examples without overwriting existing values, and understands the native virtual-environment layout on Unix and Windows.
-
-Linux / macOS:
-
-```bash
 python3 scripts/project.py setup
-# Edit .env.d/telegram.env and add at least BOT_TOKEN.
+# Add BOT_TOKEN to .env.d/telegram.env
 python3 scripts/project.py check
-python3 scripts/project.py run       # foreground
-python3 scripts/project.py start     # background + PID file
+python3 scripts/project.py run
 ```
 
-Windows PowerShell / Command Prompt:
+Windows: use `py -3 scripts\project.py` instead of `python3 scripts/project.py`. Background operation uses `python3 scripts/project.py start` (`status`, `restart`, `stop` are also supported); Linux deployments may use `./start.sh`.
 
-```powershell
-py -3 scripts\project.py setup
-# Edit .env.d\telegram.env and add at least BOT_TOKEN.
-py -3 scripts\project.py check
-py -3 scripts\project.py run
-.\start.ps1                         # background
-```
+## Usage
 
-`start.cmd` is available for Command Prompt, and macOS can use `./start.command`. Background processes started by the cross-platform launcher are managed with:
+Use `/anime` to choose a search source or enter a title. An image attached to `/anime` or a public image URL activates image search when a backend is available. `/settings` changes preferences; `/cancel` ends pending input.
 
 ```text
-python scripts/project.py status
-python scripts/project.py stop
-python scripts/project.py restart
-```
-
-Linux production deployments may keep using `./start.sh`; it preserves the existing detached `tmux` workflow. Runtime logs remain under `logs/YYYY.MM.DD/`, while the generic background launcher also writes its inherited stdout/stderr to `logs/launcher.log`.
-
-Runtime logs are split by responsibility under `logs/YYYY.MM.DD/`: `bot.log` contains application/runtime events, `users.log` contains Telegram user-action tracing, `api.log` contains outbound source/API/retry/health events, and `errors.log` duplicates all `ERROR+` records for quick diagnostics. The directory switches automatically after local midnight without restarting the bot.
-
-## Configuration
-
-All runtime environment parsing is centralized in `core/settings.py`. New deployments copy `.env.example.d/` to `.env.d/`. Only the fixed files `telegram.env`, `sources.env`, `timestamps.env`, `rate-limits.env`, `mappings.env`, `storage.env`, `logging.env`, and `runtime.env` are loaded; stray files such as `backup.env` are ignored. Duplicate keys across project config files fail startup, while real process environment variables have the highest priority. A monolithic `.env` remains supported only as a migration path.
-
-### Essential settings
-
-| Variable | Required | Purpose |
-| --- | :---: | --- |
-| `BOT_TOKEN` | Yes | Telegram bot token from BotFather. |
-| `MAL_CLIENT_ID` | Recommended | Enables official MyAnimeList search and metadata. |
-| `ANIDB_CLIENT` | No | Enables AniDB HTTP API metadata/people/episodes. |
-| `ANIDB_CLIENT_VERSION` | No | Registered AniDB HTTP API client version; defaults to `1`. |
-| `ANILIST_ACCESS_TOKEN` | No | Optional AniList token when authenticated access is desired. |
-| `KITSU_API_URL` | No | Kitsu public JSON:API base URL; defaults to `https://kitsu.io/api/edge`. |
-| `TRACE_MOE_API_KEY` | No | Optional trace.moe API key (`x-trace-key`); free mode works without it and quota is read from `/me`. |
-| `WHATANIMEISTHIS_API_KEY` | No | Optional What Anime Is This API key sent as `Authorization: Bearer ...`; free guest mode works without it. |
-| `IMAGE_SEARCH_DB_PATH` | No | SQLite path for conservative persistent image-search quota accounting. |
-| `ADMIN_TELEGRAM_USER_IDS` | No | Comma/space/semicolon-separated Telegram admin user IDs. |
-| `TELEGRAM_BOT_API_URL` | No | Custom/self-hosted Telegram Bot API endpoint. |
-| `TELEGRAM_BOT_API_LOCAL_FILE_ROOT` | No | Host directory mapped to `/var/lib/telegram-bot-api` when local Bot API file paths are inside a container. |
-| `USER_SETTINGS_DB_PATH` | No | SQLite path for per-user settings and known-user registry. |
-| `BANS_DB_PATH` | No | SQLite path for moderation bans. |
-| `MAPPINGS_DB_PATH` | No | Compact runtime cross-ID mapping database downloaded from Anime Mapping DB releases. |
-| `MAPPINGS_MANIFEST_PATH` | No | Local manifest for the installed mapping release and source fingerprint. |
-| `MAPPINGS_RELEASE_REPOSITORY` | No | GitHub repository that publishes mapping releases; defaults to `anime-db-project/anime-mapping-db`. |
-| `ANIMETHEMES_API_URL` | No | AnimeThemes API endpoint used lazily to enrich episode OP/ED metadata and video links. |
-| `IMDB_RATINGS_BACKEND` | No | IMDb score backend: `auto`, `local`, `api`, or `off`; default `auto`. |
-| `IMDB_RATINGS_DB_PATH` | No | Local filtered IMDb ratings SQLite; default `data/imdb_ratings.sqlite3`. |
-| `IMDB_API_KEY` + Data Exchange/AWS IDs | No | Credentials for the optional licensed IMDb GraphQL backend. |
-| `BAHA_ANIME_SKIP_DB_PATH` | No | Local SQLite index for Baha Anime Skip timestamps; bot runtime never queries Bahamut/Baha for this source. |
-
-Do not commit `.env`, `.env.d/`, `.proxies.d/`, bot tokens, access tokens, passwords, proxy credentials, or private API credentials.
-
-### Local IMDb ratings index
-
-The local IMDb backend is built explicitly after `mappings.db` is available:
-
-```bash
-python scripts/project.py imdb-index
-```
-
-The builder streams IMDb's official `title.ratings.tsv.gz`, keeps only IMDb IDs that have a direct accepted mapping to an anime-native peer, and atomically writes `data/imdb_ratings.sqlite3`. The full IMDb dataset is not retained and the generated SQLite stays local/gitignored. Normal bot runtime only performs a read-only lookup by the already confirmed `tt...` ID; there is no IMDb title search or scraping fallback. The non-commercial IMDb datasets remain subject to IMDb's own terms. For licensed/API use, configure `IMDB_RATINGS_BACKEND=api` (or `auto`) plus the IMDb API/Data Exchange/AWS credentials from `.env.example.d/sources.env`.
-
-### Local Baha Anime Skip index
-
-Baha Anime Skip is consumed from a local SQLite snapshot instead of runtime HTTP calls. Build or refresh it explicitly after `mappings.db` is available:
-
-```bash
-python scripts/project.py baha-index
-```
-
-The builder downloads the archived Baha Anime Skip dataset once, takes accepted `bahamut` IDs from `mappings.db`, resolves their episode `videoSn` values, and atomically writes `data/baha_anime_skip.sqlite3`. Normal bot runtime only reads that SQLite file. If a title has no confirmed Bahamut mapping or no indexed row, Baha Anime Skip simply returns no timestamps and performs no network fallback.
-
-### Per-source proxy pools
-
-Optional outbound proxy routing is configured separately under `.proxies.d/`, one fixed TOML file per runtime source plus `telegram.toml` for the bot itself. Start from `.proxies.example.d/`. Supported proxy schemes are `http`, `socks4`, and `socks5`.
-
-```toml
-enabled = true
-
-[[proxy]]
-name = "primary"
-enabled = true
-priority = 100
-url = "socks5://user:password@127.0.0.1:1080"
-
-[[proxy]]
-name = "backup"
-enabled = false
-priority = 10
-url = "http://127.0.0.1:8080"
-```
-
-Profiles are independent: `mal.toml` affects only MAL, `anilist.toml` only AniList, and so on. Higher `priority` values are tried before lower values regardless of TOML order. Entries tied at the same priority are round-robin selected; lower-priority tiers are used only as failover after the higher tier fails. Duplicate proxy URLs are allowed when they have distinct entry names, so repeating an endpoint can intentionally give it more rotation weight. `enabled = false` can disable either the whole profile or an individual entry. If at least one proxy entry is active for a profile, that profile does **not** silently fall back to the direct connection when all proxies fail; direct access is used only when the profile has no active proxies. Proxy configuration is loaded at process startup, so edits take effect after a bot restart. When `telegram.toml` has active proxies, this bot intentionally bypasses any configured local/shared `telegram-bot-api` endpoint and talks to the official `api.telegram.org` through its own proxy pool; this keeps the proxy scoped to this bot instead of changing other bots that share the local server. `jikan.toml` is also special: the Python hop to the loopback Jikan service stays direct, while the selected proxy is forwarded to the local Jikan service and applied to its outbound MyAnimeList scrape.
-
-Fixed runtime profiles are: `telegram`, `shikimori`, `mal`, `anilist`, `kitsu`, `anidb`, `anisearch`, `jikan`, `aniskip`, `anime_skip`, `animethemes`, `imdb`, `skipdb`, `trace_moe`, and `whatanimeisthis`. Stray TOML files are ignored. Proxy files may contain credentials and are gitignored; `start.sh` keeps `.proxies.d` at mode `700` and known profile files at mode `600`.
-
-### Per-source User-Agent profiles
-
-Optional User-Agent overrides live under `.user-agents.d/` with the same fixed profile names as proxy routing. If a profile has no active custom entry, requests use the built-in project User-Agent (`anime-db-bot/<version> (...)`). Higher `priority` wins; entries tied at the highest active priority rotate between requests. Lower-priority User-Agents remain standby until higher-priority entries are disabled.
-
-```toml
-enabled = true
-
-[[user_agent]]
-name = "browser-a"
-enabled = true
-priority = 100
-value = "Mozilla/5.0 custom-a"
-
-[[user_agent]]
-name = "browser-b"
-enabled = true
-priority = 100
-value = "Mozilla/5.0 custom-b"
-
-[[user_agent]]
-name = "backup"
-enabled = true
-priority = 10
-value = "anime-db-bot-backup/1.0"
-```
-
-The network boundary overrides provider-local `User-Agent` headers so the selected profile value is authoritative. For `jikan`, the selected User-Agent is forwarded through the loopback service and applied to its outbound MyAnimeList request. For `telegram`, an active custom User-Agent switches this bot from a shared/local `telegram-bot-api` endpoint to the official `api.telegram.org`, ensuring that the configured header reaches the external Telegram request. `.user-agents.d` is gitignored and loaded at process startup.
-
-### AniDB
-
-The integration uses the AniDB HTTP API. It requires a registered HTTP API **client name and version**, not an AniDB account password.
-
-```env
-ANIDB_CLIENT=your_registered_client_name
-ANIDB_CLIENT_VERSION=1
-```
-
-AniDB XML responses are cached on disk and network requests are serialized with an additional minimum request interval to respect the service's API expectations.
-
-### MAL / Jikan
-
-MAL is the identity source. Jikan is a local supplemental backend and never introduces a `jikan` identity key.
-
-The bundled service lives under:
-
-```text
-compose.yml
-jikan_service/
-scripts/update-jikan.sh
-deploy/systemd/anime-db-bot-jikan-update.{service,timer}
-```
-
-A Jikan outage does not make official MAL search/metadata unavailable.
-
-## Commands
-
-### User commands
-
-```text
-/start
-/ping
-/settings
-/anime
-/anime <title>
-/anime <external_id>
-/anime mal:<id>
+/anime Frieren
+/anime mal:5114
 /anime anilist:<id>
 /anime shikimori:<id>
-/anime kitsu:<id>
+/settings
+/ping
 /cancel
 ```
 
-### Admin commands
+## Configuration
+
+`BOT_TOKEN` is required. Add provider credentials only for the services you intend to enable; `MAL_CLIENT_ID` improves MyAnimeList coverage and `ANIDB_CLIENT` enables AniDB. Optional reverse-image API keys are not required for guest operation. Proxy and User-Agent profiles are configured under `.proxies.d/` and `.user-agents.d/`.
 
 ```text
-/users
-/status
-/source_health
-/ban <user_id> [seconds] [reason]
-/unban <user_id>
-/mapping_overrides
-/mapping_history [limit]
-/mapping_set <accept|reject> <source_provider> <source_id> <target_provider> <target_id> <reason>
-/mapping_delete <source_provider> <source_id> <target_provider> <target_id> <reason>
-/mapping_confirm <token>
-/mapping_cancel <token>
+.env.example.d/      -> .env.d/
+.proxies.example.d/  -> .proxies.d/
+.user-agents.example.d/ -> .user-agents.d/
 ```
 
-`/status` is the primary runtime diagnostic view for administrators. It summarizes active source state and observed latency, per-source requests/errors, TTL-cache hit rate, and total Telegram/source load over rolling 1h/5h/10h/24h windows. Metrics are privacy-safe and process-local, so they reset when the bot restarts. `/source_health` remains the lower-level circuit-breaker view.
+The bot downloads and verifies release artifacts from **Anime Mapping DB**. It consumes `mappings.db` directly and does not build mapping datasets or automatically incorporate **Anime Timestamp DB**.
 
-Mapping mutations are intentionally two-step. `/mapping_set` and `/mapping_delete` create a short-lived pending mutation; the database changes only after `/mapping_confirm <token>`. Audit history records the Telegram administrator responsible for the change.
+## Documentation
 
-## Localization
+- [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- [Application architecture](docs/app-context.md) · [Localization](localization/README.md)
+- [Anime Mapping DB](https://github.com/anime-db-project/anime-mapping-db)
 
-The domain model is locale-neutral. Source adapters normalize upstream status/type/season/genre/role values into canonical keys, and translation happens only at render time.
+## License and attribution
 
-Supported UI locales:
+Source code is available under Apache-2.0. Third-party services and datasets retain their own licenses, attribution requirements, and API terms. Keep credentials outside version control. [Apache-2.0](LICENSE).
 
-- `en` — English (**default and fallback**);
-- `ru` — Русский;
-- `ja` — 日本語;
-- `de` — Deutsch;
-- `es` — Español;
-- `fr` — Français;
-- `it` — Italiano.
-
-Existing users keep their explicitly saved locale. New users, missing settings, invalid locale values, and missing translation keys fall back to English.
-
-Free-form source text such as anime descriptions is not machine-translated. See [`localization/README.md`](localization/README.md) for localization architecture and maintenance rules.
-
-## Persistence
-
-The runtime keeps different kinds of state separate:
-
-- user settings and known users — SQLite, scoped by `(platform, user_id)`;
-- bans — separate persistent SQLite store;
-- `mappings.db` — compact disk-backed runtime cross-ID resolver downloaded from `anime-db-project/anime-mapping-db` releases;
-- `data/mappings/manifest.json` — installed mapping release metadata and source fingerprint;
-- AniDB XML — disk cache;
-- Telegram search/card callback sessions — bounded in-memory TTL/LRU state.
-
-Legacy user settings created before platform scoping are migrated as Telegram records without changing their saved locale.
-
-## Resilience and rate limiting
-
-Outbound HTTP uses shared `httpx.AsyncClient` instances owned by `AppContext`. Source failures are normalized into typed errors and passed through a common retry/circuit-breaker layer.
-
-The source health registry supports:
-
-- transient vs. non-transient failure handling;
-- bounded retries with backoff;
-- circuit breaker thresholds;
-- cooldowns;
-- exactly one half-open recovery probe.
-
-Personal Telegram limits are scoped per `(platform, user_id)`. Administrators may bypass the personal limiter, but **never** bypass upstream provider safety limits.
-
-## Architecture
-
-```text
-anime-db-bot/
-├── bots/telegram/
-│   ├── card/            # card runtime, feature handlers, UI primitives and views
-│   │   ├── features/    # characters, descriptions, episodes, popularity, screenshots, trailers
-│   │   ├── runtime/     # handlers, session state and card service wiring
-│   │   ├── ui/          # callbacks-facing keyboards, selectors and constants
-│   │   └── views/       # renderers and section presentation
-│   ├── people/          # lazy people loading, portraits and views
-│   ├── search/          # Telegram search handlers/UI
-│   └── transports/      # official and self-hosted Bot API transports
-├── core/                # contracts, models, identity, settings, HTTP, errors
-├── localization/        # locale catalogs and canonical localization data
-├── mappings/            # runtime cross-ID resolver and release downloader/updater
-├── search/              # provider-facing search adapters and registry
-├── services/
-│   ├── aggregation/     # metadata aggregation and merge policy
-│   ├── identity/        # direct lookup and cross-source identity resolution
-│   ├── media/           # characters, episodes, people and trailers
-│   ├── runtime/         # AppContext, source health and rate-limit runtime policy
-│   ├── search/          # search orchestration and query expansion
-│   └── users/           # access control, bans and persistent user settings
-├── sources/
-│   ├── providers/       # MAL, AniList, Shikimori, Kitsu, AniDB, AniSearch and Jikan adapters
-│   └── runtime/         # source catalog, registries and resilience wrappers
-├── tests/               # unit, integration, wiring and regression tests
-├── jikan_service/       # local Jikan/MAL supplement service
-├── scripts/             # setup, checks and maintenance helpers
-└── deploy/systemd/      # optional maintenance units
-```
-
-`services/runtime/app_context.py` is the application composition root. Production runtime dependencies should be owned there rather than created as import-time service singletons.
-
-More detail: [`docs/app-context.md`](docs/app-context.md).
-
-## Cross-ID mappings
-
-Cross-ID dataset construction now lives in the standalone [`anime-db-project/anime-mapping-db`](https://github.com/anime-db-project/anime-mapping-db) project. That repository owns upstream importers, evidence/provenance, confidence, conflict detection, schema builds, validation and GitHub Releases.
-
-`anime-db-bot` is only a runtime consumer. It checks the latest `manifest.json`, compares the source fingerprint, downloads the pinned `mappings.db.zst` asset only when needed, verifies SHA-256 and size, decompresses and validates SQLite, preserves local audited admin overrides, and atomically replaces `data/mappings/mappings.db`. The bot never rebuilds mappings from upstream datasets.
-
-Schema v3 remains direct-only and conflict-aware. Runtime resolution reads only the compact `mappings.db`; the separate evidence database belongs to the mapping project and is not part of bot production storage.
-
-Manual directional overrides support `accept` and `reject`, carry author/reason/timestamp metadata, and preserve append-only history across downloaded releases.
-
-Maintenance commands are available through the cross-platform launcher:
-
-```text
-python scripts/project.py mappings --status
-python scripts/project.py mappings --force
-python scripts/project.py mappings --override-list
-python scripts/project.py mappings --override-history
-```
-
-The Unix `./scripts/update-mappings.sh` wrapper remains available for existing deployments and now performs the same release-consumer update.
-
-## Development
-
-Use the same launcher on every supported OS:
-
-```text
-python scripts/project.py setup --dev
-python scripts/project.py check
-python scripts/project.py doctor
-```
-
-On Windows, `py -3 scripts\project.py ...` may be used instead of `python`. The Unix `./scripts/setup.sh` and `./scripts/check.sh` files are convenience wrappers around the same implementation. Direct virtual-environment commands remain available at `.venv/bin/python` on Unix and `.venv\Scripts\python.exe` on Windows.
-
-GitHub Actions runs the full unit suite on Ubuntu for Python 3.11–3.14 plus portability runs on macOS and Windows with Python 3.12. This keeps cross-platform coverage while avoiding a redundant 12-job OS/Python Cartesian matrix. The Linux quality job additionally runs Ruff correctness checks, formatter checks for the typed foundation, mypy for the typed foundation, full tests with a coverage gate of at least 70%, and ShellCheck for Unix shell wrappers.
-
-## Contributors
-
-- [OpenAI Codex](https://github.com/apps/openai-codex) — official Codex GitHub App; AI-assisted project development and implementation.
-
-## Contributing
-
-Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request and follow the project [Code of Conduct](CODE_OF_CONDUCT.md). Bug reports and feature requests should use the repository issue forms.
-
-## Security
-
-- Keep `.env` and credentials outside version control.
-- Logs use daily `bot/users/api/errors` files, secret redaction by default, per-update correlation IDs, runtime-local timezone timestamps, and bounded per-file rotation. `LOG_REDACT_SECRETS=0` deliberately disables all masking for local diagnostics and may write credentials verbatim; keep it enabled on shared/public logs.
-- Admin-only actions must remain behind the access-control layer.
-- Do not expose a self-hosted Telegram Bot API, future metrics endpoint, or future external API publicly without explicit authentication/network controls.
-- Mapping overrides are audited because an incorrect identity edge can affect multiple capabilities.
-
-For vulnerability reporting and supported security channels, see [SECURITY.md](SECURITY.md). Do not publish credentials, tokens, or private deployment details in a public issue.
-
-## Project status
-
-The project is under active development. The core Telegram search/card flow, identity model, mapping database, multi-source aggregation, localization, lazy capabilities, persistence, resilience, and CI foundation are implemented. Additional discovery/search filters, user account integrations, notifications, monitoring/Prometheus metrics, external API/Mini App support, and more sources are planned work.
-
-## License
-
-Licensed under the [Apache License 2.0](LICENSE). You may use, modify, and distribute the project under its terms; preserve the required notices and mark significant modifications as required by the license.
-
-## Data sources and acknowledgements
-
-`anime-db-bot` integrates with or builds on data from projects and services including:
-
-- [MyAnimeList](https://myanimelist.net/)
-- [Jikan](https://jikan.moe/)
-- [AniList](https://anilist.co/)
-- [Kitsu](https://kitsu.app/) — public read-only JSON:API; no OAuth required for normal GET requests
-- [Shikimori](https://shikimori.one/)
-- [AniDB](https://anidb.net/)
-- [AniSearch](https://www.anisearch.com/) — Database API metadata; attribution and synopsis-link requirements apply
-- [IMDb](https://www.imdb.com/) — rating/vote supplement via the official datasets or licensed IMDb API; IMDb data remains subject to IMDb terms
-- [SkipDB](https://skipdb.tv/) — skip-segment data under ODbL 1.0 + reciprocity
-
-Cross-ID mapping data is built and released by `anime-db-project/anime-mapping-db` from multiple community datasets. Upstream terms, rate limits, attribution and database-license obligations are documented and enforced by that standalone project.
-
-Kitsu public read-only GET requests are used without OAuth credentials. The runtime applies its own conservative request limits because no stable server-side rate-limit contract is assumed.
-
-AniSearch Database API read-only metadata requests do not require OAuth. `ANISEARCH_APP_ID` and `ANISEARCH_APP_SECRET` are optional OAuth application credentials reserved for future user-authorized AniSearch features; they are never sent with read-only database requests.
+[OpenAI Codex](https://github.com/apps/openai-codex) · [Issues](https://github.com/anime-db-project/anime-db-bot/issues)
