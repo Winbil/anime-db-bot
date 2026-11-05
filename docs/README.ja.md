@@ -13,6 +13,24 @@
 
 複数の独立したアニメデータベースを横断検索し、作品情報を一つの Telegram インターフェースに集約するボットです。エピソード、キャラクター、制作スタッフ、関連作品も閲覧できます。
 
+## anime-db-project の規模
+
+このボットは独立して使えるアニメデータベース群の一部です。以下はプロジェクトの規模であり、すべての作品にメタデータやタイムスタンプがあることを保証しません。
+
+| 指標 | 値 |
+| --- | ---: |
+| Anime Mapping DB の安定した作品 ID | **34,851** (≈35k) |
+| 外部 ID の名前空間 | **55** |
+| 確認済みの ID 対応関係 | **1,225,741** |
+| Anime Timestamp DB の正規化エピソード | **57,623** |
+| Anime Timestamp DB の正規化区間 | **214,241** |
+
+**2026年11月5日** の [Mapping DB](https://github.com/anime-db-project/anime-mapping-db/releases/tag/v2026.11.05.24) と [Timestamp DB](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.8) の値です。**約35,000作品**は実測 34,851 AMDB ID の概数です。最新値は各リリースの `manifest.json` にあります。
+
+Telegram 以外のウェブサイトやライブラリでも SQLite を利用できます。Mapping DB で MAL/AniList ID を共通 AMDB ID に変換し、必要に応じて Timestamp DB の話区間を検索します。Python、SQL、エクスポートの例は各リポジトリにあります。**ボットは Mapping DB を利用しますが、Timestamp DB は必須・自動統合ではありません。**
+
+**[Anime Mapping DB](https://github.com/anime-db-project/anime-mapping-db)** · **[Anime Timestamp DB](https://github.com/anime-db-project/anime-timestamp-db)**
+
 ## 主な機能
 
 - 作品名、外部 ID、画像からの検索とページ送りに対応。

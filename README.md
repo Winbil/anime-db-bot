@@ -13,6 +13,24 @@
 
 A Telegram bot for searching anime, combining metadata from independent databases, and exploring titles, episodes, characters, staff, and related works in one interface.
 
+## Project ecosystem in numbers
+
+The bot belongs to a family of independently usable anime databases. These numbers illustrate the reach of the underlying projects, **not** a guarantee that all titles have complete metadata or skip timestamps.
+
+| Metric | Value |
+| --- | ---: |
+| Stable anime title identities in Anime Mapping DB | **34,851** (≈35k) |
+| External identifier namespaces | **55** |
+| Accepted cross-ID mapping edges | **1,225,741** |
+| Normalized episodes in Anime Timestamp DB | **57,623** |
+| Normalized skip intervals in Anime Timestamp DB | **214,241** |
+
+Verified snapshots from **5 November 2026**: [Mapping DB release](https://github.com/anime-db-project/anime-mapping-db/releases/tag/v2026.11.05.24) and [Timestamp DB release](https://github.com/anime-db-project/anime-timestamp-db/releases/tag/v2026.11.05.8). The rounded **≈35,000 anime titles** corresponds to 34,851 stable AMDB identities in the reference snapshot. Check each project's latest `manifest.json` for updated values.
+
+You can use the two SQLite databases outside Telegram: a website or library tool can translate an anime's MAL/AniList ID through **Anime Mapping DB**, then optionally look up episode intervals through **Anime Timestamp DB**. Python resolvers, read-only SQL and portable export examples are documented in each database repository. **anime-db-bot currently consumes Mapping DB, but does not depend on or automatically integrate Timestamp DB.**
+
+**[Anime Mapping DB](https://github.com/anime-db-project/anime-mapping-db)** · **[Anime Timestamp DB](https://github.com/anime-db-project/anime-timestamp-db)**
+
 ## Features
 
 - Search anime by title, external ID, or image, with interactive result pagination.
