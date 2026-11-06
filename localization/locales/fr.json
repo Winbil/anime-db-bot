@@ -431,7 +431,13 @@
     "reverse_harem": "Harem inversé",
     "mafia": "Mafia",
     "ninja": "Ninja",
-    "fighting_shounen": "Shōnen de combat"
+    "fighting_shounen": "Shōnen de combat",
+    "adult_cast": "Personnages adultes",
+    "space_travel": "Voyages spatiaux",
+    "other_planet": "Autre planète",
+    "shipboard": "À bord d'un navire",
+    "bounty_hunter": "Chasseurs de primes",
+    "crime_fiction": "Fiction criminelle"
   },
   "roles": {
     "director": "Réalisateur",

@@ -431,7 +431,13 @@
     "reverse_harem": "Обратный гарем",
     "mafia": "Мафия",
     "ninja": "Ниндзя",
-    "fighting_shounen": "Боевой сёнэн"
+    "fighting_shounen": "Боевой сёнэн",
+    "adult_cast": "Взрослые персонажи",
+    "space_travel": "Космические путешествия",
+    "other_planet": "Другая планета",
+    "shipboard": "На борту корабля",
+    "bounty_hunter": "Охотники за головами",
+    "crime_fiction": "Криминальные истории"
   },
   "roles": {
     "director": "Режиссёр",

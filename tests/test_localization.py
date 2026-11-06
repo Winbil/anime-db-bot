@@ -171,6 +171,31 @@ class LocalizationCatalogTests(unittest.TestCase):
                     canonical_genre("Fighting-Shounen", locale=locale), expected
                 )
 
+    def test_six_additional_genres_across_all_locales(self) -> None:
+        genres = {
+            "adult_cast": {"en": "Adult Cast", "ru": "Взрослые персонажи", "ja": "成人キャラクター", "de": "Erwachsene Figuren", "es": "Personajes adultos", "fr": "Personnages adultes", "it": "Personaggi adulti"},
+            "space_travel": {"en": "Space Travel", "ru": "Космические путешествия", "ja": "宇宙旅行", "de": "Weltraumreisen", "es": "Viajes espaciales", "fr": "Voyages spatiaux", "it": "Viaggi spaziali"},
+            "other_planet": {"en": "Other Planet", "ru": "Другая планета", "ja": "異星", "de": "Fremder Planet", "es": "Otro planeta", "fr": "Autre planète", "it": "Altro pianeta"},
+            "shipboard": {"en": "Shipboard", "ru": "На борту корабля", "ja": "船上", "de": "An Bord eines Schiffes", "es": "A bordo de un barco", "fr": "À bord d'un navire", "it": "A bordo di una nave"},
+            "bounty_hunter": {"en": "Bounty Hunter", "ru": "Охотники за головами", "ja": "賞金稼ぎ", "de": "Kopfgeldjäger", "es": "Cazarrecompensas", "fr": "Chasseurs de primes", "it": "Cacciatori di taglie"},
+            "crime_fiction": {"en": "Crime Fiction", "ru": "Криминальные истории", "ja": "犯罪フィクション", "de": "Kriminalgeschichten", "es": "Ficción criminal", "fr": "Fiction criminelle", "it": "Narrativa criminale"},
+        }
+        for key, labels in genres.items():
+            raw = labels['en']
+            with self.subTest(genre=key):
+                self.assertEqual(canonical_genre_key(raw), key)
+                for locale, expected in labels.items():
+                    with self.subTest(locale=locale):
+                        self.assertEqual(canonical_genre(raw, locale=locale), expected)
+        for alias, key in (
+            ("Adult Characters", "adult_cast"),
+            ("Other Planets", "other_planet"),
+            ("Ship Board", "shipboard"),
+            ("Bounty Hunters", "bounty_hunter"),
+            ("Crime-Fiction", "crime_fiction"),
+        ):
+            self.assertEqual(canonical_genre_key(alias), key)
+
     def test_kitsu_category_aliases_are_localized(self) -> None:
         expected = {
             "Fantasy World": ("fantasy_world", "Фэнтезийный мир", "ファンタジー世界"),

@@ -431,7 +431,13 @@
     "reverse_harem": "逆ハーレム",
     "mafia": "マフィア",
     "ninja": "忍者",
-    "fighting_shounen": "バトル少年"
+    "fighting_shounen": "バトル少年",
+    "adult_cast": "成人キャラクター",
+    "space_travel": "宇宙旅行",
+    "other_planet": "異星",
+    "shipboard": "船上",
+    "bounty_hunter": "賞金稼ぎ",
+    "crime_fiction": "犯罪フィクション"
   },
   "roles": {
     "director": "監督",
