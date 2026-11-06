@@ -292,67 +292,67 @@ def fallback_main_keyboard(
     token: str, *, locale: str, show_all_ids: bool = False
 ) -> InlineKeyboardMarkup:
     rows = [
-            [
-                InlineKeyboardButton(
-                    text=text("card", "description_button", locale=locale),
-                    callback_data=f"av:{token}:description:0",
-                ),
-                InlineKeyboardButton(
-                    text=text("card", "section_titles", locale=locale),
-                    callback_data=f"av:{token}:titles:0",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=text("card", "section_staff", locale=locale),
-                    callback_data=f"av:{token}:staff:0",
-                ),
-                InlineKeyboardButton(
-                    text=text("card", "section_voices", locale=locale),
-                    callback_data=f"av:{token}:voices:0",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=text("card", "characters_button", locale=locale),
-                    callback_data=f"av:{token}:characters:0",
-                ),
-                InlineKeyboardButton(
-                    text=text("card", "screenshots_button", locale=locale),
-                    callback_data=f"av:{token}:screenshots:0",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=text("card", "popularity_button", locale=locale),
-                    callback_data=f"av:{token}:popularity:0",
-                ),
-                InlineKeyboardButton(
-                    text=text("card", "episodes_button", locale=locale),
-                    callback_data=f"av:{token}:episodes:0",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=text("card", "trailers_button", locale=locale),
-                    callback_data=f"av:{token}:trailers:0",
-                ),
-                InlineKeyboardButton(
-                    text=text("card", "links_button", locale=locale),
-                    callback_data=f"av:{token}:links:0",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=text("card", "related_button", locale=locale),
-                    callback_data=f"av:{token}:related:0",
-                ),
-                InlineKeyboardButton(
-                    text=text("card", "recommendations_button", locale=locale),
-                    callback_data=f"av:{token}:recommendations:0",
-                ),
-            ],
-        ]
+        [
+            InlineKeyboardButton(
+                text=text("card", "description_button", locale=locale),
+                callback_data=f"av:{token}:description:0",
+            ),
+            InlineKeyboardButton(
+                text=text("card", "section_titles", locale=locale),
+                callback_data=f"av:{token}:titles:0",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=text("card", "section_staff", locale=locale),
+                callback_data=f"av:{token}:staff:0",
+            ),
+            InlineKeyboardButton(
+                text=text("card", "section_voices", locale=locale),
+                callback_data=f"av:{token}:voices:0",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=text("card", "characters_button", locale=locale),
+                callback_data=f"av:{token}:characters:0",
+            ),
+            InlineKeyboardButton(
+                text=text("card", "screenshots_button", locale=locale),
+                callback_data=f"av:{token}:screenshots:0",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=text("card", "popularity_button", locale=locale),
+                callback_data=f"av:{token}:popularity:0",
+            ),
+            InlineKeyboardButton(
+                text=text("card", "episodes_button", locale=locale),
+                callback_data=f"av:{token}:episodes:0",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=text("card", "trailers_button", locale=locale),
+                callback_data=f"av:{token}:trailers:0",
+            ),
+            InlineKeyboardButton(
+                text=text("card", "links_button", locale=locale),
+                callback_data=f"av:{token}:links:0",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=text("card", "related_button", locale=locale),
+                callback_data=f"av:{token}:related:0",
+            ),
+            InlineKeyboardButton(
+                text=text("card", "recommendations_button", locale=locale),
+                callback_data=f"av:{token}:recommendations:0",
+            ),
+        ],
+    ]
     if show_all_ids:
         rows.append(
             [

@@ -62,9 +62,7 @@ async def edit_mapping_ids_view(
     locale: str,
 ) -> None:
     """Replace the current card with IDs from its verified AMDB anchor."""
-    source_ids = (
-        mapping_resolver.ids_for_anchor(anime.amdb_id) if anime.amdb_id else {}
-    )
+    source_ids = mapping_resolver.ids_for_anchor(anime.amdb_id) if anime.amdb_id else {}
     pages = mapping_ids_pages(anime.amdb_id or "", source_ids, locale=locale)
     page = max(0, min(int(page), len(pages) - 1))
     keyboard = navigation_keyboard(

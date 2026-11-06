@@ -63,9 +63,7 @@ class MappingResolverTests(unittest.TestCase):
         self.assertIsNone(
             resolver.anchor_for(AnimeIdentity({"mal": "100", "anilist": "201"}))
         )
-        self.assertIsNone(
-            resolver.anchor_for(AnimeIdentity({"mal": "999"}))
-        )
+        self.assertIsNone(resolver.anchor_for(AnimeIdentity({"mal": "999"})))
 
     def test_all_ids_use_entity_membership_not_transitive_mapping_edges(self) -> None:
         create_runtime_mapping_db(
