@@ -452,7 +452,6 @@ def _episodes(raw: dict[str, Any]) -> list[EpisodeRecord]:
 
 
 def _description(raw: dict[str, Any]) -> DescriptionDetails:
-    url = _clean(raw.get("url"))
     localized: dict[str, str] = {}
     for language in SUPPORTED_LOCALIZATIONS:
         synopsis = _release(raw, language).get("synopsis")
@@ -461,8 +460,6 @@ def _description(raw: dict[str, Any]) -> DescriptionDetails:
         value = _clean_multiline(synopsis.get("text"))
         if not value:
             continue
-        if _clean(synopsis.get("source")).casefold() == "anisearch" and url:
-            value = f"{value}\n\naniSearch: {url}"
         localized[language] = value
 
     fallback = localized.get("en") or localized.get("ja")

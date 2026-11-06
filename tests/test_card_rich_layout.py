@@ -105,6 +105,34 @@ class CardRichLayoutTests(unittest.TestCase):
             },
         )
 
+    def test_aired_episodes_are_shown_only_while_anime_is_airing(self) -> None:
+        anime = self._sample()
+        for locale in ("ru", "en", "ja", "de", "es", "fr", "it"):
+            from localization import text
+
+            with self.subTest(locale=locale):
+                aired = text("card", "episodes_aired", locale=locale, value=12)
+                total = text("card", "episodes_total", locale=locale, value=24)
+                anime.status = "airing"
+                ongoing = anime_sections(anime, locale=locale)["main"]
+                self.assertIn(aired, ongoing)
+                self.assertIn(total, ongoing)
+
+                anime.status = "finished"
+                anime.episodes_aired = 24
+                finished = anime_sections(anime, locale=locale)["main"]
+                self.assertNotIn(
+                    text("card", "episodes_aired", locale=locale, value=24),
+                    finished,
+                )
+                self.assertIn(total, finished)
+
+                anime.status = "not_yet_aired"
+                self.assertNotIn(
+                    text("card", "episodes_aired", locale=locale, value=24),
+                    anime_sections(anime, locale=locale)["main"],
+                )
+
     def test_imdb_score_renders_vote_count_without_becoming_metadata_source(
         self,
     ) -> None:

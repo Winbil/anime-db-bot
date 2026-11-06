@@ -43,6 +43,14 @@ class CardSourceIdTests(unittest.TestCase):
         rich = main_rich("token", anime, source, locale="ru").html or ""
         self.assertIn("av:token:all_ids:0", rich)
         self.assertIn("Показать все", rich)
+        ids_position = rich.index("AMDB: 18472")
+        table_end = rich.index("</table>", ids_position)
+        all_ids_button = rich.index('data="av:token:all_ids:0"')
+        links_button = rich.index('data="av:token:links:0"')
+        self.assertLess(ids_position, table_end)
+        self.assertLess(table_end, all_ids_button)
+        self.assertLess(all_ids_button, links_button)
+        self.assertIn('style="link"', rich[table_end:links_button])
         fallback = fallback_main_keyboard("token", locale="ru", show_all_ids=True)
         callbacks = [
             button.callback_data for row in fallback.inline_keyboard for button in row

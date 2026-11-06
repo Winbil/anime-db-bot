@@ -59,7 +59,7 @@ _BLOCK_ACTIONS: tuple[tuple[tuple[str, str], ...], ...] = (
         ("characters_button", "characters"),
     ),
     (("popularity_button", "popularity"),),
-    (("links_button", "links"), ("all_ids_button", "all_ids")),
+    (("links_button", "links"),),
 )
 
 
@@ -125,7 +125,7 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
         basic.append(text("card", "type", locale=locale, value=kind))
     if status:
         basic.append(text("card", "status", locale=locale, value=status))
-    if aired is not None:
+    if anime.status == "airing" and aired is not None:
         basic.append(text("card", "episodes_aired", locale=locale, value=aired))
     if total is not None:
         basic.append(text("card", "episodes_total", locale=locale, value=total))
@@ -277,14 +277,14 @@ def _main_blocks(anime: AggregatedAnime, *, locale: str) -> list[tuple[str, list
         source_lines.append(
             text("card", "databases", locale=locale, value=", ".join(anime.sources))
         )
-    card_source_ids = _card_source_ids(anime)
-    if card_source_ids:
-        ids = " | ".join(f"{name.upper()}: {value}" for name, value in card_source_ids)
-        source_lines.append(text("card", "ids", locale=locale, value=ids))
     if anime.errors:
         source_lines.append(
             text("card", "unavailable", locale=locale, value=", ".join(anime.errors))
         )
+    card_source_ids = _card_source_ids(anime)
+    if card_source_ids:
+        ids = " | ".join(f"{name.upper()}: {value}" for name, value in card_source_ids)
+        source_lines.append(text("card", "ids", locale=locale, value=ids))
 
     return [
         (text("card", "block_main", locale=locale), basic),
@@ -318,13 +318,24 @@ def main_rich(
     block_html: list[str] = []
     for index, (title_value, lines) in enumerate(_main_blocks(anime, locale=locale)):
         actions = _BLOCK_ACTIONS[index] if index < len(_BLOCK_ACTIONS) else ()
-        if not anime.amdb_id:
-            actions = tuple(action for action in actions if action[1] != "all_ids")
         table = _table_html(title_value, lines)
         if table:
             block_html.append(table)
         elif actions:
             block_html.append(f"<h3>{html.escape(title_value)}</h3>")
+
+        # Rich-message table cells accept only inline formatting, not callback
+        # buttons. Put a compact link-style button immediately after the ID
+        # row's table, before the unrelated "Links" action.
+        if index == 4 and anime.amdb_id and _card_source_ids(anime):
+            callback_data = html.escape(f"av:{token}:all_ids:0", quote=True)
+            label = html.escape(text("card", "all_ids_button", locale=locale))
+            block_html.append(
+                '<tg-button-row align="left">'
+                f'<tg-button type="callback_data" style="link" data="{callback_data}">'
+                f"{label}</tg-button>"
+                "</tg-button-row>"
+            )
         block_html.append(_block_actions_html(token, actions, locale=locale))
 
     title_html = f"<h2>{html.escape(display_anime_title(anime, locale))}</h2>"

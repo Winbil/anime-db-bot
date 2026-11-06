@@ -251,7 +251,7 @@ class AniSearchParserTests(unittest.TestCase):
         )
         self.assertEqual(record.posters, ["https://cdn.anisearch.com/fma.webp"])
 
-    def test_description_keeps_all_supported_locales_and_attribution(self) -> None:
+    def test_description_keeps_all_supported_locales_without_title_link(self) -> None:
         details = anisearch._description(_payload())
         self.assertEqual(
             set(details.localized_descriptions), {"en", "ja", "de", "es", "fr", "it"}
@@ -268,12 +268,14 @@ class AniSearchParserTests(unittest.TestCase):
             details.localized_descriptions["fr"].startswith("Description française")
         )
         self.assertEqual(details.localized_descriptions["it"], "Descrizione italiana")
-        attribution = "aniSearch: https://www.anisearch.com/anime/5048"
-        for language in ("en", "de", "fr"):
-            self.assertIn(attribution, details.localized_descriptions[language])
-        for language in ("ja", "es", "it"):
-            self.assertNotIn(attribution, details.localized_descriptions[language])
+        for value in details.localized_descriptions.values():
+            self.assertNotIn("aniSearch:", value)
+            self.assertNotIn("https://www.anisearch.com/anime/", value)
         self.assertEqual(details.description, details.localized_descriptions["en"])
+        self.assertEqual(
+            anisearch._record(_payload(), "5048").urls["AniSearch"],
+            _payload()["url"],
+        )
 
     def test_episode_parser_merges_all_supported_localized_titles(self) -> None:
         episodes = anisearch._episodes(_payload())
