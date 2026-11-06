@@ -49,6 +49,10 @@ class IdentityResolver:
     def mapping_resolver(self) -> MappingResolver:
         return self._mapping_resolver
 
+    def anchor_for(self, identity: AnimeIdentity) -> str | None:
+        """Look up AMDB identity from confirmed metadata-source IDs only."""
+        return self._mapping_resolver.anchor_for(identity)
+
     @property
     def shikimori_provider(self) -> AnimeSearchProvider:
         return self._shikimori_provider

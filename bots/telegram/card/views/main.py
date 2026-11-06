@@ -15,8 +15,7 @@ from bots.telegram.card.views.rendering import (
 )
 from bots.telegram.card.views.titles import preferred_title_keys
 from core.models import AggregatedAnime, BroadcastSlot
-from core.source_keys import SourceKey
-from core.source_names import MAL_SOURCE_NAME
+from core.source_keys import metadata_source_key
 from core.temporal import format_time
 from localization import text
 
@@ -86,24 +85,21 @@ def _block_actions_html(
 
 
 def _source_identity_key(source_name: str) -> str | None:
-    normalized = " ".join((source_name or "").split()).strip().casefold()
-    if normalized in {MAL_SOURCE_NAME.casefold(), "myanimelist"}:
-        return SourceKey.MAL.value
-    try:
-        return SourceKey(normalized).value
-    except ValueError:
-        return None
+    source_key = metadata_source_key(source_name)
+    return source_key.value if source_key is not None else None
 
 
 def _card_source_ids(anime: AggregatedAnime) -> list[tuple[str, str]]:
-    """Return IDs only for metadata sources that actually contributed a record.
+    """Show the verified AMDB ID and IDs from contributing metadata sources.
 
-    ``anime.external_ids`` intentionally keeps the full resolved identity graph so
-    mapping-only IDs remain available to second-pass and lazy capabilities. The
-    main card should not present those resolver edges as if their databases had
-    actually supplied metadata, so rendering is scoped to ``anime.sources``.
+    ``anime.external_ids`` keeps the full resolved peer graph for capabilities;
+    mapping-only peer IDs must not impersonate metadata providers in the card.
+    The AMDB anchor is explicitly identified as our own mapping identity.
     """
     result: list[tuple[str, str]] = []
+    anchor = (anime.amdb_id or "").strip()
+    if anchor.startswith("amdb:") and anchor[5:].isdigit():
+        result.append(("amdb", anchor[5:]))
     seen: set[str] = set()
     for source_name in anime.sources:
         source_key = _source_identity_key(source_name)

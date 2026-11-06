@@ -10,6 +10,7 @@ def create_runtime_mapping_db(
     edges: list[tuple[str, str, str, str]],
     *,
     conflicts: list[tuple[str, str, str, list[str]]] | None = None,
+    anchors: dict[tuple[str, str], int] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.unlink(missing_ok=True)
@@ -114,6 +115,31 @@ def create_runtime_mapping_db(
                     json.dumps(sorted(candidates), ensure_ascii=False),
                 ),
             )
+
+        if anchors is not None:
+            connection.executescript(
+                """
+                CREATE TABLE entities(
+                    entity_id INTEGER PRIMARY KEY,
+                    anchor_id INTEGER NOT NULL UNIQUE
+                );
+                CREATE TABLE entity_nodes(
+                    entity_id INTEGER NOT NULL,
+                    node_id INTEGER NOT NULL,
+                    PRIMARY KEY(entity_id, node_id)
+                ) WITHOUT ROWID;
+                """
+            )
+            for anchor_id in sorted(set(anchors.values())):
+                connection.execute(
+                    "INSERT INTO entities(entity_id, anchor_id) VALUES (?, ?)",
+                    (anchor_id, anchor_id),
+                )
+            for (provider, external_id), anchor_id in anchors.items():
+                connection.execute(
+                    "INSERT INTO entity_nodes(entity_id, node_id) VALUES (?, ?)",
+                    (anchor_id, node_id(provider, external_id)),
+                )
 
         counts = {
             "schema_version": "3",

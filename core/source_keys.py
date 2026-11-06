@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from core.source_names import MAL_SOURCE_NAME
+
 
 class SourceKey(StrEnum):
     """Stable identity/database keys used across the application.
@@ -26,3 +28,14 @@ def normalize_source_key(value: SourceKey | str) -> SourceKey:
         return SourceKey(raw)
     except ValueError as exc:
         raise ValueError(f"Unknown source key: {value!r}") from exc
+
+
+def metadata_source_key(source_name: str) -> SourceKey | None:
+    """Identify a metadata provider without treating Jikan as a separate catalog."""
+    name = " ".join((source_name or "").split()).strip().casefold()
+    if name in {MAL_SOURCE_NAME.casefold(), "myanimelist"}:
+        return SourceKey.MAL
+    try:
+        return SourceKey(name)
+    except ValueError:
+        return None

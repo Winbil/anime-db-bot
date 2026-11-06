@@ -13,6 +13,7 @@ from core.models import (
     SearchCandidate,
 )
 from core.score_summary import consensus_score, normalize_source_scores
+from core.source_keys import metadata_source_key
 from localization import canonicalize_domain_value
 from services.aggregation.merge import (
     AggregationMergeSupport,
@@ -155,6 +156,20 @@ class AnimeAggregator(AggregationMergeSupport):
                 + identity.describe()
             )
 
+        # Do not use the entire mapping-enriched graph here: an accepted
+        # direct edge may cross a stricter AMDB entity boundary. Only the
+        # records that actually supplied metadata can establish this ID.
+        confirmed_ids: dict[str, str] = {}
+        for record in records:
+            source_key = metadata_source_key(record.source)
+            if source_key is not None and record.source_id:
+                confirmed_ids[source_key.value] = str(record.source_id)
+        amdb_id = (
+            self._identity_resolver.anchor_for(AnimeIdentity(confirmed_ids))
+            if confirmed_ids
+            else None
+        )
+
         titles: dict[str, str] = {}
         synonyms: list[str] = [candidate.title, *candidate.aliases]
         scores = dict(candidate.scores)
@@ -260,6 +275,7 @@ class AnimeAggregator(AggregationMergeSupport):
             titles=titles,
             synonyms=synonyms,
             external_ids=dict(identity.external_ids),
+            amdb_id=amdb_id,
             sources=_dedupe_strings([record.source for record in records]),
             kind=kind,
             status=status,

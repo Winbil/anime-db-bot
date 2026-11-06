@@ -35,6 +35,47 @@ class MappingResolverTests(unittest.TestCase):
             {"anidb": "200"},
         )
 
+    def test_amdb_anchor_uses_only_agreeing_known_provider_ids(self) -> None:
+        create_runtime_mapping_db(
+            self.path,
+            [
+                ("mal", "100", "anilist", "200"),
+                ("mal", "101", "anilist", "201"),
+            ],
+            anchors={
+                ("mal", "100"): 18472,
+                ("anilist", "200"): 18472,
+                ("mal", "101"): 25000,
+                ("anilist", "201"): 25000,
+            },
+        )
+        resolver = MappingResolver(self.path)
+        self.assertEqual(
+            resolver.anchor_for(AnimeIdentity({"mal": "100"})),
+            "amdb:18472",
+        )
+        self.assertEqual(
+            resolver.anchor_for(
+                AnimeIdentity({"mal": "100", "anilist": "200", "imdb": "unknown"})
+            ),
+            "amdb:18472",
+        )
+        self.assertIsNone(
+            resolver.anchor_for(AnimeIdentity({"mal": "100", "anilist": "201"}))
+        )
+        self.assertIsNone(
+            resolver.anchor_for(AnimeIdentity({"mal": "999"}))
+        )
+
+    def test_amdb_anchor_is_optional_for_older_mapping_schemas(self) -> None:
+        create_runtime_mapping_db(
+            self.path,
+            [("mal", "100", "anilist", "200")],
+        )
+        self.assertIsNone(
+            MappingResolver(self.path).anchor_for(AnimeIdentity({"mal": "100"}))
+        )
+
     def test_directional_conflict_suppresses_only_ambiguous_route(self) -> None:
         create_runtime_mapping_db(
             self.path,

@@ -408,6 +408,58 @@ class MappingResolver:
         conn.execute("PRAGMA temp_store=FILE")
         return conn
 
+    def anchor_for(self, identity: AnimeIdentity) -> str | None:
+        """Resolve a stable AMDB ID only when known IDs agree on one entity.
+
+        This uses the published entity membership, not a transitive walk over
+        mapping edges. Unknown IDs are ignored; conflicting anchors suppress
+        the result instead of choosing an arbitrary title.
+        """
+        if not self.available or identity.is_empty():
+            return None
+
+        seeds = sorted(
+            (provider, external_id)
+            for provider, external_id in identity.external_ids.items()
+            if provider != "amdb"
+        )
+        if not seeds:
+            return None
+
+        placeholders = ", ".join("(?, ?)" for _ in seeds)
+        parameters = [value for seed in seeds for value in seed]
+        query = f"""
+            WITH seeds(provider, external_id) AS (VALUES {placeholders})
+            SELECT DISTINCT e.anchor_id
+            FROM seeds AS s
+            JOIN nodes AS n
+              ON n.provider=s.provider AND n.external_id=s.external_id
+            JOIN entity_nodes AS en ON en.node_id=n.id
+            JOIN entities AS e ON e.entity_id=en.entity_id
+            LIMIT 2
+        """
+        try:
+            with managed_sqlite_connection(self._connect()) as conn:
+                anchor_tables = conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM sqlite_master
+                    WHERE type='table' AND name IN ('entities', 'entity_nodes')
+                    """
+                ).fetchone()
+                if anchor_tables is None or int(anchor_tables[0]) != 2:
+                    return None
+                anchors = [int(row[0]) for row in conn.execute(query, parameters)]
+        except (sqlite3.DatabaseError, OSError):
+            logging.exception("Could not resolve stable AMDB identity from mappings.db")
+            return None
+
+        if len(anchors) == 1 and anchors[0] > 0:
+            return f"amdb:{anchors[0]}"
+        if len(anchors) > 1:
+            logging.info("Skipping AMDB ID because confirmed source IDs disagree")
+        return None
+
     def resolve(self, identity: AnimeIdentity) -> dict[str, str]:
         if not self.available or identity.is_empty():
             return {}

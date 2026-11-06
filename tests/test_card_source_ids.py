@@ -11,6 +11,7 @@ class CardSourceIdTests(unittest.TestCase):
     def test_main_card_shows_only_ids_for_contributing_metadata_sources(self) -> None:
         anime = AggregatedAnime(
             title="Example",
+            amdb_id="amdb:18472",
             sources=[MAL_SOURCE_NAME, "AniList"],
             external_ids={
                 "mal": "100",
@@ -22,6 +23,7 @@ class CardSourceIdTests(unittest.TestCase):
 
         main = anime_sections(anime, locale="en")["main"]
 
+        self.assertIn("AMDB: 18472", main)
         self.assertIn("MAL: 100", main)
         self.assertIn("ANILIST: 200", main)
         self.assertNotIn("SHIKIMORI: 300", main)
@@ -53,6 +55,7 @@ class CardSourceIdTests(unittest.TestCase):
         self.assertNotIn("MAL: 20", main)
         self.assertNotIn("ANILIST: 30", main)
         self.assertNotIn("ANIDB: 40", main)
+        self.assertNotIn("AMDB:", main)
 
 
 if __name__ == "__main__":

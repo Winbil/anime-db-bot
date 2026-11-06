@@ -340,6 +340,8 @@ class AggregatedAnime:
     titles: dict[str, str] = field(default_factory=dict)
     synonyms: list[str] = field(default_factory=list)
     external_ids: dict[str, str] = field(default_factory=dict)
+    # Own stable title identity from anime-mapping-db, not a metadata provider.
+    amdb_id: str | None = None
     sources: list[str] = field(default_factory=list)
 
     kind: str | None = None

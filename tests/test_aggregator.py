@@ -7,6 +7,7 @@ from core.identity import AnimeIdentity
 from core.models import AggregatedAnime, AnimeRecord, PersonCredit, SearchCandidate
 from services.aggregation.service import _merge_people
 from services.identity.aggregator import AnimeAggregator
+from services.identity.resolver import IdentityResolver
 
 
 class FakeSource:
@@ -175,7 +176,8 @@ class AggregatorIdentityTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         source = FakeSource()
         enriched = AnimeIdentity({"mal": "123", "shikimori": "456"})
-        resolver = AsyncMock()
+        resolver = AsyncMock(spec=IdentityResolver)
+        resolver.anchor_for.return_value = None
         resolver.enrich = AsyncMock(return_value=enriched)
         aggregator = AnimeAggregator((source,), identity_resolver=resolver)
         candidate = SearchCandidate(
@@ -199,7 +201,8 @@ class AggregatorIdentityTests(unittest.IsolatedAsyncioTestCase):
         ) -> AnimeIdentity:
             return identity.copy()
 
-        resolver = AsyncMock()
+        resolver = AsyncMock(spec=IdentityResolver)
+        resolver.anchor_for.return_value = None
         resolver.enrich = AsyncMock(side_effect=no_external_enrichment)
         aggregator = AnimeAggregator((source,), identity_resolver=resolver)
         anime = await aggregator.aggregate(
@@ -220,7 +223,8 @@ class AggregatorIdentityTests(unittest.IsolatedAsyncioTestCase):
         ) -> AnimeIdentity:
             return identity.copy()
 
-        resolver = AsyncMock()
+        resolver = AsyncMock(spec=IdentityResolver)
+        resolver.anchor_for.return_value = None
         resolver.enrich = AsyncMock(side_effect=no_external_enrichment)
         aggregator = AnimeAggregator((first, second), identity_resolver=resolver)
         candidate = SearchCandidate(
@@ -241,8 +245,10 @@ class AggregatorIdentityTests(unittest.IsolatedAsyncioTestCase):
         ) -> AnimeIdentity:
             return identity.copy()
 
-        resolver = AsyncMock()
+        resolver = AsyncMock(spec=IdentityResolver)
+        resolver.anchor_for.return_value = None
         resolver.enrich = AsyncMock(side_effect=no_external_enrichment)
+        resolver.anchor_for.return_value = "amdb:18472"
         aggregator = AnimeAggregator((bridge, mal), identity_resolver=resolver)
         candidate = SearchCandidate(
             title="Bridge",
@@ -252,6 +258,11 @@ class AggregatorIdentityTests(unittest.IsolatedAsyncioTestCase):
         anime = await aggregator.aggregate(candidate)
 
         self.assertEqual(anime.external_ids, {"anilist": "10", "mal": "20"})
+        self.assertEqual(anime.amdb_id, "amdb:18472")
+        confirmed_identity = resolver.anchor_for.call_args.args[0]
+        self.assertEqual(
+            confirmed_identity.external_ids, {"anilist": "10", "mal": "20"}
+        )
         self.assertEqual(len(mal.identities), 2)
         self.assertIsNone(mal.identities[0].get("mal"))
         self.assertEqual(mal.identities[1].get("mal"), "20")
