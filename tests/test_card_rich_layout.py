@@ -114,6 +114,7 @@ class CardRichLayoutTests(unittest.TestCase):
                 aired = text("card", "episodes_aired", locale=locale, value=12)
                 total = text("card", "episodes_total", locale=locale, value=24)
                 anime.status = "airing"
+                anime.episodes_aired = 12
                 ongoing = anime_sections(anime, locale=locale)["main"]
                 self.assertIn(aired, ongoing)
                 self.assertIn(total, ongoing)
