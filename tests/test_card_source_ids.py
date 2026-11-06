@@ -43,14 +43,24 @@ class CardSourceIdTests(unittest.TestCase):
         rich = main_rich("token", anime, source, locale="ru").html or ""
         self.assertIn("av:token:all_ids:0", rich)
         self.assertIn("Показать все", rich)
+        self.assertIn("<caption><b>ID источников</b></caption>", rich)
+        source_caption = rich.index("<caption><b>Источники</b></caption>")
+        links_button = rich.index('data="av:token:links:0"')
+        ids_caption = rich.index("<caption><b>ID источников</b></caption>")
         ids_position = rich.index("AMDB: 18472")
         table_end = rich.index("</table>", ids_position)
         all_ids_button = rich.index('data="av:token:all_ids:0"')
-        links_button = rich.index('data="av:token:links:0"')
+        self.assertLess(source_caption, links_button)
+        self.assertLess(links_button, ids_caption)
+        self.assertLess(ids_caption, ids_position)
         self.assertLess(ids_position, table_end)
         self.assertLess(table_end, all_ids_button)
-        self.assertLess(all_ids_button, links_button)
-        self.assertIn('style="link"', rich[table_end:links_button])
+        self.assertEqual(rich.count('data="av:token:all_ids:0"'), 1)
+        self.assertIn(
+            '<tg-button type="callback_data" data="av:token:all_ids:0">',
+            rich[table_end:],
+        )
+        self.assertNotIn('style="link"', rich[table_end:])
         fallback = fallback_main_keyboard("token", locale="ru", show_all_ids=True)
         callbacks = [
             button.callback_data for row in fallback.inline_keyboard for button in row

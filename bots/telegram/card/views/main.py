@@ -324,18 +324,35 @@ def main_rich(
         elif actions:
             block_html.append(f"<h3>{html.escape(title_value)}</h3>")
 
-        # Rich-message table cells accept only inline formatting, not callback
-        # buttons. Put a compact link-style button immediately after the ID
-        # row's table, before the unrelated "Links" action.
-        if index == 4 and anime.amdb_id and _card_source_ids(anime):
-            callback_data = html.escape(f"av:{token}:all_ids:0", quote=True)
-            label = html.escape(text("card", "all_ids_button", locale=locale))
+        if index == 4 and _card_source_ids(anime):
+            # Source IDs have their own clearly labelled table. Keep the
+            # working callback button in the block immediately below it;
+            # Telegram iOS does not reliably activate buttons inside cells.
+            block_html.pop() if table else None
+            if not table and actions:
+                block_html.pop()
+            source_table = _table_html(title_value, lines[:-1])
+            if source_table:
+                block_html.append(source_table)
+            elif actions:
+                block_html.append(f"<h3>{html.escape(title_value)}</h3>")
+            block_html.append(_block_actions_html(token, actions, locale=locale))
             block_html.append(
-                '<tg-button-row align="left">'
-                f'<tg-button type="callback_data" style="link" data="{callback_data}">'
-                f"{label}</tg-button>"
-                "</tg-button-row>"
+                _table_html(
+                    text("card", "ids_table_title", locale=locale),
+                    [lines[-1]],
+                )
             )
+            if anime.amdb_id:
+                block_html.append(
+                    _block_actions_html(
+                        token,
+                        (("all_ids_button", "all_ids"),),
+                        locale=locale,
+                    )
+                )
+            continue
+
         block_html.append(_block_actions_html(token, actions, locale=locale))
 
     title_html = f"<h2>{html.escape(display_anime_title(anime, locale))}</h2>"

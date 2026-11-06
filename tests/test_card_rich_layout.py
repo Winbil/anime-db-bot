@@ -188,6 +188,7 @@ class CardRichLayoutTests(unittest.TestCase):
                 self.assertLess(position, end)
 
         self.assertIn("<tg-button-row", html)
+        self.assertIn("<caption><b>ID источников</b></caption>", html)
         self.assertNotIn("выбрать источник", html)
         self.assertNotIn("нажмите, чтобы открыть", html)
 
