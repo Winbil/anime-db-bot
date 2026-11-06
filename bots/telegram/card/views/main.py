@@ -318,19 +318,10 @@ def main_rich(
     block_html: list[str] = []
     for index, (title_value, lines) in enumerate(_main_blocks(anime, locale=locale)):
         actions = _BLOCK_ACTIONS[index] if index < len(_BLOCK_ACTIONS) else ()
-        table = _table_html(title_value, lines)
-        if table:
-            block_html.append(table)
-        elif actions:
-            block_html.append(f"<h3>{html.escape(title_value)}</h3>")
-
         if index == 4 and _card_source_ids(anime):
-            # Source IDs have their own clearly labelled table. Keep the
-            # working callback button in the block immediately below it;
-            # Telegram iOS does not reliably activate buttons inside cells.
-            block_html.pop() if table else None
-            if not table and actions:
-                block_html.pop()
+            # The ID row is last in _main_blocks. Give it its own table, so
+            # its action is visually associated with IDs rather than links.
+            # Keep the callback button outside the table for iOS support.
             source_table = _table_html(title_value, lines[:-1])
             if source_table:
                 block_html.append(source_table)
@@ -353,6 +344,11 @@ def main_rich(
                 )
             continue
 
+        table = _table_html(title_value, lines)
+        if table:
+            block_html.append(table)
+        elif actions:
+            block_html.append(f"<h3>{html.escape(title_value)}</h3>")
         block_html.append(_block_actions_html(token, actions, locale=locale))
 
     title_html = f"<h2>{html.escape(display_anime_title(anime, locale))}</h2>"
