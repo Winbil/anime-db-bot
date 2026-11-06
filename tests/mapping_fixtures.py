@@ -11,6 +11,7 @@ def create_runtime_mapping_db(
     *,
     conflicts: list[tuple[str, str, str, list[str]]] | None = None,
     anchors: dict[tuple[str, str], int] | None = None,
+    redirects: dict[int, int] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.unlink(missing_ok=True)
@@ -128,6 +129,11 @@ def create_runtime_mapping_db(
                     node_id INTEGER NOT NULL,
                     PRIMARY KEY(entity_id, node_id)
                 ) WITHOUT ROWID;
+                CREATE TABLE anchor_redirects(
+                    old_anchor_id INTEGER PRIMARY KEY,
+                    anchor_id INTEGER NOT NULL,
+                    reason TEXT NOT NULL DEFAULT 'merged'
+                );
                 """
             )
             for anchor_id in sorted(set(anchors.values())):
@@ -139,6 +145,11 @@ def create_runtime_mapping_db(
                 connection.execute(
                     "INSERT INTO entity_nodes(entity_id, node_id) VALUES (?, ?)",
                     (anchor_id, node_id(provider, external_id)),
+                )
+            for previous, current in (redirects or {}).items():
+                connection.execute(
+                    "INSERT INTO anchor_redirects(old_anchor_id, anchor_id) VALUES (?, ?)",
+                    (previous, current),
                 )
 
         counts = {

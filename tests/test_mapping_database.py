@@ -81,8 +81,13 @@ class MappingResolverTests(unittest.TestCase):
                 ("anidb", "300"): 25000,
                 ("kitsu", "400"): 25000,
             },
+            redirects={9000: 18472},
         )
         resolver = MappingResolver(self.path)
+        self.assertEqual(
+            resolver.ids_for_anchor("amdb:9000"),
+            {"anilist": ("200",), "mal": ("100",)},
+        )
         self.assertEqual(
             resolver.ids_for_anchor("amdb:18472"),
             {"anilist": ("200",), "mal": ("100",)},
