@@ -67,6 +67,33 @@ class MappingResolverTests(unittest.TestCase):
             resolver.anchor_for(AnimeIdentity({"mal": "999"}))
         )
 
+    def test_all_ids_use_entity_membership_not_transitive_mapping_edges(self) -> None:
+        create_runtime_mapping_db(
+            self.path,
+            [
+                ("mal", "100", "anilist", "200"),
+                ("anilist", "200", "anidb", "300"),
+                ("anidb", "300", "kitsu", "400"),
+            ],
+            anchors={
+                ("mal", "100"): 18472,
+                ("anilist", "200"): 18472,
+                ("anidb", "300"): 25000,
+                ("kitsu", "400"): 25000,
+            },
+        )
+        resolver = MappingResolver(self.path)
+        self.assertEqual(
+            resolver.ids_for_anchor("amdb:18472"),
+            {"anilist": ("200",), "mal": ("100",)},
+        )
+        self.assertEqual(
+            resolver.ids_for_anchor("amdb:25000"),
+            {"anidb": ("300",), "kitsu": ("400",)},
+        )
+        self.assertEqual(resolver.ids_for_anchor("mal:100"), {})
+        self.assertEqual(resolver.ids_for_anchor("amdb:999999"), {})
+
     def test_amdb_anchor_is_optional_for_older_mapping_schemas(self) -> None:
         create_runtime_mapping_db(
             self.path,

@@ -460,6 +460,42 @@ class MappingResolver:
             logging.info("Skipping AMDB ID because confirmed source IDs disagree")
         return None
 
+    def ids_for_anchor(self, anchor: str) -> dict[str, tuple[str, ...]]:
+        """Return every external ID belonging to one AMDB entity.
+
+        Do not traverse mapping edges: they may cross distinct title entities.
+        Follow a published redirect for merged stable anchors.
+        """
+        reference = str(anchor or "").strip().casefold()
+        if not reference.startswith("amdb:"):
+            return {}
+        raw_id = reference.removeprefix("amdb:")
+        if not raw_id.isdigit() or int(raw_id) <= 0 or not self.available:
+            return {}
+
+        query = """
+            SELECT n.provider, n.external_id
+            FROM entities AS e
+            JOIN entity_nodes AS en ON en.entity_id=e.entity_id
+            JOIN nodes AS n ON n.id=en.node_id
+            WHERE e.anchor_id=COALESCE(
+                (SELECT anchor_id FROM anchor_redirects WHERE old_anchor_id=?),
+                ?
+            )
+            ORDER BY n.provider, n.external_id
+        """
+        try:
+            with managed_sqlite_connection(self._connect()) as conn:
+                rows = conn.execute(query, (int(raw_id), int(raw_id))).fetchall()
+        except (sqlite3.DatabaseError, OSError):
+            logging.exception("Could not load AMDB entity IDs from mappings.db")
+            return {}
+
+        grouped: dict[str, list[str]] = defaultdict(list)
+        for provider, external_id in rows:
+            grouped[str(provider)].append(str(external_id))
+        return {provider: tuple(values) for provider, values in grouped.items()}
+
     def resolve(self, identity: AnimeIdentity) -> dict[str, str]:
         if not self.available or identity.is_empty():
             return {}

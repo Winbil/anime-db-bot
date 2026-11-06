@@ -12,6 +12,7 @@ SECTION_LABELS = {
     "episodes": "section_episodes",
     "trailers": "section_trailers",
     "links": "section_links",
+    "all_ids": "all_ids_title",
     "staff": "section_staff",
     "voices": "section_voices",
     "characters": "section_characters",

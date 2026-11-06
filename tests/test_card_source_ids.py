@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import unittest
 
-from bots.telegram.card.views.renderer import anime_sections
+from bots.telegram.card.views.renderer import anime_sections, main_rich
+from bots.telegram.card.features.mapping_ids import mapping_ids_pages
+from bots.telegram.card.ui.keyboards import fallback_main_keyboard, navigation_keyboard
+from localization import available_locales, text
 from core.models import AggregatedAnime
 from core.source_names import MAL_SOURCE_NAME
 
@@ -28,6 +31,65 @@ class CardSourceIdTests(unittest.TestCase):
         self.assertIn("ANILIST: 200", main)
         self.assertNotIn("SHIKIMORI: 300", main)
         self.assertNotIn("ANIDB: 400", main)
+
+    def test_show_all_button_appears_only_with_a_verified_amdb_id(self) -> None:
+        anime = AggregatedAnime(
+            title="Example",
+            amdb_id="amdb:18472",
+            sources=["AniList"],
+            external_ids={"anilist": "200"},
+        )
+        source = anime_sections(anime, locale="ru")["main"]
+        rich = main_rich("token", anime, source, locale="ru").html or ""
+        self.assertIn("av:token:all_ids:0", rich)
+        self.assertIn("Показать все", rich)
+        fallback = fallback_main_keyboard("token", locale="ru", show_all_ids=True)
+        callbacks = [
+            button.callback_data
+            for row in fallback.inline_keyboard for button in row
+        ]
+        self.assertIn("av:token:all_ids:0", callbacks)
+
+        unlinked = AggregatedAnime(title="Example")
+        rich_without_anchor = main_rich(
+            "token", unlinked,
+            anime_sections(unlinked, locale="ru")["main"],
+            locale="ru",
+        ).html or ""
+        self.assertNotIn("av:token:all_ids:0", rich_without_anchor)
+
+    def test_full_id_pages_preserve_all_ids_and_back_navigation(self) -> None:
+        source_ids = {
+            "mal": ("100",), "anilist": ("200",),
+            "anidb": ("300",), "tmdb_movie": ("987654",),
+        }
+        for locale in available_locales():
+            with self.subTest(locale=locale):
+                pages = mapping_ids_pages("amdb:18472", source_ids, locale=locale)
+                self.assertEqual(len(pages), 1)
+                self.assertIn("AMDB: 18472", pages[0])
+                for provider, values in source_ids.items():
+                    self.assertIn(f"{provider.upper()}: {values[0]}", pages[0])
+                self.assertIn(text("card", "all_ids_title", locale=locale), pages[0])
+                keyboard = navigation_keyboard(
+                    "token", AggregatedAnime(title="Test"), "all_ids",
+                    0, 1, locale=locale,
+                )
+                self.assertEqual(
+                    keyboard.inline_keyboard[-1][0].callback_data,
+                    "av:token:main:0",
+                )
+
+        long_ids = {
+            f"provider_{i:04d}": (str(i) * 12,) for i in range(140)
+        }
+        pages = mapping_ids_pages("amdb:18472", long_ids, locale="en")
+        self.assertGreater(len(pages), 1)
+        self.assertTrue(all(len(page) <= 3700 for page in pages))
+        for provider, values in long_ids.items():
+            self.assertEqual(
+                sum(f"{provider.upper()}: {values[0]}" in page for page in pages), 1
+            )
 
     def test_mapping_only_ids_remain_available_to_internal_identity(self) -> None:
         anime = AggregatedAnime(

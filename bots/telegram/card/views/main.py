@@ -59,7 +59,7 @@ _BLOCK_ACTIONS: tuple[tuple[tuple[str, str], ...], ...] = (
         ("characters_button", "characters"),
     ),
     (("popularity_button", "popularity"),),
-    (("links_button", "links"),),
+    (("links_button", "links"), ("all_ids_button", "all_ids")),
 )
 
 
@@ -318,6 +318,8 @@ def main_rich(
     block_html: list[str] = []
     for index, (title_value, lines) in enumerate(_main_blocks(anime, locale=locale)):
         actions = _BLOCK_ACTIONS[index] if index < len(_BLOCK_ACTIONS) else ()
+        if not anime.amdb_id:
+            actions = tuple(action for action in actions if action[1] != "all_ids")
         table = _table_html(title_value, lines)
         if table:
             block_html.append(table)

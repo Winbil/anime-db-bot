@@ -137,7 +137,9 @@ async def send_anime_view(
             "sendRichMessage failed; falling back to standard sendMessage"
         )
         fallback = (
-            fallback_main_keyboard(token, locale=locale)
+            fallback_main_keyboard(
+                token, locale=locale, show_all_ids=bool(anime.amdb_id)
+            )
             if section == "main"
             else keyboard
         )
@@ -172,7 +174,9 @@ async def edit_anime_view(
             "Rich message edit failed; falling back to standard text edit"
         )
         fallback = (
-            fallback_main_keyboard(token, locale=locale)
+            fallback_main_keyboard(
+                token, locale=locale, show_all_ids=bool(anime.amdb_id)
+            )
             if section == "main"
             else keyboard
         )

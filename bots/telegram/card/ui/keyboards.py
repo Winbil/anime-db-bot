@@ -288,9 +288,10 @@ def source_section_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def fallback_main_keyboard(token: str, *, locale: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+def fallback_main_keyboard(
+    token: str, *, locale: str, show_all_ids: bool = False
+) -> InlineKeyboardMarkup:
+    rows = [
             [
                 InlineKeyboardButton(
                     text=text("card", "description_button", locale=locale),
@@ -352,4 +353,13 @@ def fallback_main_keyboard(token: str, *, locale: str) -> InlineKeyboardMarkup:
                 ),
             ],
         ]
-    )
+    if show_all_ids:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=text("card", "all_ids_button", locale=locale),
+                    callback_data=f"av:{token}:all_ids:0",
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)

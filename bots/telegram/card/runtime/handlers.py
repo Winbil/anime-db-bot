@@ -23,6 +23,7 @@ from bots.telegram.card.features.related import (
 )
 from bots.telegram.card.ui.constants import SECTION_LABELS, SOURCE_SELECTABLE_SECTIONS
 from bots.telegram.card.features.episodes import edit_episode_detail, edit_episodes_view
+from bots.telegram.card.features.mapping_ids import edit_mapping_ids_view
 from bots.telegram.card.views.renderer import (
     edit_anime_view,
     edit_description_view,
@@ -494,6 +495,16 @@ def build_dispatcher(mode_name: str, state: TelegramCardState) -> Dispatcher:
             return
 
         await callback.answer()
+        if section == "all_ids":
+            await edit_mapping_ids_view(
+                callback.message,
+                token,
+                anime,
+                mapping_resolver=get_app_context().identity_resolver.mapping_resolver,
+                page=data.page,
+                locale=locale,
+            )
+            return
         if section in {"related", "recommendations"}:
             await edit_related_view(
                 callback.message,
